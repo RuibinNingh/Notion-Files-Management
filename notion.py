@@ -1,102 +1,763 @@
 import os
-from notion_client import Client
+import requests
+import asyncio
+import aiohttp
+import aiofiles
 from dotenv import load_dotenv
+import logging
+import json
+import time
+import math
+import mimetypes
+import subprocess
+import threading
+import shutil
+from datetime import datetime
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Optional, Tuple, Callable
+import collections
+import hashlib
+from pathlib import Path
+import random
+import base64
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
-load_dotenv()
+# 现代化UI库
+from rich.console import Console
+from rich.layout import Layout
+from rich.panel import Panel
+from rich.live import Live
+from rich.table import Table
+from rich.text import Text
+from rich.align import Align
+from rich.style import Style
+from rich import box
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
 
-class NotionData:
-    def __init__(self, token: str, version: str = "2025-09-03"):
-        self.notion = Client(auth=token)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class RateLimiter:
+    """令牌桶算法限流器"""
+    def __init__(self, rate):
+        self.rate = rate
+        self.tokens = rate
+        self.last_update = time.time()
+        self.lock = threading.Lock()
+
+    def wait(self):
+        with self.lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            self.tokens = min(self.rate, self.tokens + elapsed * self.rate)
+            self.last_update = now
+            if self.tokens < 1:
+                time.sleep((1 - self.tokens) / self.rate)
+                self.tokens = 0
+            else:
+                self.tokens -= 1
+
+class NotionFileManager:
+    def __init__(self,token:str,version:str,page_id:str,base_url:str="https://api.notion.com/v1"):
+        """
+        初始化NotionFileManager类的实例
+        """
+        load_dotenv()
+        self.token = token
         self.version = version
+        self.page_id = page_id
+        self.base_url = base_url
+        self.headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": self.version,
+            "Content-Type": "application/json"
+        }
 
-    # --------------------
-    # 查询数据源列表
-    # --------------------
-    def query_data_source(self, data_source_id: str, page_size: int = 100) -> list:
-        """查询数据源下的条目列表"""
-        all_items = []
-        next_cursor = None
+        # 上传相关配置
+        self.upload_config = {
+            "min_chunk_size": 5 * 1024 * 1024,  # 5MB分片
+            "max_workers": 3,  # 最大并发数
+            "max_chunk_retries": 20,  # 分片最大重试次数
+            "rate_limit": 2.8,  # API请求频率限制
+        }
+
+        # 设置会话和重试机制
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"Bearer {self.token}",
+            "Notion-Version": self.version,
+            "User-Agent": "Notion-Files-Management/2.0"
+        })
+        retries = Retry(total=3, backoff_factor=1.0, status_forcelist=[500, 502, 503, 504])
+        self.session.mount('https://', HTTPAdapter(max_retries=retries))
+
+        # 限流器 - 降低请求频率
+        self.rate_limiter = RateLimiter(1.5)  # 从2.8降低到1.5 req/s
+
+        # 下载相关配置
+        self.download_config = {
+            "chunk_size": 1024 * 1024,  # 1MB下载块
+            "max_workers": 4,  # 下载并发数
+            "timeout": 30,  # 请求超时时间
+        }
+
+        # 文件链接缓存配置
+        self.link_cache_config = {
+            "cache_expiry_seconds": 40 * 60,  # 40分钟缓存过期
+            "force_refresh_threshold": 30 * 60,  # 30分钟后显示刷新提示
+        }
+
+        # 文件链接缓存
+        self._file_cache = None
+        self._cache_timestamp = None
+        self._cache_expiry = None
+
+    def _is_cache_expired(self) -> bool:
+        """检查缓存是否过期"""
+        if self._cache_timestamp is None:
+            return True
+        return time.time() - self._cache_timestamp > self.link_cache_config["cache_expiry_seconds"]
+
+    def _should_warn_cache_old(self) -> bool:
+        """检查是否应该警告缓存即将过期"""
+        if self._cache_timestamp is None:
+            return False
+        return time.time() - self._cache_timestamp > self.link_cache_config["force_refresh_threshold"]
+
+    def _get_cache_age(self) -> float:
+        """获取缓存年龄（秒）"""
+        if self._cache_timestamp is None:
+            return float('inf')
+        return time.time() - self._cache_timestamp
+
+    def _update_cache(self, file_list: list):
+        """更新缓存"""
+        self._file_cache = file_list
+        self._cache_timestamp = time.time()
+        self._cache_expiry = self._cache_timestamp + self.link_cache_config["cache_expiry_seconds"]
+
+    def clear_cache(self):
+        """清除缓存"""
+        self._file_cache = None
+        self._cache_timestamp = None
+        self._cache_expiry = None
+        logger.info("文件链接缓存已清除")
+
+    def _get_children(self, block_id, max_retries=3):
+        """
+        获取指定 block 的子节点，并过滤仅保留文件类型的块
+        添加重试机制和更好的错误处理
+        """
+        children = []
+        cursor = None
+        FILE_TYPES = ["file", "image", "video", "pdf", "audio"]
+
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"正在获取页面子节点 (尝试 {attempt + 1}/{max_retries})...")
+
+                while True:
+                    url = f"{self.base_url}/blocks/{block_id}/children"
+                    params = {"page_size": 100}
+                    if cursor:
+                        params["start_cursor"] = cursor
+
+                    # 使用配置好的session进行请求
+                    response = self.session.get(url, params=params, timeout=30)
+                    response.raise_for_status()
+
+                    data = response.json()
+                    results = data.get("results", [])
+
+                    for block in results:
+                        if block.get("type") in FILE_TYPES:
+                            children.append(block)
+
+                    if not data.get("has_more"):
+                        break
+                    cursor = data.get("next_cursor")
+
+                logger.info(f"成功获取 {len(children)} 个文件块")
+                return children
+
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"网络连接错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 3 ** attempt  # 更长的等待时间: 1s, 3s, 9s
+                    logger.info(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"网络连接失败，已达到最大重试次数: {e}")
+                    return []
+
+            except requests.exceptions.Timeout as e:
+                logger.warning(f"请求超时 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 3 ** attempt
+                    logger.info(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"请求超时，已达到最大重试次数: {e}")
+                    return []
+
+            except requests.exceptions.HTTPError as e:
+                # 获取响应状态码
+                status_code = getattr(e.response, 'status_code', None)
+                if status_code == 429:  # Too Many Requests
+                    logger.warning(f"API请求频率限制 (尝试 {attempt + 1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        wait_time = 10 * (attempt + 1)  # 更长的等待时间: 10s, 20s, 30s
+                        logger.info(f"等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"API频率限制，已达到最大重试次数")
+                        return []
+                else:
+                    logger.error(f"HTTP错误 {status_code}: {e}")
+                    return []
+
+            except Exception as e:
+                logger.error(f"获取并过滤子节点失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = 3 ** attempt
+                    logger.info(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"未知错误，已达到最大重试次数: {e}")
+                    return []
+
+        return children
+    def file_list(self, force_refresh: bool = False) -> list:
+        """
+        获取并返回指定页面的所有文件信息列表
+        返回格式: [["name", "url", "url加载的时间"], ...]
+
+        Args:
+            force_refresh: 是否强制刷新缓存
+        """
+        # 检查是否需要刷新缓存
+        if force_refresh or self._is_cache_expired():
+            logger.info("正在刷新文件链接缓存...")
+            blocks = self._get_children(self.page_id)
+            result_list = []
+            load_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for block in blocks:
+                try:
+                    b_type = block.get("type")
+                    content = block.get(b_type, {})
+                    name = content.get("name")
+                    file_type = content.get("type")
+                    url = ""
+                    if file_type == "file":
+                        url = content["file"].get("url", "")
+                    elif file_type == "external":
+                        url = content["external"].get("url", "")
+                    if not name and url:
+                        name = url.split('/')[-1].split('?')[0]
+
+                    if not name:
+                        name = "未命名文件"
+                    result_list.append([name, url, load_time])
+
+                except Exception as e:
+                    logger.error(f"处理 Block {block.get('id')} 失败: {e}")
+                    continue
+
+            # 更新缓存
+            self._update_cache(result_list)
+            logger.info(f"文件链接缓存已更新，共 {len(result_list)} 个文件")
+            return result_list
+
+        else:
+            # 使用缓存
+            cache_age = self._get_cache_age()
+            if self._should_warn_cache_old():
+                logger.warning(".0f" % (cache_age / 60))
+            return self._file_cache.copy() if self._file_cache else []
+
+    def _api_request(self, method, url, max_retries=3, **kwargs):
+        """统一的API请求方法，包含限流和错误处理"""
+        for attempt in range(max_retries):
+            try:
+                self.rate_limiter.wait()
+                resp = self.session.request(method, url, timeout=(10, 60), **kwargs)
+
+                # 检查特殊的状态码
+                if resp.status_code == 400:
+                    err = resp.text.lower()
+                    if "status" in err or "pending" in err:
+                        raise BlockingIOError("SessionInvalid")
+
+                # 检查频率限制
+                if resp.status_code == 429:
+                    if attempt < max_retries - 1:
+                        wait_time = 5 * (attempt + 1)  # 5s, 10s, 15s
+                        logger.warning(f"API请求频率限制，等待 {wait_time} 秒后重试...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        resp.raise_for_status()
+
+                resp.raise_for_status()
+                return resp
+
+            except requests.exceptions.ConnectionError as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"网络连接错误，等待 {wait_time} 秒后重试: {e}")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"网络连接失败，已达到最大重试次数: {e}")
+                    raise
+
+            except requests.exceptions.Timeout as e:
+                if attempt < max_retries - 1:
+                    wait_time = 3 ** attempt  # 更长的等待时间: 1s, 3s, 9s
+                    logger.warning(f"请求超时，等待 {wait_time} 秒后重试: {e}")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"请求超时，已达到最大重试次数: {e}")
+                    raise
+
+            except requests.exceptions.HTTPError as e:
+                if hasattr(e, 'response') and e.response is not None:
+                    status_code = e.response.status_code
+                    if status_code == 429:  # Too Many Requests
+                        if attempt < max_retries - 1:
+                            wait_time = 10 * (attempt + 1)  # 更长的等待时间: 10s, 20s, 30s
+                            logger.warning(f"API请求频率限制，等待 {wait_time} 秒后重试...")
+                            time.sleep(wait_time)
+                            continue  # 重试
+                        else:
+                            logger.error(f"API频率限制，已达到最大重试次数")
+                            raise
+                    else:
+                        logger.error(f"HTTP错误 {status_code}: {e}")
+                        raise
+                else:
+                    logger.error(f"HTTP错误: {e}")
+                    raise
+
+            except BlockingIOError:
+                # Session失效，不重试，直接抛出
+                raise
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 3 ** attempt
+                    logger.warning(f"API请求失败，等待 {wait_time} 秒后重试: {e}")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"API请求失败，已达到最大重试次数: {e}")
+                    raise
+
+    def _get_upload_strategy(self, filepath):
+        """获取文件上传策略（后缀伪装等）"""
+        fsize = os.path.getsize(filepath)
+        fname = os.path.basename(filepath)
+        name, ext = os.path.splitext(fname)
+
+        # 白名单：这些扩展名可以直接上传
+        whitelist = {'.pdf', '.txt', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+                    '.json', '.aac', '.mp3', '.wav', '.ogg', '.wma', '.mid', '.midi',
+                    '.m4a', '.m4b', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
+                    '.tiff', '.ico', '.heic', '.mp4', '.avi', '.mkv', '.mov', '.wmv',
+                    '.flv', '.webm', '.m4v', '.f4v'}
+
+        # 后缀伪装：对于不支持的格式，伪装成.txt或.bin
+        if ext.lower() not in whitelist:
+            upload_name = f"{fname}.txt"  # 伪装成txt文件
+            mime = "text/plain"
+        else:
+            upload_name = fname
+            mime = mimetypes.guess_type(filepath)[0] or "application/octet-stream"
+
+        # 计算分片大小：确保不超过990个分片（Notion限制）
+        chunk_size = max(self.upload_config["min_chunk_size"], math.ceil(fsize / 990))
+        parts = max(1, math.ceil(fsize / chunk_size))
+
+        return fname, upload_name, mime, fsize, chunk_size, parts
+
+    def upload_file(self, filepath, progress_callback=None):
+        """
+        上传单个文件到Notion
+        支持分片上传、后缀伪装、三级异常防御
+        """
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"文件不存在: {filepath}")
+
+        # 获取上传策略
+        fname, up_name, mime, fsize, chunk_size, parts = self._get_upload_strategy(filepath)
+
+        logger.info(f"开始上传文件: {fname} ({fsize/1024/1024:.1f}MB), 分片数: {parts}")
+
+        session_uploaded = 0
+        start_time = time.time()
 
         while True:
-            resp = self.notion.data_sources.query(
-                data_source_id=data_source_id,
-                start_cursor=next_cursor,
-                page_size=page_size
-            )
-            all_items.extend(resp.get("results", []))
-            next_cursor = resp.get("next_cursor")
-            if not next_cursor:
-                break
-        return all_items
+            try:
+                # 1. 初始化上传会话
+                if progress_callback:
+                    progress_callback(fname, 0, fsize, "申请上传令牌...")
 
-    # --------------------
-    # 获取页面块（包括文件）
-    # --------------------
-    def get_page_blocks(self, page_id: str) -> list:
-        """获取页面子块列表"""
-        all_blocks = []
-        next_cursor = None
-
-        while True:
-            resp = self.notion.blocks.children.list(
-                block_id=page_id,
-                start_cursor=next_cursor,
-                page_size=100
-            )
-            all_blocks.extend(resp.get("results", []))
-            next_cursor = resp.get("next_cursor")
-            if not next_cursor:
-                break
-        return all_blocks
-
-    # --------------------
-    # 获取页面下的文件块
-    # --------------------
-    def get_page_files(self, page_id: str) -> list:
-        """
-        获取页面下所有文件块，返回格式:
-        [{"name": 文件名, "uploaded_time": 上传时间, "url": 链接}, ...]
-        """
-        blocks = self.get_page_blocks(page_id)
-        files_info = []
-        for b in blocks:
-            if b.get("type") == "file":
-                f = b["file"]
-                inner = f.get("file")
-                if inner:
-                    files_info.append({
-                        "name": inner.get("name") or f.get("name") or "",
-                        "uploaded_time": b.get("created_time", ""),
-                        "url": inner.get("url", "")
+                resp = self._api_request("POST", f"{self.base_url}/file_uploads",
+                    json={
+                        "filename": up_name,
+                        "content_type": mime,
+                        "mode": "multi_part",
+                        "number_of_parts": parts
                     })
-        return files_info
+                upload_data = resp.json()
+                upload_id = upload_data["id"]
 
-    # --------------------
-    # 获取页面下的所有内容块
-    # --------------------
-    def get_page_all_contents(self, page_id: str) -> list:
-        """获取页面下所有内容块"""
-        return self.get_page_blocks(page_id)
+                # 2. 分片上传循环
+                with open(filepath, "rb") as f:
+                    for part_num in range(1, parts + 1):
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
 
-# --------------------
-# 使用示例
-# --------------------
+                        # 分片重试循环
+                        for attempt in range(self.upload_config["max_chunk_retries"]):
+                            try:
+                                status = f"上传分片 {part_num}/{parts}"
+                                if attempt > 0:
+                                    status += f" (重试 {attempt})"
+
+                                if progress_callback:
+                                    progress_callback(fname, session_uploaded, fsize, status)
+
+                                # 上传分片
+                                self._api_request("POST", f"{self.base_url}/file_uploads/{upload_id}/send",
+                                    files={"file": (up_name, chunk, mime)},
+                                    data={"part_number": part_num})
+
+                                session_uploaded += len(chunk)
+                                break
+
+                            except BlockingIOError:
+                                raise  # 会话失效，重新开始
+                            except Exception as e:
+                                logger.warning(f"分片 {part_num} 上传失败 (尝试 {attempt+1}): {str(e)[:50]}")
+                                if attempt < self.upload_config["max_chunk_retries"] - 1:
+                                    # 指数退避：1s, 2s, 4s, 8s, 16s, 32s, 60s
+                                    delay = min(60, 2 ** attempt)
+                                    time.sleep(delay)
+                                else:
+                                    raise Exception(f"分片 {part_num} 重试失败")
+
+                # 3. 完成上传
+                if progress_callback:
+                    progress_callback(fname, session_uploaded, fsize, "云端合成中...")
+
+                self._api_request("POST", f"{self.base_url}/file_uploads/{upload_id}/complete", json={})
+
+                # 4. 挂载到页面
+                if progress_callback:
+                    progress_callback(fname, fsize, fsize, "挂载到页面...")
+
+                self._api_request("PATCH", f"{self.base_url}/blocks/{self.page_id}/children",
+                    json={
+                        "children": [{
+                            "object": "block",
+                            "type": "file",
+                            "file": {
+                                "type": "file_upload",
+                                "file_upload": {"id": upload_id},
+                                "caption": [{"type": "text", "text": {"content": fname}}]
+                            }
+                        }]
+                    })
+
+                elapsed = time.time() - start_time
+                speed = fsize / elapsed / 1024 / 1024 if elapsed > 0 else 0
+                logger.info(f"上传完成: {fname} ({fsize/1024/1024:.1f}MB, {speed:.1f}MB/s)")
+                return True
+
+            except BlockingIOError:
+                logger.warning(f"会话失效，重新开始上传: {fname}")
+                session_uploaded = 0
+                time.sleep(3)  # 会话重建延迟
+            except Exception as e:
+                logger.error(f"上传失败: {fname} - {str(e)}")
+                session_uploaded = 0
+                time.sleep(5)  # 链路重启延迟
+
+    def upload_files_batch(self, filepaths, progress_callback=None):
+        """批量上传文件"""
+        if not filepaths:
+            return []
+
+        results = []
+        for filepath in filepaths:
+            try:
+                success = self.upload_file(filepath, progress_callback)
+                results.append((filepath, success))
+            except Exception as e:
+                logger.error(f"上传失败: {filepath} - {e}")
+                results.append((filepath, False))
+
+        return results
+
+    async def download_file(self, file_info, save_path, progress_callback=None):
+        """
+        下载单个文件
+        file_info: (name, url, load_time)
+        """
+        name, url, _ = file_info
+
+        # 刷新下载链接（防止过期）
+        try:
+            fresh_url = await self._refresh_download_url(name, url)
+        except Exception as e:
+            logger.warning(f"无法刷新下载链接，使用原有链接: {e}")
+            fresh_url = url
+
+        save_file = os.path.join(save_path, name)
+        os.makedirs(save_path, exist_ok=True)
+
+        # 检查是否已存在断点续传文件
+        temp_file = f"{save_file}.downloading"
+        downloaded_size = 0
+        if os.path.exists(temp_file):
+            downloaded_size = os.path.getsize(temp_file)
+
+        headers = {}
+        if downloaded_size > 0:
+            headers['Range'] = f'bytes={downloaded_size}-'
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(fresh_url, headers=headers) as response:
+                    if response.status not in [200, 206]:
+                        raise Exception(f"HTTP {response.status}")
+
+                    total_size = int(response.headers.get('Content-Length', 0)) + downloaded_size
+
+                    with open(temp_file, 'ab' if downloaded_size > 0 else 'wb') as f:
+                        downloaded_in_session = 0
+                        async for chunk in response.content.iter_chunked(self.download_config["chunk_size"]):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded_in_session += len(chunk)
+                                current_size = downloaded_size + downloaded_in_session
+
+                                if progress_callback:
+                                    progress_callback(name, current_size, total_size,
+                                                    f"下载中... ({current_size/1024/1024:.1f}MB)")
+
+                    # 下载完成，重命名文件
+                    if os.path.exists(save_file):
+                        os.remove(save_file)
+                    os.rename(temp_file, save_file)
+
+                    # 恢复原始文件名（如果有伪装后缀）
+                    if save_file.endswith('.txt') and not name.endswith('.txt'):
+                        # 检查是否为伪装文件，需要进一步的逻辑来判断
+                        pass
+
+                    logger.info(f"下载完成: {name}")
+                    return True
+
+        except Exception as e:
+            logger.error(f"下载失败: {name} - {e}")
+            return False
+
+    async def _refresh_download_url(self, name, original_url):
+        """刷新下载链接"""
+        # 通过API重新获取文件块信息来刷新URL
+        # 这里需要根据文件名找到对应的block
+        try:
+            children = self._get_children(self.page_id)
+            for block in children:
+                if block.get("type") in ["file", "image", "video", "pdf", "audio"]:
+                    b_type = block.get("type")
+                    content = block.get(b_type, {})
+                    block_name = content.get("name", "")
+
+                    # 简单匹配文件名
+                    if block_name == name or name in block_name:
+                        if b_type == "file":
+                            return content["file"].get("url", original_url)
+                        elif b_type == "external":
+                            return content["external"].get("url", original_url)
+
+            return original_url
+        except Exception as e:
+            logger.warning(f"刷新下载链接失败: {e}")
+            return original_url
+
+    async def download_files_batch(self, file_indices, save_path, progress_callback=None):
+        """批量下载文件"""
+        files = self.file_list()
+        if not files:
+            return []
+
+        # 选择要下载的文件
+        selected_files = []
+        for idx in file_indices:
+            if 1 <= idx <= len(files):
+                selected_files.append(files[idx-1])
+
+        if not selected_files:
+            return []
+
+        results = []
+        for file_info in selected_files:
+            try:
+                success = await self.download_file(file_info, save_path, progress_callback)
+                results.append((file_info[0], success))
+            except Exception as e:
+                logger.error(f"下载失败: {file_info[0]} - {e}")
+                results.append((file_info[0], False))
+
+        return results
+
+class Aria2Downloader:
+    """Aria2高速下载器"""
+    def __init__(self):
+        self.aria2_path = self._find_aria2()
+
+    def _find_aria2(self):
+        """查找aria2c可执行文件"""
+        # 检查系统PATH
+        if shutil.which("aria2c"):
+            return "aria2c"
+
+        # 检查当前目录
+        if os.path.exists("aria2c.exe"):
+            return "aria2c.exe"
+
+        return None
+
+    def is_available(self):
+        """检查Aria2是否可用"""
+        return self.aria2_path is not None
+
+    def download_files(self, file_urls, save_path, progress_callback=None):
+        """
+        使用Aria2批量下载文件
+        file_urls: [(filename, url), ...]
+        """
+        if not self.is_available():
+            raise Exception("Aria2不可用")
+
+        os.makedirs(save_path, exist_ok=True)
+
+        # 创建Aria2下载列表文件
+        aria2_input = os.path.join(save_path, "aria2_input.txt")
+
+        try:
+            with open(aria2_input, 'w', encoding='utf-8') as f:
+                for filename, url in file_urls:
+                    f.write(f"{url}\n")
+                    f.write(f"  out={filename}\n")
+                    f.write(f"  dir={save_path}\n")
+                    f.write("\n")  # 空行分隔任务
+
+            # 验证文件是否创建成功
+            if not os.path.exists(aria2_input):
+                raise Exception(f"无法创建Aria2输入文件: {aria2_input}")
+
+            logger.info(f"Aria2输入文件已创建: {aria2_input}")
+
+            # 构建Aria2命令
+            cmd = [
+                self.aria2_path,
+                "--input-file=" + aria2_input,
+                "--max-concurrent-downloads=3",  # 降低并发数
+                "--split=3",
+                "--min-split-size=1M",
+                "--max-connection-per-server=3",
+                "--continue=true",
+                "--allow-overwrite=true",
+                "--quiet=false",
+                "--summary-interval=1",
+                "--log=" + os.path.join(save_path, "aria2.log"),  # 添加日志文件
+                "--log-level=info"
+            ]
+
+            logger.info(f"执行Aria2命令: {' '.join(cmd)}")
+
+            # 执行下载
+            process = subprocess.Popen(cmd, cwd=save_path)
+            process.wait()
+
+            if process.returncode == 0:
+                logger.info("Aria2下载完成")
+                return True
+            else:
+                # 读取日志文件获取更多信息
+                log_file = os.path.join(save_path, "aria2.log")
+                if os.path.exists(log_file):
+                    with open(log_file, 'r', encoding='utf-8') as f:
+                        log_content = f.read()
+                    logger.error(f"Aria2日志内容:\n{log_content}")
+
+                raise Exception(f"Aria2下载失败，返回码: {process.returncode}")
+
+        except Exception as e:
+            logger.error(f"Aria2下载异常: {e}")
+            raise
+        finally:
+            # 清理临时文件
+            try:
+                if os.path.exists(aria2_input):
+                    os.remove(aria2_input)
+                log_file = os.path.join(save_path, "aria2.log")
+                if os.path.exists(log_file):
+                    os.remove(log_file)
+            except:
+                pass
+
+class IDMExporter:
+    """IDM任务文件导出器"""
+    def __init__(self):
+        pass
+
+    def export_tasks(self, file_urls, save_path):
+        """
+        导出IDM .ef2任务文件
+        file_urls: [(filename, url), ...]
+        """
+        if not file_urls:
+            return None
+
+        os.makedirs(save_path, exist_ok=True)
+        ef2_file = os.path.join(save_path, "idm_tasks.ef2")
+
+        try:
+            with open(ef2_file, 'w', encoding='utf-8') as f:
+                f.write("<\n")  # IDM任务文件头
+
+                for filename, url in file_urls:
+                    save_file = os.path.join(save_path, filename)
+                    # IDM任务文件格式
+                    f.write(f"{url}\n")
+                    f.write(f"out={filename}\n")
+                    f.write(f"referer=\n")
+                    f.write(f"cookie=\n")
+                    f.write(f"postdata=\n")
+                    f.write(f"user=\n")
+                    f.write(f"password=\n")
+                    f.write(f"other=\n")
+                    f.write("<\n")  # 任务分隔符
+
+            logger.info(f"IDM任务文件已导出: {ef2_file}")
+            return ef2_file
+
+        except Exception as e:
+            logger.error(f"导出IDM任务文件失败: {e}")
+            return None
+
 if __name__ == "__main__":
+    load_dotenv()
     NOTION_TOKEN = os.getenv("NOTION_TOKEN")
-    DATA_SOURCE_ID = "2c9644ea-d11a-8061-9707-000be0590cf4"
-
-    nd = NotionData(NOTION_TOKEN)
-
-    # 查询数据源条目
-    items = nd.query_data_source(DATA_SOURCE_ID)
-    print(f"数据源条目数量: {len(items)}")
-    print(items)
-    # 如果有页面 id，获取文件块
-    if items:
-        first_page_id = items[0]["id"]
-        print(first_page_id)
-        files = nd.get_page_files(first_page_id)
-        print(f"页面文件块数量: {len(files)}")
-        print(files)
-        print("获取页面所有:")
-        print(nd.get_page_all_contents(first_page_id))
+    NOTION_VERSION = os.getenv("NOTION_VERSION")
+    NOTION_PAGE_ID = os.getenv("NOTION_PAGE_ID")
+    NOTION_URL= os.getenv("NOTION_URL","https://api.notion.com/v1")
+    notion_manager = NotionFileManager(NOTION_TOKEN, NOTION_VERSION, NOTION_PAGE_ID,NOTION_URL)
+    children = notion_manager._get_children(NOTION_PAGE_ID)
+    print(notion_manager.file_list())
