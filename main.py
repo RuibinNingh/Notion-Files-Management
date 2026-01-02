@@ -43,7 +43,7 @@ except ImportError as e:
 
 # --- 1. 全局配置 ---
 PROJECT_NAME = "Notion-Files-Management"
-VERSION = "0.0.1"
+VERSION = "1.1.0"
 
 # 初始化 Rich 控制台
 console = Console()
@@ -79,6 +79,113 @@ def print_banner():
     )
     console.print(panel)
     console.print("")
+
+def run_file_processing_flow():
+    """文件处理功能流程"""
+    console.print("[bold cyan]🛠️ 文件处理工具[/]")
+
+    # 1. 选择要处理的文件夹
+    folder_path = questionary.text("请输入要处理的文件夹路径:").ask()
+    if not folder_path or not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+        console.print("[red]文件夹不存在或路径无效[/]")
+        questionary.text("按回车键返回...").ask()
+        return
+
+    # 2. 扫描文件夹中的文件
+    all_files = []
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, folder_path)
+            all_files.append((full_path, rel_path))
+
+    if not all_files:
+        console.print("[yellow]该文件夹中没有文件[/]")
+        questionary.text("按回车键返回...").ask()
+        return
+
+    console.print(f"\n[green]发现 {len(all_files)} 个文件[/]")
+
+    # 3. 选择处理方式
+    process_type = questionary.select(
+        "请选择处理方式:",
+        choices=[
+            Choice(title="🗑️  一键去除 .txt 后缀", value="remove_txt"),
+            Choice(title="📝 查看文件列表", value="list_files"),
+            Choice(title="🔙 返回主菜单", value="back"),
+        ],
+        style=custom_style,
+        pointer="❯",
+        instruction="(使用方向键移动，回车键确认)"
+    ).ask()
+
+    if process_type == "back":
+        return
+
+    if process_type == "list_files":
+        # 显示文件列表
+        console.print("\n[bold]文件列表:[/]")
+        for i, (full_path, rel_path) in enumerate(all_files[:20], 1):  # 最多显示20个
+            console.print(f"{i:3d}. {rel_path}")
+        if len(all_files) > 20:
+            console.print(f"[dim]... 还有 {len(all_files) - 20} 个文件[/]")
+        questionary.text("按回车键返回...").ask()
+        return
+
+    if process_type == "remove_txt":
+        # 去除.txt后缀
+        txt_files = [f for f in all_files if f[1].endswith('.txt')]
+
+        if not txt_files:
+            console.print("[yellow]没有找到以 .txt 结尾的文件[/]")
+            questionary.text("按回车键返回...").ask()
+            return
+
+        console.print(f"[green]找到 {len(txt_files)} 个 .txt 文件[/]")
+
+        # 确认操作
+        confirm = questionary.confirm(f"确定要去除这 {len(txt_files)} 个文件的 .txt 后缀吗？").ask()
+
+        if not confirm:
+            console.print("[yellow]操作已取消[/]")
+            questionary.text("按回车键返回...").ask()
+            return
+
+        # 执行重命名
+        success_count = 0
+        error_count = 0
+
+        console.print("[dim]正在处理文件...[/]")
+
+        for full_path, rel_path in txt_files:
+            try:
+                # 去除.txt后缀
+                if rel_path.endswith('.txt'):
+                    new_rel_path = rel_path[:-4]  # 去除最后的.txt
+                    new_full_path = os.path.join(folder_path, new_rel_path)
+
+                    # 如果目标文件已存在，跳过
+                    if os.path.exists(new_full_path):
+                        console.print(f"[yellow]跳过: {rel_path} (目标文件已存在)[/]")
+                        error_count += 1
+                        continue
+
+                    # 重命名文件
+                    os.rename(full_path, new_full_path)
+                    console.print(f"[green]✓[/] {rel_path} → {new_rel_path}")
+                    success_count += 1
+
+            except Exception as e:
+                console.print(f"[red]✗ {rel_path}: {e}[/]")
+                error_count += 1
+
+        # 显示结果
+        console.print(f"\n[bold green]处理完成！[/]")
+        console.print(f"成功: {success_count} 个文件")
+        if error_count > 0:
+            console.print(f"失败: {error_count} 个文件")
+
+        questionary.text("按回车键返回...").ask()
 
 def check_version_update():
     """检查版本更新"""
@@ -1055,6 +1162,7 @@ def main():
                 choices=[
                     Choice(title="📥  下载文件 (Download)", value="download"),
                     Choice(title="📤  上传文件 (Upload)", value="upload"),
+                    Choice(title="🛠️  文件处理 (File Processing)", value="process"),
                     Choice(title="⚙️  设置与检测 (Settings)", value="settings"),
                     Choice(title="🔄  版本更新 (Version Update)", value="update"),
                     questionary.Separator(),
@@ -1071,6 +1179,10 @@ def main():
 
             elif action == "upload":
                 run_upload_flow()
+
+            elif action == "process":
+                run_file_processing_flow()
+                continue
 
             elif action == "update":
                 check_version_update()
