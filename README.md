@@ -1,11 +1,25 @@
-# 🚀 Notion-Files-Management
+<p align="center">
+  <img src="https://github.com/RuibinNingh/Notion-Files-Management/blob/main/icon.png?raw=true" alt="Notion-Files-Management Icon" width="200">
+</p>
 
-> **将 Notion 变身为你的无限容量私有云盘**
-> *Transform Notion into your unlimited private cloud storage*
+<h1 align="center">🚀 Notion-Files-Management</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-green.svg)](https://github.com/RuibinNingh/Notion-Files-Management)
+<p align="center">
+  <strong>将 Notion 变身为你的无限容量私有云盘</strong><br>
+  <em>Transform Notion into your unlimited private cloud storage</em>
+</p>
+
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+">
+  </a>
+  <a href="https://github.com/RuibinNingh/Notion-Files-Management">
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-green.svg" alt="Platform">
+  </a>
+</p>
 
 ---
 
@@ -81,78 +95,21 @@
 
 ### 📋 系统要求
 
-- **Python**: 3.8 或更高版本
 - **操作系统**: Windows 10+ / macOS 10.15+ / Ubuntu 18.04+
 - **网络**: 稳定的互联网连接
 - **磁盘空间**: 根据文件大小需求而定
 
 ### 🚀 快速开始
 
-#### 1. 克隆项目
-```bash
-git clone https://github.com/RuibinNingh/Notion-Files-Management.git
-cd Notion-Files-Management
-```
+如果你是Windows系统,直接在releases下载解压使用
 
-#### 2. 安装依赖
-```bash
-pip install -r requirements.txt
-```
+如果你是Linux或者MacOS,你可能需要下载整个项目然后自己配置好环境运行
 
-#### 3. 配置环境变量
+相关教程可以看https://www.ruibin-ningh.top/archives/Notion-Files-Management
 
-创建 `.env` 文件：
-```env
-# 必需配置
-NOTION_TOKEN=ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+## 📁 支持上传的文件类型
 
-# 可选配置
-NOTION_VERSION=2022-06-28
-NOTION_URL=https://api.notion.com/v1
-```
-
-#### 4. 获取 Notion Token
-
-1. 访问 [Notion Developers](https://developers.notion.com/)
-2. 创建新集成，复制 Token
-3. 在目标页面分享给集成
-
-#### 5. 运行程序
-```bash
-python main.py
-```
-
-### 🎮 使用指南
-
-#### 主界面
-```
-🚀 Notion Industrial Sync
-
-📥  下载文件 (Download)
-📤  上传文件 (Upload)
-⚙️  设置与检测 (Settings)
-🚪  退出程序 (Exit)
-```
-
-#### 下载流程
-1. 选择 **下载文件**
-2. 输入 Notion 页面 ID
-3. 选择下载引擎 (Python/Aria2)
-4. 选择下载目录
-5. 选择下载模式 (全部/选择)
-6. 开始下载并监控进度
-
-#### 上传流程
-1. 选择 **上传文件**
-2. 输入 Notion 页面 ID
-3. 选择上传类型 (单文件/文件夹)
-4. 选择并发线程数 (1-5)
-5. 确认上传列表
-6. 开始上传并监控进度
-
----
-
-## 📁 支持的文件类型
+这受限于Notion的政策
 
 ### 🎵 音频文件
 `aac`, `adts`, `mid`, `midi`, `mp3`, `mpga`, `m4a`, `m4b`, `oga`, `ogg`, `wav`, `wma`
@@ -192,9 +149,11 @@ sudo apt install aria2    # Ubuntu
 brew install aria2        # macOS
 ```
 
-### 代理配置
+### 使用镜像站
 
-支持 HTTP/SOCKS5 代理：
+你可以搭建镜像站实现上传加速：
+
+(Nginx转发https://api.notion.com/v1即可实现)
 
 ```env
 # 在 .env 文件中添加
@@ -285,28 +244,11 @@ A: 确保 aria2c.exe 在项目目录中，或者系统已安装 aria2。
 
 ## 🤝 贡献指南
 
-欢迎提交 Issue 和 Pull Request！
+首先声明,制作团队是初中生,这是我们第一次项目实践
 
-### 开发环境设置
-```bash
-# 1. Fork 本项目
-# 2. 克隆到本地
-git clone https://github.com/your-username/Notion-Files-Management.git
+其中使用了AI生成技术
 
-# 3. 安装开发依赖
-pip install -r requirements-dev.txt
-
-# 4. 运行测试
-python -m pytest
-```
-
-### 代码规范
-- 使用 Black 格式化代码
-- 添加类型提示
-- 编写详细的文档字符串
-- 提交前运行测试
-
----
+如果你发现了问题可以提issues,但我们大概率没有时间处理
 
 ## 🙏 致谢
 
@@ -319,12 +261,8 @@ python -m pytest
 
 ---
 
-## 📞 联系我们
-
-- **项目主页**: [GitHub](https://github.com/RuibinNingh/Notion-Files-Management)
-- **问题反馈**: [Issues](https://github.com/RuibinNingh/Notion-Files-Management/issues)
-- **功能请求**: [Discussions](https://github.com/RuibinNingh/Notion-Files-Management/discussions)
-
----
-
 **⭐ 如果这个项目对你有帮助，请给我们一个 Star！**
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=RuibinNingh/Notion-Files-Management&type=date&legend=top-left)](https://www.star-history.com/#RuibinNingh/Notion-Files-Management&type=date&legend=top-left)

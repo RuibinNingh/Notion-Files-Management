@@ -1,2 +1,4 @@
 .env
 实验性工具/
+dist/
+build/

@@ -1,6 +1,5 @@
 import sys
 import os
-import asyncio
 import platform
 import shutil
 import questionary
@@ -13,49 +12,24 @@ from questionary import Choice, Style
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich.markdown import Markdown
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
 from dotenv import load_dotenv
 
-# 设置中文环境变量，让questionary显示中文提示
+# 设置中文环境变量
 os.environ.setdefault('LANG', 'zh_CN.UTF-8')
 os.environ.setdefault('LC_ALL', 'zh_CN.UTF-8')
 
-# 自定义questionary的中文提示
+# 简化中文locale设置
 try:
-    # 尝试设置中文locale
     import locale
-    try:
-        locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
-    except:
-        try:
-            locale.setlocale(locale.LC_ALL, 'Chinese_China.936')
-        except:
-            pass
+    locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
+except:
+    pass
 
-    # 设置questionary的中文提示文本
-    import questionary.prompts.common
-    if hasattr(questionary.prompts.common, 'INSTRUCTION'):
-        questionary.prompts.common.INSTRUCTION = "(使用方向键移动，空格键选择，a键全选，i键反选)"
-
-    # 或者尝试直接修改默认提示
-    try:
-        original_select = questionary.prompts.common.build_instruction
-        def chinese_instruction(question, **kwargs):
-            result = original_select(question, **kwargs)
-            # 替换英文提示为中文
-            if isinstance(result, str):
-                result = result.replace(
-                    "(Use arrow keys to move, <space> to select, <a> to toggle, <i> to invert)",
-                    "(使用方向键移动，空格键选择，a键全选，i键反选)"
-                )
-            return result
-        questionary.prompts.common.build_instruction = chinese_instruction
-    except:
-        pass
-
-except Exception as e:
-    # 如果设置失败，静默跳过
+# 设置questionary中文提示
+try:
+    questionary.prompts.common.INSTRUCTION = "(使用方向键移动，空格键选择，a键全选，i键反选)"
+except:
     pass
 
 # --- 导入核心功能模块 ---
@@ -63,29 +37,25 @@ try:
     from notion import NotionFileManager, IDMExporter
     from aria2 import Aria2LocalClient, Aria2RPCServer
 except ImportError as e:
-    console.print(f"[red]导入错误: {e}[/]")
-    console.print("[yellow]请确保 notion.py 和 aria2.py 文件存在并包含必要的类[/]")
+    print(f"导入错误: {e}")
+    print("请确保 notion.py 和 aria2.py 文件存在并包含必要的类")
     sys.exit(1)
 
 # --- 1. 全局配置 ---
 PROJECT_NAME = "Notion-Files-Management"
-REPO_URL = "github.com/RuibinNingh/Notion-Files-Management"
 VERSION = "0.0.1"
-AUTHORS = "Ruibin_Ningh & Zyx_2012"
 
 # 初始化 Rich 控制台
 console = Console()
 
-# --- 2. Vite 风格配色 (修复了下划线问题) ---
+# --- 2. 简洁配色 ---
 custom_style = Style([
-    ('qmark', 'fg:#646cff bold'),       # Vite 紫
+    ('qmark', 'fg:#646cff bold'),
     ('question', 'bold'),
-    ('answer', 'fg:#53d769 bold'),      # Vite 绿
-    ('pointer', 'fg:#646cff bold'),     # 指针
-    ('highlighted', 'fg:#646cff bold'), # 选中项
-    ('selected', 'fg:#cc5454'),         # 已选
-    ('separator', 'fg:#8a8a8a'),        # 分割线
-    ('instruction', 'fg:#8a8a8a italic')
+    ('answer', 'fg:#53d769 bold'),
+    ('pointer', 'fg:#646cff bold'),
+    ('selected', 'fg:#cc5454'),
+    ('instruction', 'fg:#8a8a8a')
 ])
 
 # --- 3. 辅助工具函数 ---
@@ -94,31 +64,82 @@ def print_banner():
     """打印漂亮的 Banner"""
     console.clear()
     title_text = Text(PROJECT_NAME, style="bold #646cff")
-    
+
     info_text = Text()
-    info_text.append(f"\n🔗 {REPO_URL}\n", style="dim cyan")
-    info_text.append(f"👥 Developers: {AUTHORS}\n", style="white")
+    info_text.append("🔗 github.com/RuibinNingh/Notion-Files-Management\n", style="dim cyan")
+    info_text.append("👥 Developers: Ruibin_Ningh & Zyx_2012\n", style="white")
     info_text.append(f"📦 Version: {VERSION}", style="green")
 
     panel = Panel(
         info_text,
         title=title_text,
         border_style="#646cff",
-        width=60,
+        width=55,
         expand=False
     )
     console.print(panel)
     console.print("")
 
+def check_version_update():
+    """检查版本更新"""
+    try:
+        console.print("[dim]正在检查版本更新...[/]")
+
+        # 调用GitHub API获取最新release信息
+        response = requests.get(
+            "https://api.github.com/repos/RuibinNingh/Notion-Files-Management/releases/latest",
+            timeout=10
+        )
+        response.raise_for_status()
+
+        release_data = response.json()
+        latest_version = release_data.get("tag_name", "").lstrip("v")  # 移除开头的'v'
+        release_url = release_data.get("html_url", "")
+        release_body = release_data.get("body", "").replace("\r\n", "\n")
+
+        # 比较版本号
+        from packaging import version
+
+        try:
+            current_ver = version.parse(VERSION)
+            latest_ver = version.parse(latest_version)
+
+            if latest_ver > current_ver:
+                console.print(f"[green]发现新版本![/]")
+                console.print(f"[bold]当前版本:[/] {VERSION}")
+                console.print(f"[bold]最新版本:[/] {latest_version}")
+                console.print(f"[dim]发布地址: {release_url}[/]")
+
+                if release_body.strip():
+                    console.print(f"\n[bold]更新内容:[/]")
+                    console.print(f"[dim]{release_body}[/]")
+
+                console.print(f"\n[yellow]提示: 请访问上述地址下载最新版本[/]")
+            else:
+                console.print(f"[green]当前已是最新版本 ({VERSION})[/]")
+
+        except version.InvalidVersion:
+            console.print(f"[yellow]版本号格式异常，当前版本: {VERSION}[/]")
+            console.print(f"[dim]最新版本信息: {latest_version}[/]")
+            console.print(f"[dim]发布地址: {release_url}[/]")
+
+    except requests.RequestException as e:
+        console.print(f"[red]检查更新失败: 网络连接错误 ({e})[/]")
+    except Exception as e:
+        console.print(f"[red]检查更新失败: {e}[/]")
+
+    questionary.text("按回车键返回...").ask()
+
 def check_env_vars():
     """检查 .env 配置"""
     load_dotenv()
     token = os.getenv("NOTION_TOKEN")
+    version = os.getenv("NOTION_VERSION", "2022-06-28")  # 默认版本
 
     if not token:
-        console.print(Panel("[bold red]❌ 错误: 未检测到环境变量！[/]\n\n请在目录下创建 .env 文件并填入:\nNOTION_TOKEN=...", border_style="red"))
+        console.print(Panel("[bold red]❌ 错误: 未检测到环境变量！[/]\n\n请在目录下创建 .env 文件并填入:\nNOTION_TOKEN=...\nNOTION_VERSION=2022-06-28", border_style="red"))
         sys.exit(1)
-    return token
+    return token, version
 
 def get_page_id_from_user():
     """从用户获取页面ID"""
@@ -138,9 +159,9 @@ def get_page_id_from_user():
 
 def connect_and_scan(console, max_retries=3):
     """连接Notion API并扫描文件（用于设置菜单）"""
-    token = check_env_vars()
+    token, version = check_env_vars()
     page_id = get_page_id_from_user()
-    return get_download_files(token, page_id, max_retries)
+    return get_download_files(token, version, page_id, max_retries)
 
 def get_aria2_status():
     """检测 Aria2 是否可用 (跨平台)"""
@@ -163,9 +184,9 @@ def windows_install_aria2():
 
 # --- 4. 业务逻辑流程 ---
 
-def get_download_files(token, page_id, max_retries=3):
+def get_download_files(token, version, page_id, max_retries=3):
     """获取可下载文件列表，带重试机制"""
-    downloader = NotionFileManager(token, "2022-06-28")#使用较稳定版本2022-06-28
+    downloader = NotionFileManager(token, version)
     downloader.set_page(page_id)
 
     for attempt in range(max_retries):
@@ -205,13 +226,13 @@ def get_download_files(token, page_id, max_retries=3):
 
 def run_download_flow():
     """下载功能的完整流程"""
-    token = check_env_vars()
+    token, version = check_env_vars()
 
     # 1. 选择页面
     page_id = get_page_id_from_user()
 
     # 2. 获取文件列表
-    files, count, downloader = get_download_files(token, page_id)
+    files, count, downloader = get_download_files(token, version, page_id)
 
     if count == 0:
         console.print("[yellow]⚠ 当前页面未发现可下载文件。[/]")
@@ -596,7 +617,7 @@ def run_download_flow():
 
 def run_upload_flow():
     """上传功能流程"""
-    token = check_env_vars()
+    token, version = check_env_vars()
 
     # 1. 选择页面
     page_id = get_page_id_from_user()
@@ -716,7 +737,7 @@ def run_upload_flow():
 
     # 5. 初始化上传器
     console.print("[dim]➜ 正在连接 Notion API...[/]")
-    uploader = NotionFileManager(token, "2022-06-28")
+    uploader = NotionFileManager(token, version)
     uploader.set_page(page_id)
 
     # 5. 显示上传进度 - 总进度条 + 各文件进度条
@@ -1035,6 +1056,7 @@ def main():
                     Choice(title="📥  下载文件 (Download)", value="download"),
                     Choice(title="📤  上传文件 (Upload)", value="upload"),
                     Choice(title="⚙️  设置与检测 (Settings)", value="settings"),
+                    Choice(title="🔄  版本更新 (Version Update)", value="update"),
                     questionary.Separator(),
                     Choice(title="🚪  退出程序 (Exit)", value="exit"),
                 ],
@@ -1049,6 +1071,10 @@ def main():
 
             elif action == "upload":
                 run_upload_flow()
+
+            elif action == "update":
+                check_version_update()
+                continue
 
             elif action == "settings":
                 # 连接Notion API获取downloader实例（如果还没有的话）

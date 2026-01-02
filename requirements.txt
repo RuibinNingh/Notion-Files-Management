@@ -1,9 +1,15 @@
+# Core dependencies
 requests>=2.28.0
-python-dotenv>=0.19.0
-asyncio
-aiohttp>=3.8.0
-aiofiles>=0.8.0
-rich>=12.0.0
-questionary>=1.10.0
-notion-client>=2.0.0
-urllib3>=1.26.0
+python-dotenv>=1.0.0
+rich>=13.0.0
+questionary>=2.0.0
+
+# Async operations
+aiohttp>=3.9.0
+aiofiles>=23.0.0
+
+# Version management
+packaging>=23.0
+
+# HTTP and networking
+urllib3>=2.0.0
