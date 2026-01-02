@@ -87,14 +87,22 @@ class NotionFileManager:
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.token}",
-            "Notion-Version": self.version,
-            "User-Agent": "Notion-Files-Management/2.0"
+            "Notion-Version": self.version
+            # 移除自定义User-Agent，让requests使用默认值
         })
-        retries = Retry(total=3, backoff_factor=1.0, status_forcelist=[500, 502, 503, 504])
-        self.session.mount('https://', HTTPAdapter(max_retries=retries))
+        # 启用基本的自动重试，但只重试连接错误
+        basic_retries = Retry(
+            total=2,  # 只重试2次
+            connect=2,  # 只重试连接错误
+            read=0,  # 不重试读取错误
+            status=0,  # 不重试HTTP状态错误
+            backoff_factor=0.5,
+            raise_on_status=False
+        )
+        self.session.mount('https://', HTTPAdapter(max_retries=basic_retries))
 
-        # 限流器 - 降低请求频率
-        self.rate_limiter = RateLimiter(1.5)  # 从2.8降低到1.5 req/s
+        # 非常保守的限流器 - 大幅降低请求频率到0.5 req/s
+        self.rate_limiter = RateLimiter(0.5)  # 每2秒最多1个请求
 
         # 下载相关配置
         self.download_config = {
@@ -109,10 +117,8 @@ class NotionFileManager:
             "force_refresh_threshold": 30 * 60,  # 30分钟后显示刷新提示
         }
 
-        # 文件链接缓存
-        self._file_cache = None
-        self._cache_timestamp = None
-        self._cache_expiry = None
+        # 多页面文件链接缓存: {page_id: {"data": [], "timestamp": float, "expiry": float}}
+        self._page_caches = {}
 
     def set_page(self, page_id: str):
         """设置当前操作的页面ID"""
@@ -122,36 +128,57 @@ class NotionFileManager:
             self.current_page_id = page_id
             logger.info(f"已切换到页面: {page_id}")
 
-    def _is_cache_expired(self) -> bool:
-        """检查缓存是否过期"""
-        if self._cache_timestamp is None:
+    def _is_cache_expired(self, page_id: str = None) -> bool:
+        """检查指定页面的缓存是否过期"""
+        if page_id is None:
+            page_id = self.current_page_id
+        if not page_id or page_id not in self._page_caches:
             return True
-        return time.time() - self._cache_timestamp > self.link_cache_config["cache_expiry_seconds"]
+        cache_info = self._page_caches[page_id]
+        return time.time() - cache_info["timestamp"] > self.link_cache_config["cache_expiry_seconds"]
 
-    def _should_warn_cache_old(self) -> bool:
-        """检查是否应该警告缓存即将过期"""
-        if self._cache_timestamp is None:
+    def _should_warn_cache_old(self, page_id: str = None) -> bool:
+        """检查是否应该警告指定页面的缓存即将过期"""
+        if page_id is None:
+            page_id = self.current_page_id
+        if not page_id or page_id not in self._page_caches:
             return False
-        return time.time() - self._cache_timestamp > self.link_cache_config["force_refresh_threshold"]
+        cache_info = self._page_caches[page_id]
+        return time.time() - cache_info["timestamp"] > self.link_cache_config["force_refresh_threshold"]
 
-    def _get_cache_age(self) -> float:
-        """获取缓存年龄（秒）"""
-        if self._cache_timestamp is None:
+    def _get_cache_age(self, page_id: str = None) -> float:
+        """获取指定页面的缓存年龄（秒）"""
+        if page_id is None:
+            page_id = self.current_page_id
+        if not page_id or page_id not in self._page_caches:
             return float('inf')
-        return time.time() - self._cache_timestamp
+        cache_info = self._page_caches[page_id]
+        return time.time() - cache_info["timestamp"]
 
-    def _update_cache(self, file_list: list):
-        """更新缓存"""
-        self._file_cache = file_list
-        self._cache_timestamp = time.time()
-        self._cache_expiry = self._cache_timestamp + self.link_cache_config["cache_expiry_seconds"]
+    def _update_cache(self, file_list: list, page_id: str = None):
+        """更新指定页面的缓存"""
+        if page_id is None:
+            page_id = self.current_page_id
+        if not page_id:
+            return
 
-    def clear_cache(self):
-        """清除缓存"""
-        self._file_cache = None
-        self._cache_timestamp = None
-        self._cache_expiry = None
-        logger.info("文件链接缓存已清除")
+        current_time = time.time()
+        self._page_caches[page_id] = {
+            "data": file_list,
+            "timestamp": current_time,
+            "expiry": current_time + self.link_cache_config["cache_expiry_seconds"]
+        }
+        logger.info(f"页面 {page_id} 的文件链接缓存已更新，共 {len(file_list)} 个文件")
+
+    def clear_cache(self, page_id: str = None):
+        """清除指定页面的缓存"""
+        if page_id is None:
+            # 清除所有页面的缓存
+            self._page_caches.clear()
+            logger.info("所有页面的文件链接缓存已清除")
+        elif page_id in self._page_caches:
+            del self._page_caches[page_id]
+            logger.info(f"页面 {page_id} 的文件链接缓存已清除")
 
     def _get_children(self, block_id, max_retries=3):
         """
@@ -168,11 +195,14 @@ class NotionFileManager:
 
                 while True:
                     url = f"{self.base_url}/blocks/{block_id}/children"
-                    params = {"page_size": 100}
+                    params = {"page_size": 25}  # 进一步减少到25，避免大数据请求
                     if cursor:
                         params["start_cursor"] = cursor
 
-                    # 使用配置好的session进行请求
+                    # 添加小的请求间隔，避免过于频繁的请求
+                    if attempt > 0 or cursor:  # 不是第一次请求时添加间隔
+                        time.sleep(0.5)
+
                     response = self.session.get(url, params=params, timeout=30)
                     response.raise_for_status()
 
@@ -191,9 +221,9 @@ class NotionFileManager:
                 return children
 
             except requests.exceptions.ConnectionError as e:
-                logger.warning(f"网络连接错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+                logger.warning(f"网络连接错误 (尝试 {attempt + 1}/{max_retries}): {str(e)[:100]}...")
                 if attempt < max_retries - 1:
-                    wait_time = 3 ** attempt  # 更长的等待时间: 1s, 3s, 9s
+                    wait_time = min(30, 2 ** (attempt + 1))  # 指数退避: 2s, 4s, 8s, 16s, 30s
                     logger.info(f"等待 {wait_time} 秒后重试...")
                     time.sleep(wait_time)
                 else:
@@ -278,7 +308,6 @@ class NotionFileManager:
 
             # 更新缓存
             self._update_cache(result_list)
-            logger.info(f"文件链接缓存已更新，共 {len(result_list)} 个文件")
             return result_list
 
         else:
@@ -286,7 +315,8 @@ class NotionFileManager:
             cache_age = self._get_cache_age()
             if self._should_warn_cache_old():
                 logger.warning(".0f" % (cache_age / 60))
-            return self._file_cache.copy() if self._file_cache else []
+            cache_info = self._page_caches.get(self.current_page_id, {})
+            return cache_info.get("data", []).copy()
 
     def _api_request(self, method, url, max_retries=3, **kwargs):
         """统一的API请求方法，包含限流和错误处理"""
@@ -370,12 +400,22 @@ class NotionFileManager:
         fname = os.path.basename(filepath)
         name, ext = os.path.splitext(fname)
 
-        # 白名单：这些扩展名可以直接上传
-        whitelist = {'.pdf', '.txt', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-                    '.json', '.aac', '.mp3', '.wav', '.ogg', '.wma', '.mid', '.midi',
-                    '.m4a', '.m4b', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
-                    '.tiff', '.ico', '.heic', '.mp4', '.avi', '.mkv', '.mov', '.wmv',
-                    '.flv', '.webm', '.m4v', '.f4v'}
+        # 白名单：这些扩展名可以直接上传，不需要伪装
+        whitelist = {
+            # 音频格式
+            '.aac', '.adts', '.mid', '.midi', '.mp3', '.mpga', '.m4a', '.m4b',
+            '.oga', '.ogg', '.wav', '.wma',
+            # 视频格式
+            '.amv', '.asf', '.wmv', '.avi', '.f4v', '.flv', '.gifv', '.m4v',
+            '.mp4', '.mkv', '.webm', '.mov', '.qt', '.mpeg',
+            # 图片格式
+            '.gif', '.heic', '.jpeg', '.jpg', '.png', '.svg', '.tif', '.tiff',
+            '.webp', '.ico',
+            # 文档格式
+            '.pdf', '.txt', '.json', '.doc', '.dot', '.docx', '.dotx',
+            '.xls', '.xlt', '.xla', '.xlsx', '.xltx',
+            '.ppt', '.pot', '.pps', '.ppa', '.pptx', '.potx'
+        }
 
         # 后缀伪装：对于不支持的格式，伪装成.txt或.bin
         if ext.lower() not in whitelist:
@@ -469,7 +509,7 @@ class NotionFileManager:
                 if progress_callback:
                     progress_callback(fname, fsize, fsize, "挂载到页面...")
 
-                self._api_request("PATCH", f"{self.base_url}/blocks/{self.page_id}/children",
+                self._api_request("PATCH", f"{self.base_url}/blocks/{self.current_page_id}/children",
                     json={
                         "children": [{
                             "object": "block",
@@ -481,6 +521,10 @@ class NotionFileManager:
                             }
                         }]
                     })
+
+                # 挂载完成后发送完成状态
+                if progress_callback:
+                    progress_callback(fname, fsize, fsize, "上传完成")
 
                 elapsed = time.time() - start_time
                 speed = fsize / elapsed / 1024 / 1024 if elapsed > 0 else 0
@@ -581,7 +625,7 @@ class NotionFileManager:
         # 通过API重新获取文件块信息来刷新URL
         # 这里需要根据文件名找到对应的block
         try:
-            children = self._get_children(self.page_id)
+            children = self._get_children(self.current_page_id)
             for block in children:
                 if block.get("type") in ["file", "image", "video", "pdf", "audio"]:
                     b_type = block.get("type")
@@ -741,27 +785,49 @@ class IDMExporter:
 
         try:
             with open(ef2_file, 'w', encoding='utf-8') as f:
-                f.write("<\n")  # IDM任务文件头
-
                 for filename, url in file_urls:
-                    save_file = os.path.join(save_path, filename)
-                    # IDM任务文件格式
-                    f.write(f"{url}\n")
-                    f.write(f"out={filename}\n")
-                    f.write(f"referer=\n")
-                    f.write(f"cookie=\n")
-                    f.write(f"postdata=\n")
-                    f.write(f"user=\n")
-                    f.write(f"password=\n")
-                    f.write(f"other=\n")
-                    f.write("<\n")  # 任务分隔符
+                    # 智能提取referer
+                    referer = self._extract_referer(url)
 
-            logger.info(f"IDM任务文件已导出: {ef2_file}")
+                    # IDM任务文件格式（参考GitHub release下载格式）
+                    f.write("<\n")
+                    f.write(f"{url}\n")
+                    f.write(f"referer: {referer}\n")
+                    f.write("User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0\n")
+                    f.write(">\n")
+
+            logger.info(f"IDM任务文件已导出: {ef2_file} ({len(file_urls)} 个任务)")
             return ef2_file
 
         except Exception as e:
             logger.error(f"导出IDM任务文件失败: {e}")
             return None
+
+    def _extract_referer(self, url):
+        """
+        从URL智能提取referer
+        """
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+
+            # GitHub release assets
+            if "github-production-release-asset" in url:
+                return "https://github.com"
+
+            # GitHubusercontent
+            if "githubusercontent.com" in url:
+                return "https://github.com"
+
+            # 其他域名直接使用协议+域名
+            if parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}"
+
+            return ""
+
+        except Exception:
+            return ""
 
 if __name__ == "__main__":
     load_dotenv()

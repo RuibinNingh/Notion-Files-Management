@@ -7,6 +7,8 @@ import questionary
 import requests
 import logging
 import time
+import collections
+from datetime import datetime
 from questionary import Choice, Style
 from rich.console import Console
 from rich.panel import Panel
@@ -15,9 +17,50 @@ from rich.markdown import Markdown
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
 from dotenv import load_dotenv
 
+# 设置中文环境变量，让questionary显示中文提示
+os.environ.setdefault('LANG', 'zh_CN.UTF-8')
+os.environ.setdefault('LC_ALL', 'zh_CN.UTF-8')
+
+# 自定义questionary的中文提示
+try:
+    # 尝试设置中文locale
+    import locale
+    try:
+        locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
+    except:
+        try:
+            locale.setlocale(locale.LC_ALL, 'Chinese_China.936')
+        except:
+            pass
+
+    # 设置questionary的中文提示文本
+    import questionary.prompts.common
+    if hasattr(questionary.prompts.common, 'INSTRUCTION'):
+        questionary.prompts.common.INSTRUCTION = "(使用方向键移动，空格键选择，a键全选，i键反选)"
+
+    # 或者尝试直接修改默认提示
+    try:
+        original_select = questionary.prompts.common.build_instruction
+        def chinese_instruction(question, **kwargs):
+            result = original_select(question, **kwargs)
+            # 替换英文提示为中文
+            if isinstance(result, str):
+                result = result.replace(
+                    "(Use arrow keys to move, <space> to select, <a> to toggle, <i> to invert)",
+                    "(使用方向键移动，空格键选择，a键全选，i键反选)"
+                )
+            return result
+        questionary.prompts.common.build_instruction = chinese_instruction
+    except:
+        pass
+
+except Exception as e:
+    # 如果设置失败，静默跳过
+    pass
+
 # --- 导入核心功能模块 ---
 try:
-    from notion import NotionFileManager, Aria2Downloader, IDMExporter
+    from notion import NotionFileManager, IDMExporter
     from aria2 import Aria2LocalClient, Aria2RPCServer
 except ImportError as e:
     console.print(f"[red]导入错误: {e}[/]")
@@ -27,7 +70,7 @@ except ImportError as e:
 # --- 1. 全局配置 ---
 PROJECT_NAME = "Notion-Files-Management"
 REPO_URL = "github.com/RuibinNingh/Notion-Files-Management"
-VERSION = "2.0.0 (Industrial)"
+VERSION = "0.0.1"
 AUTHORS = "Ruibin_Ningh & Zyx_2012"
 
 # 初始化 Rich 控制台
@@ -93,6 +136,12 @@ def get_page_id_from_user():
             console.print(f"[green]✅ 已选择页面: {page_id}[/]")
             return page_id
 
+def connect_and_scan(console, max_retries=3):
+    """连接Notion API并扫描文件（用于设置菜单）"""
+    token = check_env_vars()
+    page_id = get_page_id_from_user()
+    return get_download_files(token, page_id, max_retries)
+
 def get_aria2_status():
     """检测 Aria2 是否可用 (跨平台)"""
     # 1. 检测系统 PATH
@@ -116,16 +165,17 @@ def windows_install_aria2():
 
 def get_download_files(token, page_id, max_retries=3):
     """获取可下载文件列表，带重试机制"""
-    downloader = NotionFileManager(token, "2022-06-28", page_id)
+    downloader = NotionFileManager(token, "2022-06-28")#使用较稳定版本2022-06-28
+    downloader.set_page(page_id)
 
     for attempt in range(max_retries):
         try:
             console.print(f"[dim]➜ 正在连接 Notion API... (尝试 {attempt + 1}/{max_retries})[/]")
 
-            # 获取列表 (带加载动画)
-            with console.status("[bold #646cff]正在扫描 Block 节点...", spinner="dots"):
-                files = downloader.file_list()
-                count = len(files)
+            # 获取列表
+            console.print("[dim]⠸ 正在扫描 Block 节点...[/]")
+            files = downloader.file_list()
+            count = len(files)
 
             if count > 0:
                 console.print(f"[green]✅ 连接成功，发现 {count} 个文件[/]")
@@ -155,9 +205,12 @@ def get_download_files(token, page_id, max_retries=3):
 
 def run_download_flow():
     """下载功能的完整流程"""
-    token, page_id = check_env_vars()
+    token = check_env_vars()
 
-    # 1. 获取文件列表
+    # 1. 选择页面
+    page_id = get_page_id_from_user()
+
+    # 2. 获取文件列表
     files, count, downloader = get_download_files(token, page_id)
 
     if count == 0:
@@ -180,7 +233,6 @@ def run_download_flow():
     ]
 
     if has_aria2:
-        choices.append(Choice(title="🚀  Aria2 子进程模式 (传统)", value="aria2"))
         choices.append(Choice(title="🌐  Aria2 RPC模式 + Web界面 (推荐)", value="aria2_rpc"))
     elif is_win:
         choices.append(Choice(title="📥  下载并使用 Aria2 (自动部署)", value="aria2_install"))
@@ -197,7 +249,8 @@ def run_download_flow():
         "请选择下载引擎 (Select Engine):",
         choices=choices,
         style=custom_style,
-        pointer="❯"
+        pointer="❯",
+        instruction="(使用方向键移动，回车键确认)"
     ).ask()
 
     if method == "back":
@@ -221,7 +274,8 @@ def run_download_flow():
                 Choice(title="📄 选择特定文件", value="select"),
                 Choice(title="🔙 取消", value="cancel")
             ],
-            style=custom_style
+            style=custom_style,
+            instruction="(使用方向键移动，回车键确认)"
         ).ask()
 
         if download_mode == "cancel":
@@ -239,7 +293,8 @@ def run_download_flow():
             file_selection = questionary.checkbox(
                 "选择要下载的文件:",
                 choices=choices,
-                style=custom_style
+                style=custom_style,
+                instruction="(使用方向键移动，空格键选择，a键全选，i键反选)"
             ).ask()
 
             if "cancel" in file_selection or not file_selection:
@@ -383,19 +438,6 @@ def run_download_flow():
         windows_install_aria2()
         console.print("[green]➜ Aria2 已安装，请重新选择以启动。[/]")
 
-    elif method == "aria2":
-        console.print("[cyan]➜ 正在调用 Aria2 子进程...[/]")
-        if selected_indices:
-            selected_files = [files[i-1] for i in selected_indices]
-            file_urls = [(name, url) for name, url, _ in selected_files]
-
-            aria2_downloader = Aria2Downloader()
-            try:
-                aria2_downloader.download_files(file_urls, download_dir)
-                console.print(f"[green]Aria2下载完成！[/]")
-            except Exception as e:
-                console.print(f"[red]Aria2下载失败: {e}[/]")
-
     elif method == "aria2_rpc":
         console.print("[cyan]🚀 启动 Aria2 RPC + Web界面模式[/]")
 
@@ -415,6 +457,7 @@ def run_download_flow():
                 Choice(title="5 个并发 (高速)", value=5),
                 Choice(title="10 个并发 (极高)", value=10),
             ],
+            instruction="(使用方向键移动，回车键确认)",
             default=3
         ).ask()
 
@@ -474,7 +517,8 @@ def run_download_flow():
                         Choice(title="🚀 批量添加 (立即添加所有任务)", value="batch"),
                         Choice(title="⏳ 队列添加 (逐步添加，避免链接过期)", value="queue"),
                     ],
-                    default="queue"  # 默认使用队列模式
+                    default="queue",  # 默认使用队列模式
+                    instruction="(使用方向键移动，回车键确认)"
                 ).ask()
 
                 selected_files = [files[i-1] for i in selected_indices]
@@ -552,7 +596,10 @@ def run_download_flow():
 
 def run_upload_flow():
     """上传功能流程"""
-    token, page_id = check_env_vars()
+    token = check_env_vars()
+
+    # 1. 选择页面
+    page_id = get_page_id_from_user()
 
     # 1. 选择上传文件或文件夹
     upload_type = questionary.select(
@@ -562,7 +609,8 @@ def run_upload_flow():
             Choice(title="📁 上传整个文件夹", value="folder"),
             Choice(title="🔙 返回主菜单", value="back")
         ],
-        style=custom_style
+        style=custom_style,
+        instruction="(使用方向键移动，回车键确认)"
     ).ask()
 
     if upload_type == "back":
@@ -612,50 +660,363 @@ def run_upload_flow():
         console.print("[yellow]上传已取消[/]")
         return
 
-    # 4. 初始化上传器
+    # 4. 选择并发线程数
+    console.print("\n[bold]⚙️  性能设置:[/]")
+    max_concurrent = questionary.select(
+        "选择并发上传线程数 (越高速度越快，但可能不稳定):",
+        choices=[
+            "1 (稳定模式，适合网络不稳定)",
+            "2 (平衡模式，推荐)",
+            "3 (高速模式，适合高速网络)",
+            "5 (极高速度，适合企业网络)"
+        ],
+        instruction="(使用方向键移动，回车键确认)"
+    ).ask()
+
+    # 解析选择的线程数
+    concurrent_threads = int(max_concurrent.split()[0])
+
+    console.print(f"[green]✓ 已选择 {concurrent_threads} 个并发线程[/]")
+
+    # 6. 执行并发上传
+    import concurrent.futures
+    import threading
+
+    # 创建线程锁用于保护共享变量
+    upload_lock = threading.Lock()
+
+    # 日志缓冲区
+    logs = collections.deque(maxlen=6)
+
+    def add_log(level, msg):
+        """添加日志记录"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        style = "green" if level == "INFO" else "yellow" if level == "WARN" else "bold red"
+        icon = "ℹ️" if level == "INFO" else "⚡" if level == "WARN" else "❌"
+
+        with upload_lock:
+            logs.append(f"[{style}][{timestamp}] {icon} {msg}[/]")
+
+        # 同时写入日志文件
+        try:
+            with open("upload.log", "a", encoding="utf-8") as f:
+                f.write(f"{timestamp} | {level} | {msg}\n")
+        except:
+            pass
+
+    # 清空之前的日志文件
+    try:
+        with open("upload.log", "w", encoding="utf-8") as f:
+            f.write(f"=== 上传会话开始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+    except:
+        pass
+
+    # 初始化日志
+    add_log("INFO", f"开始上传 {len(filepaths)} 个文件，使用 {concurrent_threads} 个并发线程")
+
+    # 5. 初始化上传器
     console.print("[dim]➜ 正在连接 Notion API...[/]")
-    uploader = NotionFileManager(token, "2022-06-28", page_id)
+    uploader = NotionFileManager(token, "2022-06-28")
+    uploader.set_page(page_id)
 
-    # 5. 显示上传进度
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeRemainingColumn(),
-        console=console
-    ) as progress:
-        task = progress.add_task("上传进度", total=len(filepaths))
+    # 5. 显示上传进度 - 总进度条 + 各文件进度条
+    total_files = len(filepaths)
+    uploaded_count = 0
+    success_count = 0
 
-        uploaded_count = 0
-        success_count = 0
+    # 创建超简洁的上传进度显示
+    import time
+    import threading
 
-        def progress_callback(filename, current, total, status):
-            if total > 0:
-                percentage = (current / total) * 100
-                progress.update(task, description=f"{filename} - {status}")
+    # 初始化文件状态
+    file_states = []
+    for i, filepath in enumerate(filepaths):
+        filename = os.path.basename(filepath)
+        file_size = os.path.getsize(filepath)
+        file_states.append({
+            'filename': filename[:15] + "..." if len(filename) > 15 else filename,
+            'size': file_size,
+            'uploaded': 0,
+            'status': '等待中',
+            'speed': 0.0,
+            'chunks': {'current': 0, 'total': 1}  # 分片信息
+        })
 
-        # 6. 执行上传
-        for filepath in filepaths:
-            filename = os.path.basename(filepath)
-            console.print(f"\n[cyan]正在上传: {filename}[/]")
+    # 日志缓冲区
+    logs = collections.deque(maxlen=6)
+
+    # 全局状态
+    total_completed = 0
+    total_uploaded = 0
+    start_time = time.time()
+
+    def create_progress_display():
+        """创建简洁的上传进度显示"""
+        # 兼容不同系统的屏幕清除
+        if platform.system() == "Windows":
+            os.system('cls')  # Windows
+        else:
+            print("\033[2J\033[H", end="")  # Unix/Linux
+
+        # 计算总体统计信息
+        total_files = len(filepaths)
+        total_size_gb = sum(os.path.getsize(fp) for fp in filepaths) / 1024 / 1024 / 1024
+        uploaded_size_gb = total_uploaded / 1024 / 1024 / 1024
+
+        elapsed = time.time() - start_time
+        overall_pct = (total_completed / total_files) * 100 if total_files > 0 else 0
+
+        # 计算总体速度
+        overall_speed = 0.0
+        if elapsed > 0 and total_uploaded > 0:
+            overall_speed = total_uploaded / elapsed / 1024 / 1024  # MB/s
+
+        # 计算预计剩余时间
+        eta_str = "--"
+        if overall_speed > 0 and total_size_gb > uploaded_size_gb:
+            remaining_gb = total_size_gb - uploaded_size_gb
+            eta_seconds = (remaining_gb / overall_speed) * 1024  # GB转MB
+            if eta_seconds < 3600:
+                eta_str = f"{int(eta_seconds//60)}m"
+            else:
+                eta_str = f"{int(eta_seconds//3600)}h{int((eta_seconds%3600)//60)}m"
+
+        # 创建总进度条 (20个字符)
+        filled = int(overall_pct / 5)  # 每个█代表5%
+        progress_bar = "█" * filled + "░" * (20 - filled)
+
+        # 第一行：总体进度信息
+        print(f"[{total_size_gb:.1f}GB 总量] 📂 {total_completed}/{total_files} ⚡ {overall_speed:.1f}MB/s ⏳ {eta_str} [{progress_bar}] {overall_pct:.1f}%")
+        print("──────────────────────────────────────────────────────────────────────")
+
+        # 显示所有文件的进度
+        display_files = file_states  # 显示全部文件
+
+        for i, state in enumerate(display_files, 1):
+            filename = state['filename']
+            file_size_gb = state['size'] / 1024 / 1024 / 1024
+            status = state['status']
+            chunks = state['chunks']
+            speed = state['speed']
+
+            # 根据状态选择图标（支持重试状态）
+            if status == '创建任务' or status.startswith('重试中'):
+                icon = "📝"
+                extra_info = f"(重试中)" if status.startswith('重试中') else "(等待中)"
+            elif status == '上传分片':
+                icon = "⬆️"
+                extra_info = ""
+            elif status == '重发分片':
+                icon = "⬆️"
+                extra_info = "(重发分片)"
+            elif status == '挂载中':
+                icon = "🔗"
+                extra_info = "(挂载中)"
+            elif status.startswith('重启会话'):
+                icon = "🔄"
+                retry_count = status.split('(')[1].split(')')[0] if '(' in status else ""
+                retry_count = f" R{retry_count}" if retry_count else ""
+                extra_info = f"(重启会话{retry_count})"
+            elif status == '已完成':
+                icon = "✅"
+                extra_info = ""
+            elif status == '失败':
+                icon = "❌"
+                extra_info = ""
+            else:  # 等待中
+                icon = "⏳"
+                extra_info = "(等待中)"
+
+            # 计算进度百分比
+            if state['size'] > 0:
+                file_pct = min(100, int((state['uploaded'] / state['size']) * 100))
+            else:
+                file_pct = 0
+
+            # 创建文件进度条 (10个字符，带半块)
+            filled_blocks = file_pct // 10  # 完整的█块
+            remainder = file_pct % 10  # 剩余百分比
+            if remainder >= 5:  # 如果剩余>=5%，显示半块▌
+                progress_bar = "█" * filled_blocks + "▌" + " " * (9 - filled_blocks)
+            else:
+                progress_bar = "█" * filled_blocks + " " * (10 - filled_blocks)
+
+            # 分片信息
+            chunk_info = f"🧩 {chunks['current']}/{chunks['total']}" if chunks['total'] > 0 else "🧩 0/0"
+
+            # 速度显示
+            if status in ['上传分片', '重发分片']:
+                speed_text = f"⚡ {speed:.1f}MB/s"
+            else:
+                speed_text = ""
+
+            # 文件信息行
+            filename_display = f"{i}_{filename}"
+            line = f"{icon}  {filename_display} [{file_size_gb:.1f}GB] {chunk_info} |{progress_bar}| {file_pct}%"
+            if speed_text:
+                line += f" {speed_text}"
+            if extra_info:
+                line += f" {extra_info}"
+            print(line)
+
+        # 显示全部文件，无需省略
+
+        # 显示日志
+        if logs:
+            print("\n📝 事件日志:")
+            with upload_lock:
+                for log_entry in logs:
+                    print(f"  {log_entry}")
+
+        print()
+
+    # 初始显示
+    create_progress_display()
+    time.sleep(0.5)  # 短暂延迟让用户看到初始状态
+
+    def upload_single_file(i, filepath):
+        """上传单个文件的函数"""
+        nonlocal success_count, total_completed, total_uploaded
+
+        filename = os.path.basename(filepath)
+        state = file_states[i]
+
+        # 文件级进度跟踪
+        last_uploaded = 0
+        last_time = time.time()
+
+        def file_progress_callback(f_name, current, total, status):
+            nonlocal last_uploaded, last_time
+
+            # 更新状态信息 - 匹配notion.py中的状态字符串
+            if "申请令牌" in status or "创建" in status:
+                state['status'] = '创建任务'
+            elif "上传分片" in status:
+                state['status'] = '上传分片'
+                # 解析分片信息，如 "上传分片 2/5"
+                import re
+                match = re.search(r'(\d+)/(\d+)', status)
+                if match:
+                    state['chunks']['current'] = int(match.group(1))
+                    state['chunks']['total'] = int(match.group(2))
+            elif "云端合成" in status:
+                state['status'] = '云端合成'
+            elif "挂载" in status:
+                state['status'] = '挂载中'
+            elif "上传完成" in status:
+                state['status'] = '已完成'
+            elif "会话" in status or "SessionInvalid" in str(status):
+                state['status'] = '会话重建'
+            else:
+                # 默认状态
+                state['status'] = '上传中'
+
+            if total > 0 and current > last_uploaded:
+                # 计算增量和速度
+                delta_bytes = current - last_uploaded
+                delta_time = time.time() - last_time
+
+                if delta_time > 0:
+                    state['speed'] = (delta_bytes / delta_time) / 1024 / 1024  # MB/s
+
+                # 更新状态
+                state['uploaded'] = current
+
+                # 线程安全地更新全局变量
+                with upload_lock:
+                    nonlocal total_uploaded
+                    total_uploaded += delta_bytes
+
+                # 更新最后的值
+                last_uploaded = current
+                last_time = time.time()
+
+                # 不再实时更新显示，避免闪烁
+
+        # 执行上传，带无限重试机制
+        attempt = 0
+        session_uploaded = 0  # 记录本次会话已上传的字节数
+
+        while True:
+            attempt += 1
 
             try:
-                success = uploader.upload_file(filepath, progress_callback)
-                if success:
-                    success_count += 1
-                    console.print(f"[green]✔ {filename} 上传成功[/]")
-                else:
-                    console.print(f"[red]✗ {filename} 上传失败[/]")
-            except Exception as e:
-                console.print(f"[red]✗ {filename} 上传异常: {str(e)[:50]}[/]")
+                success = uploader.upload_file(filepath, file_progress_callback)
 
-            uploaded_count += 1
-            progress.update(task, completed=uploaded_count)
+                if success:
+                    with upload_lock:
+                        success_count += 1
+                    state['status'] = '已完成'
+                    state['uploaded'] = state['size']  # 确保完成
+                    state['speed'] = 0.0
+                    add_log("INFO", f"完成: {filename}")
+                    break
+                else:
+                    # 上传失败 - 可能是分片问题，重发分片
+                    error_msg = f"上传失败，重发分片 (第{attempt}次重试)"
+                    add_log("WARN", f"{filename} {error_msg}")
+                    state['status'] = '重发分片'
+                    state['uploaded'] = session_uploaded  # 保持会话进度
+                    time.sleep(2)  # 短暂等待后重试
+
+            except BlockingIOError as e:
+                # 会话失效 - 需要重启整个会话
+                error_msg = f"会话失效，重启会话 (第{attempt}次重试)"
+                add_log("ERROR", f"{filename} {error_msg}")
+                state['status'] = f'重启会话({attempt})'
+                state['uploaded'] = 0  # 会话重启，进度清零
+                session_uploaded = 0   # 重置会话进度
+                time.sleep(5)  # 会话重启等待更长时间
+
+            except Exception as e:
+                # 其他错误 - 可能是网络或API问题，重发分片
+                error_msg = str(e)[:40] + "..." if len(str(e)) > 40 else str(e)
+                retry_msg = f"错误: {error_msg}，重发分片 (第{attempt}次重试)"
+                add_log("WARN", f"{filename} {retry_msg}")
+                state['status'] = '重发分片'
+                state['uploaded'] = session_uploaded  # 保持会话进度
+                time.sleep(3)  # 网络错误等待时间
+
+        # 更新完成计数
+        with upload_lock:
+            total_completed += 1
+
+        # 最终更新显示
+        with upload_lock:
+            create_progress_display()
+
+    # 使用线程池并发上传
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrent_threads) as executor:
+        # 提交所有上传任务
+        futures = []
+        for i, filepath in enumerate(filepaths):
+            # 初始状态更新
+            file_states[i]['status'] = '等待中'
+            create_progress_display()
+            future = executor.submit(upload_single_file, i, filepath)
+            futures.append(future)
+
+        # 等待所有任务完成，定期更新显示
+        while not all(f.done() for f in futures):
+            with upload_lock:
+                create_progress_display()
+            time.sleep(1.5)  # 每1.5秒更新一次显示，减少闪烁
+
+    # 完成所有上传，显示最终结果
+    print(f"\033[{len(file_states) + 3}B", end="")  # 向下移动到最后
+    print("\n" + "="*50)
+    total_time = time.time() - start_time
+    if total_time > 0 and total_uploaded > 0:
+        avg_speed = total_uploaded / total_time / 1024 / 1024
+        print(f"✅ 上传完成！成功: {success_count}/{len(filepaths)} | 平均速度: {avg_speed:.1f} MB/s")
+    else:
+        print(f"✅ 上传完成！成功: {success_count}/{len(filepaths)}")
 
     # 7. 显示结果
     console.print(f"\n[bold green]上传完成！成功: {success_count}/{len(filepaths)}[/]")
+
+    # 8. 等待用户确认返回
+    questionary.text("按回车键返回主菜单...").ask()
 
     if success_count < len(filepaths):
         console.print(f"[yellow]⚠ 有 {len(filepaths) - success_count} 个文件上传失败，请检查日志[/]")
@@ -679,7 +1040,8 @@ def main():
                 ],
                 style=custom_style,
                 pointer="❯",
-                use_indicator=True
+                use_indicator=True,
+                instruction="(使用方向键移动，回车键确认)"
             ).ask()
 
             if action == "download":
@@ -704,23 +1066,28 @@ def main():
 
                 # 显示缓存状态
                 console.print(f"\n[bold]文件链接缓存状态:[/]")
-                if downloader._file_cache is not None:
-                    cache_age = downloader._get_cache_age()
+                current_page = downloader.current_page_id
+                if current_page and current_page in downloader._page_caches:
+                    cache_info = downloader._page_caches[current_page]
+                    cache_age = downloader._get_cache_age(current_page)
                     cache_age_minutes = cache_age / 60
                     expiry_minutes = downloader.link_cache_config["cache_expiry_seconds"] / 60
 
-                    if downloader._is_cache_expired():
+                    if downloader._is_cache_expired(current_page):
                         cache_status = "[red]已过期[/]"
-                    elif downloader._should_warn_cache_old():
+                    elif downloader._should_warn_cache_old(current_page):
                         cache_status = "[yellow]即将过期[/]"
                     else:
                         cache_status = "[green]有效[/]"
 
-                    console.print(".1f" % (cache_age_minutes))
-                    console.print(f"缓存文件数量: {len(downloader._file_cache)}")
+                    console.print(f"当前页面: {current_page}")
+                    console.print(f"缓存状态: {cache_status}")
+                    console.print(f"缓存年龄: {cache_age_minutes:.1f} 分钟")
+                    console.print(f"缓存文件数量: {len(cache_info['data'])}")
                     console.print(f"缓存过期时间: {expiry_minutes:.0f} 分钟")
                 else:
-                    console.print("[red]缓存未初始化[/]")
+                    console.print("[red]当前页面无缓存[/]")
+                    console.print(f"缓存页面数量: {len(downloader._page_caches)}")
 
                 questionary.text("按回车键返回...").ask()
 
