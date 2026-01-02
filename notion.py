@@ -60,15 +60,15 @@ class RateLimiter:
                 self.tokens -= 1
 
 class NotionFileManager:
-    def __init__(self,token:str,version:str,page_id:str,base_url:str="https://api.notion.com/v1"):
+    def __init__(self,token:str,version:str,base_url:str="https://api.notion.com/v1"):
         """
         初始化NotionFileManager类的实例
         """
         load_dotenv()
         self.token = token
         self.version = version
-        self.page_id = page_id
         self.base_url = base_url
+        self.current_page_id = None  # 当前操作的页面ID
         self.headers = {
             "Authorization": f"Bearer {self.token}",
             "Notion-Version": self.version,
@@ -113,6 +113,14 @@ class NotionFileManager:
         self._file_cache = None
         self._cache_timestamp = None
         self._cache_expiry = None
+
+    def set_page(self, page_id: str):
+        """设置当前操作的页面ID"""
+        if self.current_page_id != page_id:
+            # 页面切换时清除缓存
+            self.clear_cache()
+            self.current_page_id = page_id
+            logger.info(f"已切换到页面: {page_id}")
 
     def _is_cache_expired(self) -> bool:
         """检查缓存是否过期"""
@@ -237,10 +245,13 @@ class NotionFileManager:
         Args:
             force_refresh: 是否强制刷新缓存
         """
+        if not self.current_page_id:
+            raise ValueError("请先设置页面ID (使用 set_page 方法)")
+
         # 检查是否需要刷新缓存
         if force_refresh or self._is_cache_expired():
-            logger.info("正在刷新文件链接缓存...")
-            blocks = self._get_children(self.page_id)
+            logger.info(f"正在刷新页面 {self.current_page_id} 的文件链接缓存...")
+            blocks = self._get_children(self.current_page_id)
             result_list = []
             load_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             for block in blocks:

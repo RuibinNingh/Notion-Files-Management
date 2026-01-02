@@ -77,6 +77,22 @@ def check_env_vars():
         sys.exit(1)
     return token
 
+def get_page_id_from_user():
+    """从用户获取页面ID"""
+    console.print("[bold cyan]📄 页面选择[/]")
+
+    while True:
+        page_id = questionary.text(
+            "请输入Notion页面ID (Page ID):",
+            validate=lambda x: len(x.strip()) > 0,
+            instruction="(从Notion页面URL中复制，或页面右上角的分享菜单中获取)"
+        ).ask()
+
+        if page_id and page_id.strip():
+            page_id = page_id.strip()
+            console.print(f"[green]✅ 已选择页面: {page_id}[/]")
+            return page_id
+
 def get_aria2_status():
     """检测 Aria2 是否可用 (跨平台)"""
     # 1. 检测系统 PATH
