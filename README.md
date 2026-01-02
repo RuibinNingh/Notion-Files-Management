@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+    <img src="https://img.shields.io/badge/License-GPL%20v3-blue.svg" alt="License: GPL v3">
   </a>
   <a href="https://www.python.org/downloads/">
     <img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+">
@@ -312,6 +312,29 @@ A: 确保 aria2c.exe 在项目目录中，或者系统已安装 aria2。
 其中使用了AI生成技术
 
 如果你发现了问题可以提issues,但我们大概率没有时间处理
+
+## 📄 许可证
+
+本项目采用 [GNU General Public License v3.0](LICENSE) 开源许可证。
+
+**版权所有 (C) 2025 Ruibin_Ningh & Zyx_2012**
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+**联系方式**: ruibinningh@outlook.com
+
+---
 
 ## 🙏 致谢
 
