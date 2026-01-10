@@ -38,7 +38,7 @@ from aria2 import Aria2Client, Aria2Server
 
 # ============ 全局配置 ============
 
-VERSION = "2.0.0"
+VERSION = "2.0.2"
 PROJECT_NAME = "Notion-Files-Management"
 
 console = Console()
@@ -764,8 +764,15 @@ def _download_aria2(files: list, indices: list, save_dir: str):
         
         gids = client.add_downloads_batch(file_urls, save_dir)
         console.print(f"\n[green]已添加 {len(gids)} 个任务[/]")
-        console.print("[yellow]请在AriaNG中查看进度，按回车关闭服务器...[/]")
-        input()
+        console.print("[yellow]请在AriaNG中查看进度，输入'stop'关闭服务器...[/]")
+        
+        # 等待用户输入stop
+        while True:
+            user_input = input().strip().lower()
+            if user_input == "stop":
+                break
+            else:
+                console.print("[yellow]请输入'stop'来关闭服务器[/]")
         
     finally:
         server.stop()
