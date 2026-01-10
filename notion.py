@@ -1,9 +1,9 @@
-<<<<<<< HEAD
+#<<<<<<< HEAD
 # Notion-Files-Management - Notion API封装模块 (重构版)
 # 基于 Notion API 2025-09-03 版本
 # Copyright (C) 2025 Ruibin_Ningh & Zyx_2012
 # License: GPL v3
-=======
+#=======
 # Notion-Files-Management - Notion API封装模块
 # Copyright (C) 2025-2026 Ruibin_Ningh & Zyx_2012
 #
@@ -21,7 +21,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # Contact: ruibinningh@outlook.com
->>>>>>> dd9e024ca52a7abc178aae543491e25f7b46820e
+#>>>>>>> dd9e024ca52a7abc178aae543491e25f7b46820e
 
 import os
 import math
@@ -32,6 +32,7 @@ from datetime import datetime
 from typing import List, Tuple, Optional, Callable, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
+from urllib.parse import unquote
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -383,7 +384,13 @@ class NotionFileManager:
             url = ""
         
         if not name and url:
+            # 从URL中提取文件名并解码
             name = url.split('/')[-1].split('?')[0]
+            # URL解码，将 %E4%B8%BA 这样的编码转换回中文
+            try:
+                name = unquote(name)
+            except Exception as e:
+                logger.warning(f"URL解码失败: {e}")
         
         if not name:
             name = "未命名文件"

@@ -1,27 +1,6 @@
-<<<<<<< HEAD
-# Notion-Files-Management - 主程序 (重构版)
-# 基于 Notion API 2025-09-03 版本
-# Copyright (C) 2025 Ruibin_Ningh & Zyx_2012
-# License: GPL v3
-=======
 # Notion-Files-Management - 主程序文件
 # Copyright (C) 2025-2026 Ruibin_Ningh & Zyx_2012
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-# Contact: ruibinningh@outlook.com
->>>>>>> dd9e024ca52a7abc178aae543491e25f7b46820e
+# License: GPL v3
 
 import os
 import sys
@@ -757,6 +736,9 @@ def _download_python(manager: NotionFileManager, files: list, indices: list, sav
     
     success = sum(1 for _, ok in results if ok)
     console.print(f"\n[bold]下载完成: {success}/{len(results)} 成功[/]")
+    
+    # 添加用户确认，防止直接跳转
+    questionary.text("按回车返回...").ask()
 
 
 def _download_aria2(files: list, indices: list, save_dir: str):
@@ -797,6 +779,9 @@ def _export_idm(files: list, indices: list, save_dir: str):
         console.print(f"[green]✅ 已导出: {ef2_file}[/]")
     else:
         console.print("[red]❌ 导出失败[/]")
+    
+    # 添加用户确认，防止直接跳转
+    questionary.text("按回车返回...").ask()
 
 
 # ============ 上传流程 ============
