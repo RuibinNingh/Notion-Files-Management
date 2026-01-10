@@ -345,7 +345,7 @@ A: 确保 aria2c.exe 在项目目录中，或者系统已安装 aria2。
 
 本项目采用 [GNU General Public License v3.0](LICENSE) 开源许可证。
 
-**版权所有 (C) 2025 Ruibin_Ningh & Zyx_2012**
+**版权所有 (C) 2025-2026 Ruibin_Ningh & Zyx_2012**
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

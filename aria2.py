@@ -1,5 +1,5 @@
 # Notion-Files-Management - Aria2下载服务模块
-# Copyright (C) 2025 Ruibin_Ningh & Zyx_2012
+# Copyright (C) 2025-2026 Ruibin_Ningh & Zyx_2012
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
