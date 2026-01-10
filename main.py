@@ -1,7 +1,27 @@
+<<<<<<< HEAD
 # Notion-Files-Management - 主程序 (重构版)
 # 基于 Notion API 2025-09-03 版本
 # Copyright (C) 2025 Ruibin_Ningh & Zyx_2012
 # License: GPL v3
+=======
+# Notion-Files-Management - 主程序文件
+# Copyright (C) 2025-2026 Ruibin_Ningh & Zyx_2012
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# Contact: ruibinningh@outlook.com
+>>>>>>> dd9e024ca52a7abc178aae543491e25f7b46820e
 
 import os
 import sys
