@@ -1,27 +1,7 @@
-#<<<<<<< HEAD
-# Notion-Files-Management - Notion API封装模块 (重构版)
-# 基于 Notion API 2025-09-03 版本
-# Copyright (C) 2025 Ruibin_Ningh & Zyx_2012
-# License: GPL v3
-#=======
-# Notion-Files-Management - Notion API封装模块
+# Notion-Files-Management - Notion API封装模块 (改进版)
+# 优化大文件上传重试机制
 # Copyright (C) 2025-2026 Ruibin_Ningh & Zyx_2012
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-# Contact: ruibinningh@outlook.com
-#>>>>>>> dd9e024ca52a7abc178aae543491e25f7b46820e
+# License: GPL v3
 
 import os
 import math
@@ -29,7 +9,7 @@ import time
 import logging
 import mimetypes
 from datetime import datetime
-from typing import List, Tuple, Optional, Callable, Dict, Any
+from typing import List, Tuple, Optional, Callable, Dict, Any, Set
 from dataclasses import dataclass
 from enum import Enum
 from urllib.parse import unquote
@@ -39,8 +19,62 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+# ============ 日志配置 ============
+
+def setup_file_logger(log_dir: str = None, log_level: int = logging.DEBUG) -> logging.Logger:
+    """
+    设置文件日志记录器
+    
+    Args:
+        log_dir: 日志目录，默认为当前目录下的 logs 文件夹
+        log_level: 日志级别，默认 DEBUG
+    
+    Returns:
+        配置好的 logger
+    """
+    logger = logging.getLogger("notion_upload")
+    
+    # 避免重复添加handler
+    if logger.handlers:
+        return logger
+    
+    logger.setLevel(log_level)
+    
+    # 日志目录
+    if log_dir is None:
+        log_dir = os.path.join(os.getcwd(), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # 日志文件名：upload_YYYYMMDD_HHMMSS.log
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"upload_{timestamp}.log")
+    
+    # 文件Handler - 详细日志
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(funcName)-25s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(file_formatter)
+    
+    # 控制台Handler - 简略日志
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
+    
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    logger.info(f"日志文件: {log_file}")
+    
+    return logger
+
+
+# 初始化日志
+logger = setup_file_logger()
 
 
 # ============ 配置常量 ============
@@ -53,10 +87,11 @@ SMALL_FILE_LIMIT = 20 * 1024 * 1024   # 20MB - 小文件直传
 MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024  # 5GB - 最大文件
 PART_SIZE = 10 * 1024 * 1024           # 10MB - 分片大小
 
-# 重试配置
-MAX_RETRIES = 10
+# 重试配置 - 改为无限重试
+MAX_PART_RETRIES = float('inf')  # 单个分片无限重试
 RETRY_BACKOFF_FACTOR = 2
 INITIAL_RETRY_DELAY = 1
+MAX_RETRY_DELAY = 60  # 最大重试延迟60秒
 
 # Notion 支持的文件类型及MIME映射
 SUPPORTED_EXTENSIONS = {
@@ -115,6 +150,8 @@ class UploadStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     RETRYING = "retrying"
+    CHECKING = "checking"
+    RECOVERING = "recovering"
 
 
 @dataclass
@@ -138,6 +175,7 @@ class UploadProgress:
     part_current: int = 0
     part_total: int = 0
     retry_count: int = 0
+    message: str = ""
 
 
 @dataclass
@@ -183,10 +221,21 @@ class UploadFileInfo:
         return 'file'
 
 
+@dataclass
+class UploadSession:
+    """上传会话信息"""
+    upload_id: str
+    filename: str
+    num_parts: int
+    uploaded_parts: Set[int]
+    status: str
+    created_time: float
+
+
 # ============ 主类 ============
 
 class NotionFileManager:
-    """Notion文件管理器 - 支持大文件上传下载"""
+    """Notion文件管理器 - 支持大文件上传下载 (改进版)"""
     
     def __init__(self, token: str, version: str = None):
         load_dotenv()
@@ -231,6 +280,20 @@ class NotionFileManager:
                      retry_count: int = 0) -> Tuple[bool, Any]:
         """统一的API请求方法"""
         url = f"{self.base_url}/{endpoint}"
+        request_id = f"{method}:{endpoint}:{retry_count}"
+        
+        # 记录请求开始
+        logger.debug(f"[{request_id}] 开始请求: {url}")
+        if data and not files:
+            # 记录请求数据（排除敏感信息）
+            safe_data = {k: v for k, v in data.items() if k not in ['file', 'content']}
+            logger.debug(f"[{request_id}] 请求数据: {safe_data}")
+        if files:
+            file_info = {k: f"<{type(v).__name__}, {len(v[1]) if isinstance(v, tuple) else 'unknown'} bytes>" 
+                        for k, v in files.items()}
+            logger.debug(f"[{request_id}] 上传文件: {file_info}")
+        
+        start_time = time.time()
         
         try:
             if files:
@@ -242,7 +305,10 @@ class NotionFileManager:
                 resp = self.session.request(method, url, headers=headers, 
                                            json=data, params=params, timeout=60)
             
+            elapsed = time.time() - start_time
+            
             if resp.status_code in [200, 201]:
+                logger.debug(f"[{request_id}] ✓ 成功 (HTTP {resp.status_code}, {elapsed:.2f}s)")
                 return True, resp.json()
             
             error_data = {}
@@ -252,28 +318,50 @@ class NotionFileManager:
                 pass
             
             error_msg = error_data.get('message', resp.text[:200])
+            error_code = error_data.get('code', 'unknown')
+            
+            # 详细记录错误信息
+            logger.warning(f"[{request_id}] ✗ 失败 (HTTP {resp.status_code}, {elapsed:.2f}s)")
+            logger.warning(f"[{request_id}] 错误代码: {error_code}")
+            logger.warning(f"[{request_id}] 错误信息: {error_msg}")
+            logger.debug(f"[{request_id}] 响应头: {dict(resp.headers)}")
             
             # 可重试的错误
             if resp.status_code in [429, 500, 502, 503, 504]:
-                if retry_count < MAX_RETRIES:
-                    delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count)
+                if retry_count < 10:  # API级别限制10次重试
+                    delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+                    logger.info(f"[{request_id}] 可重试错误，{delay}秒后进行第{retry_count + 1}次重试")
                     time.sleep(delay)
                     return self._api_request(method, endpoint, data, files, params, retry_count + 1)
+                else:
+                    logger.error(f"[{request_id}] 已达最大重试次数(10次)，放弃请求")
             
             return False, f"HTTP {resp.status_code}: {error_msg}"
             
-        except requests.exceptions.Timeout:
-            if retry_count < MAX_RETRIES:
-                delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count)
+        except requests.exceptions.Timeout as e:
+            elapsed = time.time() - start_time
+            logger.warning(f"[{request_id}] ✗ 请求超时 ({elapsed:.2f}s): {e}")
+            
+            if retry_count < 10:
+                delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+                logger.info(f"[{request_id}] 超时重试，{delay}秒后进行第{retry_count + 1}次重试")
                 time.sleep(delay)
                 return self._api_request(method, endpoint, data, files, params, retry_count + 1)
+            
+            logger.error(f"[{request_id}] 超时达最大重试次数，放弃请求")
             return False, "请求超时"
             
         except requests.exceptions.RequestException as e:
-            if retry_count < MAX_RETRIES:
-                delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count)
+            elapsed = time.time() - start_time
+            logger.warning(f"[{request_id}] ✗ 网络错误 ({elapsed:.2f}s): {type(e).__name__}: {e}")
+            
+            if retry_count < 10:
+                delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+                logger.info(f"[{request_id}] 网络错误重试，{delay}秒后进行第{retry_count + 1}次重试")
                 time.sleep(delay)
                 return self._api_request(method, endpoint, data, files, params, retry_count + 1)
+            
+            logger.error(f"[{request_id}] 网络错误达最大重试次数，放弃请求")
             return False, f"网络错误: {e}"
     
     # ============ 页面管理 ============
@@ -384,9 +472,7 @@ class NotionFileManager:
             url = ""
         
         if not name and url:
-            # 从URL中提取文件名并解码
             name = url.split('/')[-1].split('?')[0]
-            # URL解码，将 %E4%B8%BA 这样的编码转换回中文
             try:
                 name = unquote(name)
             except Exception as e:
@@ -397,7 +483,49 @@ class NotionFileManager:
         
         return FileInfo(name=name, url=url, load_time=load_time)
     
-    # ============ 文件上传 (核心重构) ============
+    # ============ 上传会话管理 (新增) ============
+    
+    def _get_upload_session_status(self, upload_id: str) -> Optional[UploadSession]:
+        """
+        查询上传会话状态
+        
+        Returns:
+            UploadSession 包含会话信息和已上传的分片列表
+        """
+        success, result = self._api_request("GET", f"file_uploads/{upload_id}")
+        
+        if not success:
+            logger.error(f"查询会话状态失败: {result}")
+            return None
+        
+        # 解析已上传的分片
+        uploaded_parts = set()
+        parts_info = result.get('parts', [])
+        
+        for part in parts_info:
+            if part.get('status') == 'uploaded':
+                uploaded_parts.add(part.get('part_number'))
+        
+        return UploadSession(
+            upload_id=upload_id,
+            filename=result.get('filename', ''),
+            num_parts=result.get('number_of_parts', 0),
+            uploaded_parts=uploaded_parts,
+            status=result.get('status', ''),
+            created_time=time.time()
+        )
+    
+    def _is_session_valid(self, upload_id: str) -> bool:
+        """检查上传会话是否有效"""
+        success, result = self._api_request("GET", f"file_uploads/{upload_id}")
+        
+        if not success:
+            return False
+        
+        status = result.get('status', '')
+        return status not in ['archived', 'completed', 'error']
+    
+    # ============ 文件上传 (改进核心逻辑) ============
     
     def upload_file(self, filepath: str, target_page_id: str = None,
                     progress_callback: Optional[Callable[[UploadProgress], None]] = None) -> bool:
@@ -425,10 +553,29 @@ class NotionFileManager:
         if file_info.size > MAX_FILE_SIZE:
             raise ValueError(f"文件过大: {file_info.size / 1024 / 1024 / 1024:.1f}GB > 5GB")
         
-        logger.info(f"开始上传: {file_info.original_name} ({file_info.size / 1024 / 1024:.1f}MB)")
+        # 记录上传开始
+        logger.info("=" * 60)
+        logger.info(f"开始上传文件: {file_info.original_name}")
+        logger.info(f"  文件路径: {filepath}")
+        logger.info(f"  文件大小: {file_info.size / 1024 / 1024:.2f} MB ({file_info.size} bytes)")
+        logger.info(f"  MIME类型: {file_info.mime_type}")
+        logger.info(f"  上传名称: {file_info.upload_name}")
+        logger.info(f"  目标页面: {page_id}")
+        logger.info(f"  是否伪装: {file_info.is_spoofed}")
+        logger.info(f"  上传模式: {'小文件直传' if file_info.size <= SMALL_FILE_LIMIT else '分片上传'}")
+        
+        upload_start_time = time.time()
         
         def report(status: UploadStatus, uploaded: int = 0, 
-                   part_current: int = 0, part_total: int = 0, retry: int = 0):
+                   part_current: int = 0, part_total: int = 0, retry: int = 0, message: str = ""):
+            # 记录状态变化
+            if status in [UploadStatus.RETRYING, UploadStatus.FAILED, UploadStatus.COMPLETED]:
+                logger.info(f"[{file_info.original_name}] 状态: {status.value}, "
+                           f"进度: {uploaded}/{file_info.size} ({uploaded*100/file_info.size:.1f}%), "
+                           f"分片: {part_current}/{part_total}, 重试: {retry}")
+                if message:
+                    logger.info(f"[{file_info.original_name}] 消息: {message}")
+            
             if progress_callback:
                 progress_callback(UploadProgress(
                     filename=file_info.original_name,
@@ -437,158 +584,318 @@ class NotionFileManager:
                     status=status,
                     part_current=part_current,
                     part_total=part_total,
-                    retry_count=retry
+                    retry_count=retry,
+                    message=message
                 ))
         
         try:
             # 根据文件大小选择上传方式
             if file_info.size <= SMALL_FILE_LIMIT:
-                return self._upload_small_file(file_info, page_id, report)
+                result = self._upload_small_file(file_info, page_id, report)
             else:
-                return self._upload_large_file(file_info, page_id, report)
+                result = self._upload_large_file_improved(file_info, page_id, report)
+            
+            elapsed = time.time() - upload_start_time
+            
+            if result:
+                speed = file_info.size / elapsed / 1024 / 1024 if elapsed > 0 else 0
+                logger.info(f"✓ 上传成功: {file_info.original_name}")
+                logger.info(f"  耗时: {elapsed:.2f}秒")
+                logger.info(f"  平均速度: {speed:.2f} MB/s")
+            else:
+                logger.error(f"✗ 上传失败: {file_info.original_name}")
+                logger.error(f"  耗时: {elapsed:.2f}秒")
+            
+            logger.info("=" * 60)
+            return result
                 
         except Exception as e:
-            logger.error(f"上传失败: {e}")
-            report(UploadStatus.FAILED)
+            elapsed = time.time() - upload_start_time
+            logger.error(f"✗ 上传异常: {file_info.original_name}")
+            logger.error(f"  异常类型: {type(e).__name__}")
+            logger.error(f"  异常信息: {e}")
+            logger.error(f"  耗时: {elapsed:.2f}秒")
+            logger.info("=" * 60)
+            report(UploadStatus.FAILED, message=str(e))
             return False
     
     def _upload_small_file(self, file_info: UploadFileInfo, page_id: str,
                            report: Callable) -> bool:
         """上传小文件 (<=20MB) - 单次上传"""
+        logger.debug(f"[小文件上传] 开始: {file_info.original_name}")
         report(UploadStatus.UPLOADING, 0, 0, 1)
         
         # 1. 创建上传会话
+        logger.debug(f"[小文件上传] 创建上传会话...")
         success, result = self._api_request("POST", "file_uploads", {
             "filename": file_info.upload_name,
             "content_type": file_info.mime_type
         })
         if not success:
-            logger.error(f"创建上传会话失败: {result}")
+            logger.error(f"[小文件上传] 创建上传会话失败: {result}")
             return False
         
         upload_id = result['id']
+        logger.debug(f"[小文件上传] 会话ID: {upload_id}")
         
         # 2. 读取并上传文件内容
+        logger.debug(f"[小文件上传] 读取文件内容...")
         with open(file_info.path, 'rb') as f:
             file_content = f.read()
         
+        logger.debug(f"[小文件上传] 文件内容大小: {len(file_content)} bytes")
         report(UploadStatus.UPLOADING, file_info.size // 2, 1, 1)
         
-        success, result = self._api_request("POST", f"file_uploads/{upload_id}/send",
-            files={'file': ('file', file_content)}
-        )
-        if not success:
-            logger.error(f"上传文件内容失败: {result}")
-            return False
+        # 带无限重试的上传
+        retry_count = 0
+        upload_start = time.time()
+        
+        while True:
+            logger.debug(f"[小文件上传] 发送文件数据 (尝试 {retry_count + 1})...")
+            # 显式指定 Content-Type，避免 requests 自动猜测错误
+            success, result = self._api_request("POST", f"file_uploads/{upload_id}/send",
+                files={'file': (file_info.upload_name, file_content, file_info.mime_type)}
+            )
+            if success:
+                elapsed = time.time() - upload_start
+                logger.debug(f"[小文件上传] 文件数据发送成功，耗时: {elapsed:.2f}s")
+                break
+            
+            retry_count += 1
+            delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+            logger.warning(f"[小文件上传] 上传失败，{delay}秒后重试 (第{retry_count}次)")
+            logger.warning(f"[小文件上传] 失败原因: {result}")
+            report(UploadStatus.RETRYING, file_info.size // 2, 1, 1, retry_count, 
+                   f"上传失败，重试中...")
+            time.sleep(delay)
         
         report(UploadStatus.UPLOADING, file_info.size, 1, 1)
         
         # 3. 附加到页面
+        logger.debug(f"[小文件上传] 附加文件到页面...")
         report(UploadStatus.ATTACHING, file_info.size, 1, 1)
         
         success = self._attach_file_to_page(upload_id, file_info, page_id)
         if not success:
+            logger.error(f"[小文件上传] 附加文件到页面失败")
             return False
         
         report(UploadStatus.COMPLETED, file_info.size, 1, 1)
-        logger.info(f"上传完成: {file_info.original_name}")
+        logger.debug(f"[小文件上传] 完成: {file_info.original_name}")
         return True
     
-    def _upload_large_file(self, file_info: UploadFileInfo, page_id: str,
-                           report: Callable) -> bool:
-        """上传大文件 (>20MB) - 分片上传"""
+    def _upload_large_file_improved(self, file_info: UploadFileInfo, page_id: str,
+                                    report: Callable) -> bool:
+        """
+        上传大文件 (>20MB) - 改进的分片上传
+        
+        关键改进:
+        1. 跟踪已上传的分片
+        2. 会话失效时尝试恢复
+        3. 只重试失败的分片
+        4. 无限重试直到成功
+        """
         num_parts = math.ceil(file_info.size / PART_SIZE)
+        uploaded_parts: Set[int] = set()  # 已成功上传的分片
+        
+        logger.debug(f"[大文件上传] 开始: {file_info.original_name}")
+        logger.debug(f"[大文件上传] 总分片数: {num_parts} (每片 {PART_SIZE/1024/1024:.1f}MB)")
         
         report(UploadStatus.UPLOADING, 0, 0, num_parts)
         
         # 1. 创建分片上传会话
-        success, result = self._api_request("POST", "file_uploads", {
-            "filename": file_info.upload_name,
-            "content_type": file_info.mime_type,
-            "mode": "multi_part",
-            "number_of_parts": num_parts
-        })
-        if not success:
-            logger.error(f"创建上传会话失败: {result}")
-            return False
+        upload_id = None
+        retry_count = 0
+        session_create_start = time.time()
         
-        upload_id = result['id']
-        bytes_uploaded = 0
+        logger.debug(f"[大文件上传] 创建分片上传会话...")
         
-        # 2. 分片上传
+        while upload_id is None:
+            success, result = self._api_request("POST", "file_uploads", {
+                "filename": file_info.upload_name,
+                "content_type": file_info.mime_type,
+                "mode": "multi_part",
+                "number_of_parts": num_parts
+            })
+            
+            if success:
+                upload_id = result['id']
+                elapsed = time.time() - session_create_start
+                logger.info(f"[大文件上传] 创建会话成功: {upload_id} (耗时 {elapsed:.2f}s)")
+            else:
+                retry_count += 1
+                delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+                logger.warning(f"[大文件上传] 创建会话失败 (第{retry_count}次)，{delay}秒后重试")
+                logger.warning(f"[大文件上传] 失败原因: {result}")
+                report(UploadStatus.RETRYING, 0, 0, num_parts, retry_count, 
+                       "创建上传会话失败，重试中...")
+                time.sleep(delay)
+        
+        # 2. 分片上传 - 支持断点续传
+        upload_round = 0
         with open(file_info.path, 'rb') as f:
-            for part_num in range(1, num_parts + 1):
-                f.seek((part_num - 1) * PART_SIZE)
-                chunk = f.read(PART_SIZE)
-                chunk_size = len(chunk)
+            # 循环直到所有分片都上传成功
+            while len(uploaded_parts) < num_parts:
+                upload_round += 1
+                logger.debug(f"[大文件上传] === 上传轮次 {upload_round} ===")
                 
-                # 分片上传带重试和会话重建
-                part_success = False
-                retry_count = 0
+                # 检查会话状态
+                report(UploadStatus.CHECKING, len(uploaded_parts) * PART_SIZE, 
+                       len(uploaded_parts), num_parts, 0, "检查上传状态...")
                 
-                while not part_success and retry_count < MAX_RETRIES:
-                    if retry_count > 0:
-                        report(UploadStatus.RETRYING, bytes_uploaded, part_num, num_parts, retry_count)
-                    else:
-                        report(UploadStatus.UPLOADING, bytes_uploaded, part_num, num_parts)
+                logger.debug(f"[大文件上传] 检查会话状态: {upload_id}")
+                session_info = self._get_upload_session_status(upload_id)
+                
+                if session_info is None or session_info.status == 'archived':
+                    # 会话失效，需要重新创建
+                    logger.warning(f"[大文件上传] 会话已失效 (状态: {session_info.status if session_info else 'None'})")
+                    logger.warning(f"[大文件上传] 已上传分片: {len(uploaded_parts)}/{num_parts}")
+                    report(UploadStatus.RECOVERING, len(uploaded_parts) * PART_SIZE, 
+                           len(uploaded_parts), num_parts, 0, "会话失效，重新创建...")
                     
-                    success, result = self._api_request("POST", f"file_uploads/{upload_id}/send",
-                        files={'file': ('file', chunk)},
-                        data={'part_number': str(part_num)}
-                    )
+                    retry_count = 0
+                    upload_id = None
                     
-                    if success:
-                        part_success = True
-                        bytes_uploaded += chunk_size
-                        report(UploadStatus.UPLOADING, bytes_uploaded, part_num, num_parts)
-                    else:
-                        retry_count += 1
+                    while upload_id is None:
+                        logger.debug(f"[大文件上传] 重新创建会话 (尝试 {retry_count + 1})...")
+                        success, result = self._api_request("POST", "file_uploads", {
+                            "filename": file_info.upload_name,
+                            "content_type": file_info.mime_type,
+                            "mode": "multi_part",
+                            "number_of_parts": num_parts
+                        })
                         
-                        if retry_count < MAX_RETRIES:
-                            # 检查会话是否失效
-                            status_ok, status_result = self._api_request("GET", f"file_uploads/{upload_id}")
-                            
-                            if not status_ok or status_result.get('status') == 'archived':
-                                # 会话失效，重新创建
-                                logger.warning(f"会话失效，重新创建上传会话...")
-                                success, new_result = self._api_request("POST", "file_uploads", {
-                                    "filename": file_info.upload_name,
-                                    "content_type": file_info.mime_type,
-                                    "mode": "multi_part",
-                                    "number_of_parts": num_parts
-                                })
-                                if success:
-                                    upload_id = new_result['id']
-                                    # 从头开始上传
-                                    f.seek(0)
-                                    bytes_uploaded = 0
-                                    part_num = 0
-                                    break
-                            
-                            delay = INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count)
+                        if success:
+                            upload_id = result['id']
+                            logger.info(f"[大文件上传] 重新创建会话成功: {upload_id}")
+                            # 注意：重新创建会话后，之前的上传记录会丢失
+                            # 但我们本地保存了uploaded_parts，可以跳过这些分片
+                        else:
+                            retry_count += 1
+                            delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+                            logger.warning(f"[大文件上传] 重新创建会话失败，{delay}秒后重试: {result}")
+                            time.sleep(delay)
+                    
+                    # 重置会话信息
+                    session_info = UploadSession(
+                        upload_id=upload_id,
+                        filename=file_info.upload_name,
+                        num_parts=num_parts,
+                        uploaded_parts=set(),  # 新会话，服务器端没有已上传的分片
+                        status='active',
+                        created_time=time.time()
+                    )
+                
+                # 更新本地已上传分片记录（与服务器同步）
+                # 注意：这里我们信任本地记录，因为即使服务器重置，Notion支持重复上传分片
+                if session_info:
+                    logger.debug(f"[大文件上传] 服务器已有 {len(session_info.uploaded_parts)} 个分片，本地记录 {len(uploaded_parts)} 个")
+                
+                # 找出未上传的分片
+                pending_parts = set(range(1, num_parts + 1)) - uploaded_parts
+                
+                if not pending_parts:
+                    logger.info(f"[大文件上传] 所有分片已上传完成")
+                    break
+                
+                logger.info(f"[大文件上传] 待上传分片: {len(pending_parts)} 个 (已完成: {len(uploaded_parts)}/{num_parts})")
+                
+                # 上传每个未完成的分片
+                for part_num in sorted(pending_parts):
+                    # 读取分片数据
+                    f.seek((part_num - 1) * PART_SIZE)
+                    chunk = f.read(PART_SIZE)
+                    chunk_size = len(chunk)
+                    
+                    logger.debug(f"[大文件上传] 准备分片 {part_num}/{num_parts}, 大小: {chunk_size} bytes")
+                    
+                    # 无限重试直到分片上传成功
+                    part_retry_count = 0
+                    part_uploaded = False
+                    part_start_time = time.time()
+                    
+                    while not part_uploaded:
+                        if part_retry_count > 0:
+                            delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** part_retry_count), MAX_RETRY_DELAY)
+                            logger.info(f"[大文件上传] 分片 {part_num}/{num_parts} 重试 (第{part_retry_count}次，等待{delay}秒)")
+                            report(UploadStatus.RETRYING, len(uploaded_parts) * PART_SIZE, 
+                                   part_num, num_parts, part_retry_count,
+                                   f"分片 {part_num} 上传失败，重试中...")
                             time.sleep(delay)
                         else:
-                            logger.error(f"分片 {part_num} 上传失败，已达最大重试次数")
-                            report(UploadStatus.FAILED)
-                            return False
+                            logger.info(f"[大文件上传] 上传分片 {part_num}/{num_parts} ({chunk_size / 1024 / 1024:.1f}MB)")
+                            report(UploadStatus.UPLOADING, len(uploaded_parts) * PART_SIZE, 
+                                   part_num, num_parts, 0)
+                        
+                        # 尝试上传分片 - 显式指定 Content-Type
+                        success, result = self._api_request("POST", f"file_uploads/{upload_id}/send",
+                            files={'file': (file_info.upload_name, chunk, file_info.mime_type)},
+                            data={'part_number': str(part_num)}
+                        )
+                        
+                        if success:
+                            part_uploaded = True
+                            uploaded_parts.add(part_num)
+                            part_elapsed = time.time() - part_start_time
+                            part_speed = chunk_size / part_elapsed / 1024 / 1024 if part_elapsed > 0 else 0
+                            logger.info(f"[大文件上传] ✓ 分片 {part_num}/{num_parts} 上传成功 "
+                                       f"(耗时: {part_elapsed:.2f}s, 速度: {part_speed:.2f}MB/s)")
+                            report(UploadStatus.UPLOADING, len(uploaded_parts) * PART_SIZE, 
+                                   part_num, num_parts, 0)
+                        else:
+                            part_retry_count += 1
+                            logger.warning(f"[大文件上传] ✗ 分片 {part_num} 上传失败 (第{part_retry_count}次)")
+                            logger.warning(f"[大文件上传] 失败原因: {result}")
+                            
+                            # 检查会话是否仍然有效
+                            if not self._is_session_valid(upload_id):
+                                logger.warning(f"[大文件上传] 检测到会话失效，将在下一轮重新创建")
+                                break  # 跳出当前分片上传，重新检查会话
         
         # 3. 完成分片上传
+        logger.info(f"[大文件上传] 所有分片上传完成，开始完成上传流程")
         report(UploadStatus.COMPLETING, file_info.size, num_parts, num_parts)
         
-        success, result = self._api_request("POST", f"file_uploads/{upload_id}/complete")
-        if not success:
-            logger.error(f"完成上传失败: {result}")
-            return False
+        retry_count = 0
+        complete_start = time.time()
+        while True:
+            logger.debug(f"[大文件上传] 调用 complete API (尝试 {retry_count + 1})...")
+            success, result = self._api_request("POST", f"file_uploads/{upload_id}/complete")
+            if success:
+                complete_elapsed = time.time() - complete_start
+                logger.info(f"[大文件上传] ✓ 完成上传成功 (耗时: {complete_elapsed:.2f}s)")
+                break
+            
+            retry_count += 1
+            delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+            logger.warning(f"[大文件上传] 完成上传失败 (第{retry_count}次)，{delay}秒后重试")
+            logger.warning(f"[大文件上传] 失败原因: {result}")
+            report(UploadStatus.RETRYING, file_info.size, num_parts, num_parts, retry_count,
+                   "完成上传失败，重试中...")
+            time.sleep(delay)
         
         # 4. 附加到页面
+        logger.debug(f"[大文件上传] 附加文件到页面: {page_id}")
         report(UploadStatus.ATTACHING, file_info.size, num_parts, num_parts)
         
-        success = self._attach_file_to_page(upload_id, file_info, page_id)
-        if not success:
-            return False
+        retry_count = 0
+        attach_start = time.time()
+        while True:
+            success = self._attach_file_to_page(upload_id, file_info, page_id)
+            if success:
+                attach_elapsed = time.time() - attach_start
+                logger.info(f"[大文件上传] ✓ 附加文件成功 (耗时: {attach_elapsed:.2f}s)")
+                break
+            
+            retry_count += 1
+            delay = min(INITIAL_RETRY_DELAY * (RETRY_BACKOFF_FACTOR ** retry_count), MAX_RETRY_DELAY)
+            logger.warning(f"[大文件上传] 附加文件失败 (第{retry_count}次)，{delay}秒后重试")
+            report(UploadStatus.RETRYING, file_info.size, num_parts, num_parts, retry_count,
+                   "附加文件失败，重试中...")
+            time.sleep(delay)
         
         report(UploadStatus.COMPLETED, file_info.size, num_parts, num_parts)
-        logger.info(f"上传完成: {file_info.original_name}")
+        logger.debug(f"[大文件上传] 完成: {file_info.original_name}")
         return True
     
     def _attach_file_to_page(self, upload_id: str, file_info: UploadFileInfo, 
@@ -596,6 +903,11 @@ class NotionFileManager:
         """将上传的文件附加到页面"""
         block_type = file_info.get_block_type()
         caption = [{"type": "text", "text": {"content": file_info.original_name}}]
+        
+        logger.debug(f"[附加文件] 文件: {file_info.original_name}")
+        logger.debug(f"[附加文件] Block类型: {block_type}")
+        logger.debug(f"[附加文件] 上传ID: {upload_id}")
+        logger.debug(f"[附加文件] 目标页面: {page_id}")
         
         block_configs = {
             'image': {
@@ -645,9 +957,10 @@ class NotionFileManager:
         success, result = self._api_request("PATCH", f"blocks/{page_id}/children", 
                                             {"children": [block_data]})
         if not success:
-            logger.error(f"附加文件失败: {result}")
+            logger.error(f"[附加文件] 失败: {result}")
             return False
         
+        logger.debug(f"[附加文件] 成功")
         return True
     
     # ============ 文件下载 ============
