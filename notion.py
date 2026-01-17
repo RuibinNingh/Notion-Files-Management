@@ -50,7 +50,7 @@ def setup_file_logger(log_dir: str = None, log_level: int = logging.DEBUG) -> lo
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f"upload_{timestamp}.log")
     
-    # 文件Handler - 详细日志
+    # 文件Handler - 详细日志（只输出到文件，不干扰进度UI）
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
@@ -59,16 +59,16 @@ def setup_file_logger(log_dir: str = None, log_level: int = logging.DEBUG) -> lo
     )
     file_handler.setFormatter(file_formatter)
     
-    # 控制台Handler - 简略日志
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(console_formatter)
+    # 注意：不添加控制台Handler，避免日志干扰进度条显示
+    # 所有日志都会写入文件，上传完成后提示用户查看日志文件
     
     logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
     
-    logger.info(f"日志文件: {log_file}")
+    # 静默记录日志文件位置（不打印到控制台）
+    logger.debug(f"日志文件: {log_file}")
+    
+    # 保存日志文件路径供外部访问
+    logger.log_file_path = log_file
     
     return logger
 
@@ -652,7 +652,7 @@ class NotionFileManager:
         
         while True:
             logger.debug(f"[小文件上传] 发送文件数据 (尝试 {retry_count + 1})...")
-            # 显式指定 Content-Type，避免 requests 自动猜测错误
+            # 必须指定正确的 MIME 类型，否则会报 content type mismatch 错误
             success, result = self._api_request("POST", f"file_uploads/{upload_id}/send",
                 files={'file': (file_info.upload_name, file_content, file_info.mime_type)}
             )
@@ -827,7 +827,7 @@ class NotionFileManager:
                             report(UploadStatus.UPLOADING, len(uploaded_parts) * PART_SIZE, 
                                    part_num, num_parts, 0)
                         
-                        # 尝试上传分片 - 显式指定 Content-Type
+                        # 尝试上传分片 - 必须指定正确的 MIME 类型
                         success, result = self._api_request("POST", f"file_uploads/{upload_id}/send",
                             files={'file': (file_info.upload_name, chunk, file_info.mime_type)},
                             data={'part_number': str(part_num)}

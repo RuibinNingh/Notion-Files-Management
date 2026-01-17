@@ -32,13 +32,14 @@ from dotenv import load_dotenv
 
 from notion import (
     NotionFileManager, IDMExporter, UploadProgress, UploadStatus,
-    UploadFileInfo, MAX_FILE_SIZE, PART_SIZE
+    UploadFileInfo, MAX_FILE_SIZE, PART_SIZE, logger as notion_logger
 )
 from aria2 import Aria2Client, Aria2Server
+from rich_ui import ModernUploadUI, TaskStatus as UITaskStatus
 
 # ============ 全局配置 ============
 
-VERSION = "2.0.2"
+VERSION = "2.1.0"  # 版本更新
 PROJECT_NAME = "Notion-Files-Management"
 
 console = Console()
@@ -127,6 +128,24 @@ def format_time(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
+# ============ 状态映射 ============
+
+def map_status(upload_status: UploadStatus) -> UITaskStatus:
+    """将 notion.py 的 UploadStatus 映射到 rich_ui 的 TaskStatus"""
+    mapping = {
+        UploadStatus.PENDING: UITaskStatus.PENDING,
+        UploadStatus.UPLOADING: UITaskStatus.UPLOADING,
+        UploadStatus.COMPLETING: UITaskStatus.COMPLETING,
+        UploadStatus.ATTACHING: UITaskStatus.ATTACHING,
+        UploadStatus.COMPLETED: UITaskStatus.COMPLETED,
+        UploadStatus.FAILED: UITaskStatus.FAILED,
+        UploadStatus.RETRYING: UITaskStatus.RETRYING,
+        UploadStatus.CHECKING: UITaskStatus.CHECKING,
+        UploadStatus.RECOVERING: UITaskStatus.RECOVERING,
+    }
+    return mapping.get(upload_status, UITaskStatus.PENDING)
+
+
 # ============ 上传任务数据类 ============
 
 class UploadTask:
@@ -146,218 +165,89 @@ class UploadTask:
         self.start_time: Optional[float] = None
 
 
-# ============ Rich UI 上传界面 ============
+# ============ 适配器类：保持原有API，内部使用新UI ============
 
 class RichUploadUI:
-    """Rich库实现的上传进度界面"""
+    """
+    适配器类 - 保持原有API不变，内部使用新的 ModernUploadUI
+    这样不需要修改 NotionUploader 类的任何代码
+    """
     
     def __init__(self, total_files: int, total_size: int, num_threads: int):
-        self.console = Console()
+        # 使用新的现代UI
+        self._ui = ModernUploadUI(total_files, total_size, num_threads)
+        self.console = self._ui.console
+        self.lock = self._ui.lock
+        
+        # 兼容性属性
         self.total_files = total_files
         self.total_size = total_size
         self.num_threads = num_threads
+        
+        # 任务存储（兼容原有接口）
         self.tasks: Dict[int, UploadTask] = {}
-        self.lock = Lock()
-        self.start_time = time.time()
         
-        self.completed_count = 0
-        self.failed_count = 0
-        self.total_uploaded = 0
-        
-        # 总进度条
-        self.overall_progress = Progress(
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(bar_width=50),
-            TaskProgressColumn(),
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            TimeRemainingColumn(),
-        )
-        self.overall_task_id = self.overall_progress.add_task("总进度", total=total_size)
-        
-        # 任务进度条
-        self.task_progress = Progress(
-            TextColumn("{task.fields[status_icon]}"),
-            TextColumn("[cyan]T{task.fields[thread_id]}[/cyan]"),
-            TextColumn("{task.description}", justify="left", style="white"),
-            BarColumn(bar_width=20),
-            TaskProgressColumn(),
-            TextColumn("{task.fields[status_text]}"),
-        )
-        
-        self.live: Optional[Live] = None
-        self.progress_task_ids: Dict[int, int] = {}
+    @property
+    def completed_count(self):
+        return self._ui.completed_count
+    
+    @property
+    def failed_count(self):
+        return self._ui.failed_count
     
     def add_task(self, task: UploadTask):
-        with self.lock:
-            self.tasks[task.id] = task
-            progress_id = self.task_progress.add_task(
-                self._truncate_name(task.file_info.original_name, 28),
-                total=task.file_info.size,
-                status_icon="⏳",
-                thread_id="-",
-                status_text="[dim]等待中[/dim]",
-            )
-            self.progress_task_ids[task.id] = progress_id
+        """添加任务 (保持原有签名)"""
+        self.tasks[task.id] = task
+        self._ui.add_task(
+            task_id=task.id,
+            filename=task.file_info.original_name,
+            filesize=task.file_info.size,
+            target_page_id=task.target_page_id,
+        )
     
     def update_task(self, task_id: int, **kwargs):
-        with self.lock:
-            if task_id not in self.tasks:
-                return
+        """更新任务 (保持原有签名)"""
+        # 更新本地任务对象
+        if task_id in self.tasks:
             task = self.tasks[task_id]
-            
             for key, value in kwargs.items():
                 if hasattr(task, key):
                     setattr(task, key, value)
-            
-            if task_id in self.progress_task_ids:
-                status_icon = self._get_status_icon(task.status)
-                status_text = self._get_status_text(task)
-                thread_str = str(task.thread_id) if task.thread_id is not None else "-"
-                completed = int(task.progress * task.file_info.size)
-                
-                self.task_progress.update(
-                    self.progress_task_ids[task_id],
-                    completed=completed,
-                    status_icon=status_icon,
-                    thread_id=thread_str,
-                    status_text=status_text,
-                )
+        
+        # 转换状态枚举
+        ui_kwargs = kwargs.copy()
+        if 'status' in ui_kwargs:
+            ui_kwargs['status'] = map_status(ui_kwargs['status'])
+        
+        self._ui.update_task(task_id, **ui_kwargs)
     
     def add_uploaded_bytes(self, bytes_count: int):
-        with self.lock:
-            self.total_uploaded += bytes_count
-            self.overall_progress.update(self.overall_task_id, completed=self.total_uploaded)
+        """增加已上传字节数"""
+        self._ui.add_uploaded_bytes(bytes_count)
     
     def mark_completed(self, task_id: int, success: bool):
-        with self.lock:
-            if success:
-                self.completed_count += 1
-            else:
-                self.failed_count += 1
-    
-    def _truncate_name(self, name: str, max_len: int = 28) -> str:
-        if len(name) <= max_len:
-            return name
-        return name[:max_len - 3] + "..."
-    
-    def _get_status_icon(self, status: UploadStatus) -> str:
-        icons = {
-            UploadStatus.PENDING: "[dim]⏳[/dim]",
-            UploadStatus.UPLOADING: "[cyan]📤[/cyan]",
-            UploadStatus.COMPLETING: "[yellow]🔄[/yellow]",
-            UploadStatus.ATTACHING: "[blue]🔗[/blue]",
-            UploadStatus.COMPLETED: "[green]✅[/green]",
-            UploadStatus.FAILED: "[red]❌[/red]",
-            UploadStatus.RETRYING: "[yellow]🔁[/yellow]",
-        }
-        return icons.get(status, "•")
-    
-    def _get_status_text(self, task: UploadTask) -> str:
-        if task.status == UploadStatus.PENDING:
-            return "[dim]等待中[/dim]"
-        elif task.status == UploadStatus.UPLOADING:
-            if task.part_total > 1:
-                return f"[cyan]分片 {task.part_current}/{task.part_total}[/cyan]"
-            return "[cyan]上传中[/cyan]"
-        elif task.status == UploadStatus.COMPLETING:
-            return "[yellow]合并中[/yellow]"
-        elif task.status == UploadStatus.ATTACHING:
-            return "[blue]附加中[/blue]"
-        elif task.status == UploadStatus.COMPLETED:
-            return "[green]完成[/green]"
-        elif task.status == UploadStatus.FAILED:
-            return "[red]失败[/red]"
-        elif task.status == UploadStatus.RETRYING:
-            return f"[yellow]重试({task.retry_count})[/yellow]"
-        return ""
-    
-    def _create_stats_table(self) -> Table:
-        elapsed = time.time() - self.start_time
-        
-        table = Table(show_header=False, box=box.SIMPLE, padding=(0, 2))
-        table.add_column("key", style="bold cyan")
-        table.add_column("value", style="white")
-        table.add_column("key2", style="bold cyan")
-        table.add_column("value2", style="white")
-        
-        table.add_row(
-            "📁 文件", f"{self.completed_count + self.failed_count}/{self.total_files}",
-            "🧵 线程", f"{self.num_threads}",
-        )
-        table.add_row(
-            "✅ 成功", f"[green]{self.completed_count}[/green]",
-            "❌ 失败", f"[red]{self.failed_count}[/red]",
-        )
-        table.add_row(
-            "⏱️  已用", format_time(elapsed),
-            "", "",
-        )
-        
-        return table
-    
-    def create_layout(self) -> Panel:
-        stats_table = self._create_stats_table()
-        
-        content = Group(
-            stats_table,
-            "",
-            self.overall_progress,
-            "",
-            Panel(self.task_progress, title="📋 任务列表", border_style="blue", padding=(0, 1)),
-        )
-        
-        return Panel(
-            content,
-            title="[bold white]🚀 Notion 文件上传[/bold white]",
-            subtitle="[dim]按 Ctrl+C 中断[/dim]",
-            border_style="green",
-            padding=(1, 2),
-        )
+        """标记任务完成"""
+        self._ui.mark_completed(task_id, success)
     
     def start(self):
-        self.live = Live(
-            self.create_layout(),
-            console=self.console,
-            refresh_per_second=4,
-            transient=True,
-        )
-        self.live.start()
+        """启动UI"""
+        self._ui.start()
     
     def refresh(self):
-        if self.live:
-            with self.lock:
-                self.live.update(self.create_layout())
+        """刷新UI"""
+        self._ui.refresh()
     
     def stop(self):
-        if self.live:
-            self.live.stop()
-        self._print_summary()
-    
-    def _print_summary(self):
-        elapsed = time.time() - self.start_time
-        avg_speed = self.total_uploaded / elapsed if elapsed > 0 else 0
+        """停止UI"""
+        self._ui.stop()
         
-        self.console.print()
-        self.console.print(Panel(
-            f"""[bold green]✨ 上传完成[/bold green]
-
-  [green]✅ 成功:[/green] {self.completed_count}
-  [red]❌ 失败:[/red] {self.failed_count}
-  [blue]📊 总大小:[/blue] {format_size(self.total_size)}
-  [yellow]⚡ 平均速度:[/yellow] {format_size(int(avg_speed))}/s
-  [cyan]⏱️  总耗时:[/cyan] {format_time(elapsed)}""",
-            title="📈 上传结果",
-            border_style="green",
-        ))
-        
-        with self.lock:
-            failed_tasks = [t for t in self.tasks.values() if t.status == UploadStatus.FAILED]
-            if failed_tasks:
-                self.console.print()
-                self.console.print("[bold red]❌ 失败的文件:[/bold red]")
-                for task in failed_tasks:
-                    self.console.print(f"   • {task.file_info.original_name}: {task.error_message}")
+        # 显示日志文件路径
+        try:
+            log_path = getattr(notion_logger, 'log_file_path', None)
+            if log_path:
+                console.print(f"\n[dim]📋 详细日志已保存到: {log_path}[/dim]")
+        except:
+            pass
 
 
 # ============ 上传器 ============
@@ -400,7 +290,7 @@ class NotionUploader:
         self.console.print("\n[dim]3秒后开始上传...[/dim]")
         time.sleep(3)
         
-        # 初始化UI
+        # 初始化UI - 使用新的适配器
         self.ui = RichUploadUI(len(valid_files), total_size, self.num_threads)
         
         # 创建任务
@@ -488,7 +378,7 @@ class NotionUploader:
         self.console.print("\n[dim]3秒后开始上传...[/dim]")
         time.sleep(3)
         
-        # 初始化UI
+        # 初始化UI - 使用新的适配器
         self.ui = RichUploadUI(len(all_files), total_size, self.num_threads)
         
         # 创建任务，分配到对应页面
@@ -648,106 +538,69 @@ def run_download():
     
     has_aria2, aria2_mode = check_aria2()
     
-    choices = [Choice("🐍 Python原生下载", "python")]
-    if has_aria2:
-        choices.append(Choice("🚀 Aria2高速下载", "aria2"))
-    if platform.system() == "Windows":
-        choices.append(Choice("📝 导出IDM任务", "idm"))
-    choices.append(Choice("🔙 返回", "back"))
+    download_method = questionary.select("下载方式:", choices=[
+        Choice("📋 导出IDM任务", "idm"),
+        Choice("📥 Aria2下载" + (" (需安装)" if not has_aria2 else ""), "aria2"),
+        Choice("🔙 返回", "back")
+    ], style=STYLE).ask()
     
-    method = questionary.select("选择下载方式:", choices=choices, style=STYLE).ask()
-    
-    if method == "back":
+    if download_method == "back":
         return
     
-    download_dir = questionary.text("下载目录:", default="downloads").ask() or "downloads"
+    # 选择文件
+    file_selection = questionary.select("选择范围:", choices=[
+        Choice("全部文件", "all"),
+        Choice("选择序号", "select"),
+    ], style=STYLE).ask()
     
-    if len(files) == 1:
-        selected = [0]
+    if file_selection == "all":
+        indices = list(range(len(files)))
     else:
-        mode = questionary.select("下载范围:", choices=[
-            Choice(f"📁 全部下载 ({len(files)}个)", "all"),
-            Choice("📄 选择文件", "select"),
-            Choice("🔙 取消", "cancel")
-        ], style=STYLE).ask()
+        ranges = questionary.text(
+            "输入序号(如: 1-5,8,10-15):",
+        ).ask()
         
-        if mode == "cancel":
+        if not ranges:
             return
-        elif mode == "all":
-            selected = list(range(len(files)))
-        else:
-            file_choices = [Choice(f"[{i+1:02d}] {name}", i) for i, (name, _, _) in enumerate(files)]
-            selected = questionary.checkbox("选择文件:", choices=file_choices, style=STYLE).ask() or []
+        
+        indices = []
+        for part in ranges.split(','):
+            part = part.strip()
+            if '-' in part:
+                start, end = part.split('-', 1)
+                indices.extend(range(int(start) - 1, int(end)))
+            else:
+                indices.append(int(part) - 1)
+        
+        indices = [i for i in indices if 0 <= i < len(files)]
     
-    if not selected:
-        console.print("[yellow]未选择文件[/]")
+    if not indices:
+        console.print("[yellow]未选择任何文件[/]")
         return
     
-    if method == "python":
-        _download_python(manager, files, selected, download_dir)
-    elif method == "aria2":
-        _download_aria2(files, selected, download_dir)
-    elif method == "idm":
-        _export_idm(files, selected, download_dir)
-
-
-def _download_python(manager: NotionFileManager, files: list, indices: list, save_dir: str):
+    console.print(f"[green]已选择 {len(indices)} 个文件[/]")
+    
+    save_dir = questionary.text("保存目录:", default="downloads").ask()
     os.makedirs(save_dir, exist_ok=True)
-    results = []
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        console=console
-    ) as progress:
-        
-        for idx in indices:
-            name, url, _ = files[idx]
-            task = progress.add_task(f"下载: {name[:30]}", total=100)
-            
-            try:
-                resp = requests.get(url, stream=True, timeout=30)
-                resp.raise_for_status()
-                
-                total = int(resp.headers.get('content-length', 0))
-                downloaded = 0
-                save_path = os.path.join(save_dir, name)
-                
-                with open(save_path, 'wb') as f:
-                    for chunk in resp.iter_content(8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total:
-                                progress.update(task, completed=downloaded * 100 // total)
-                
-                progress.update(task, completed=100, description=f"[green]✓ {name[:30]}")
-                results.append((name, True))
-                
-            except Exception as e:
-                progress.update(task, description=f"[red]✗ {name[:30]}")
-                results.append((name, False))
-                console.print(f"[red]  错误: {e}[/]")
-            
-            time.sleep(0.5)
-    
-    success = sum(1 for _, ok in results if ok)
-    console.print(f"\n[bold]下载完成: {success}/{len(results)} 成功[/]")
-    
-    # 添加用户确认，防止直接跳转
-    questionary.text("按回车返回...").ask()
+    if download_method == "aria2":
+        _download_aria2(files, indices, save_dir, has_aria2, aria2_mode)
+    else:
+        _export_idm(files, indices, save_dir)
 
 
-def _download_aria2(files: list, indices: list, save_dir: str):
-    server = Aria2Server(aria2_path="aria2c.exe" if os.name == 'nt' else "aria2c")
+def _download_aria2(files: list, indices: list, save_dir: str, has_aria2: bool, aria2_mode: str):
+    if not has_aria2:
+        console.print("[red]❌ Aria2不可用[/]")
+        return
+    
+    aria2_path = "aria2c" if aria2_mode == "system" else "aria2c.exe"
+    server = Aria2Server(aria2_path)
     
     concurrent = questionary.select("并发数:", choices=[
-        Choice("1 (稳定)", 1),
         Choice("3 (推荐)", 3),
-        Choice("5 (高速)", 5),
+        Choice("5", 5),
+        Choice("10", 10),
     ], default=3, style=STYLE).ask()
     concurrent = concurrent if concurrent else 3
     
