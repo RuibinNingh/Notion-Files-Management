@@ -13606,3 +13606,108 @@
 2026-01-16 12:09:24 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 3/13 (10.0MB)
 2026-01-16 12:09:24 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send
 2026-01-16 12:09:24 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:27 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-814b-98e8-00b279e2b372/send:0] ✓ 成功 (HTTP 200, 2.94s)
+2026-01-16 12:09:27 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 10/10 上传成功 (耗时: 2.96s, 速度: 1.45MB/s)
+2026-01-16 12:09:28 | INFO     | _upload_large_file_improved | [大文件上传] 所有分片上传完成，开始完成上传流程
+2026-01-16 12:09:28 | DEBUG    | _upload_large_file_improved | [大文件上传] 调用 complete API (尝试 1)...
+2026-01-16 12:09:28 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-814b-98e8-00b279e2b372/complete:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-814b-98e8-00b279e2b372/complete
+2026-01-16 12:09:28 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] ✓ 成功 (HTTP 200, 6.52s)
+2026-01-16 12:09:28 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 10/12 上传成功 (耗时: 6.54s, 速度: 1.53MB/s)
+2026-01-16 12:09:28 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-814b-98e8-00b279e2b372/complete:0] ✓ 成功 (HTTP 200, 0.71s)
+2026-01-16 12:09:28 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 完成上传成功 (耗时: 0.72s)
+2026-01-16 12:09:29 | DEBUG    | _upload_large_file_improved | [大文件上传] 附加文件到页面: 2ea644ea-d11a-81dd-a379-cb5f90bf6400
+2026-01-16 12:09:29 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 11/12, 大小: 10485760 bytes
+2026-01-16 12:09:29 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 11/12 (10.0MB)
+2026-01-16 12:09:30 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] ✓ 成功 (HTTP 200, 5.68s)
+2026-01-16 12:09:30 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 3/13 上传成功 (耗时: 5.70s, 速度: 1.75MB/s)
+2026-01-16 12:09:31 | DEBUG    | _attach_file_to_page      | [附加文件] 文件: 16.《三国鼎立》 (18).mp4
+2026-01-16 12:09:31 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send
+2026-01-16 12:09:31 | DEBUG    | _attach_file_to_page      | [附加文件] Block类型: video
+2026-01-16 12:09:31 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:31 | DEBUG    | _attach_file_to_page      | [附加文件] 上传ID: 2ea644ea-d11a-814b-98e8-00b279e2b372
+2026-01-16 12:09:31 | DEBUG    | _attach_file_to_page      | [附加文件] 目标页面: 2ea644ea-d11a-81dd-a379-cb5f90bf6400
+2026-01-16 12:09:31 | DEBUG    | _api_request              | [PATCH:blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children:0] 开始请求: https://api.notion.com/v1/blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children
+2026-01-16 12:09:31 | DEBUG    | _api_request              | [PATCH:blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children:0] 请求数据: {'children': [{'type': 'video', 'video': {'type': 'file_upload', 'file_upload': {'id': '2ea644ea-d11a-814b-98e8-00b279e2b372'}, 'caption': [{'type': 'text', 'text': {'content': '16.《三国鼎立》 (18).mp4'}}]}}]}
+2026-01-16 12:09:31 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 4/13, 大小: 10485760 bytes
+2026-01-16 12:09:31 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 4/13 (10.0MB)
+2026-01-16 12:09:31 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send
+2026-01-16 12:09:31 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:33 | DEBUG    | _api_request              | [PATCH:blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children:0] ✓ 成功 (HTTP 200, 2.34s)
+2026-01-16 12:09:33 | DEBUG    | _attach_file_to_page      | [附加文件] 成功
+2026-01-16 12:09:33 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 附加文件成功 (耗时: 2.36s)
+2026-01-16 12:09:33 | INFO     | report                    | [16.《三国鼎立》 (18).mp4] 状态: completed, 进度: 98878054/98878054 (100.0%), 分片: 10/10, 重试: 0
+2026-01-16 12:09:34 | DEBUG    | _upload_large_file_improved | [大文件上传] 完成: 16.《三国鼎立》 (18).mp4
+2026-01-16 12:09:34 | INFO     | upload_file               | ✓ 上传成功: 16.《三国鼎立》 (18).mp4
+2026-01-16 12:09:34 | INFO     | upload_file               |   耗时: 84.15秒
+2026-01-16 12:09:34 | INFO     | upload_file               |   平均速度: 1.12 MB/s
+2026-01-16 12:09:34 | INFO     | upload_file               | ============================================================
+2026-01-16 12:09:34 | INFO     | upload_file               | ============================================================
+2026-01-16 12:09:34 | INFO     | upload_file               | 开始上传文件: 19.《北魏政治和北方民族大交融》 (21).mp4
+2026-01-16 12:09:34 | INFO     | upload_file               |   文件路径: C:\Users\ruibi\Desktop\新建文件夹\七年级同步\7年级同步课—历史\01.七年级历史上册 20讲\19.《北魏政治和北方民族大交融》 (21).mp4
+2026-01-16 12:09:34 | INFO     | upload_file               |   文件大小: 132.59 MB (139028179 bytes)
+2026-01-16 12:09:34 | INFO     | upload_file               |   MIME类型: video/mp4
+2026-01-16 12:09:34 | INFO     | upload_file               |   上传名称: 19.《北魏政治和北方民族大交融》 (21).mp4
+2026-01-16 12:09:34 | INFO     | upload_file               |   目标页面: 2ea644ea-d11a-81dd-a379-cb5f90bf6400
+2026-01-16 12:09:34 | INFO     | upload_file               |   是否伪装: False
+2026-01-16 12:09:34 | INFO     | upload_file               |   上传模式: 分片上传
+2026-01-16 12:09:34 | DEBUG    | _upload_large_file_improved | [大文件上传] 开始: 19.《北魏政治和北方民族大交融》 (21).mp4
+2026-01-16 12:09:34 | DEBUG    | _upload_large_file_improved | [大文件上传] 总分片数: 14 (每片 10.0MB)
+2026-01-16 12:09:34 | DEBUG    | _upload_large_file_improved | [大文件上传] 创建分片上传会话...
+2026-01-16 12:09:34 | DEBUG    | _api_request              | [POST:file_uploads:0] 开始请求: https://api.notion.com/v1/file_uploads
+2026-01-16 12:09:34 | DEBUG    | _api_request              | [POST:file_uploads:0] 请求数据: {'filename': '19.《北魏政治和北方民族大交融》 (21).mp4', 'content_type': 'video/mp4', 'mode': 'multi_part', 'number_of_parts': 14}
+2026-01-16 12:09:34 | DEBUG    | _api_request              | [POST:file_uploads:0] ✓ 成功 (HTTP 200, 0.52s)
+2026-01-16 12:09:34 | INFO     | _upload_large_file_improved | [大文件上传] 创建会话成功: 2ea644ea-d11a-811f-bc48-00b26b320f2b (耗时 0.52s)
+2026-01-16 12:09:34 | DEBUG    | _upload_large_file_improved | [大文件上传] === 上传轮次 1 ===
+2026-01-16 12:09:36 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] ✓ 成功 (HTTP 200, 5.52s)
+2026-01-16 12:09:36 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 4/13 上传成功 (耗时: 5.52s, 速度: 1.81MB/s)
+2026-01-16 12:09:36 | DEBUG    | _upload_large_file_improved | [大文件上传] 检查会话状态: 2ea644ea-d11a-811f-bc48-00b26b320f2b
+2026-01-16 12:09:36 | DEBUG    | _api_request              | [GET:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b
+2026-01-16 12:09:36 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 5/13, 大小: 10485760 bytes
+2026-01-16 12:09:36 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 5/13 (10.0MB)
+2026-01-16 12:09:36 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send
+2026-01-16 12:09:36 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:37 | DEBUG    | _api_request              | [GET:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b:0] ✓ 成功 (HTTP 200, 0.35s)
+2026-01-16 12:09:37 | DEBUG    | _upload_large_file_improved | [大文件上传] 服务器已有 0 个分片，本地记录 0 个
+2026-01-16 12:09:37 | INFO     | _upload_large_file_improved | [大文件上传] 待上传分片: 14 个 (已完成: 0/14)
+2026-01-16 12:09:37 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 1/14, 大小: 10485760 bytes
+2026-01-16 12:09:37 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 1/14 (10.0MB)
+2026-01-16 12:09:37 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send
+2026-01-16 12:09:37 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:38 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] ✓ 成功 (HTTP 200, 7.10s)
+2026-01-16 12:09:38 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 11/12 上传成功 (耗时: 9.15s, 速度: 1.09MB/s)
+2026-01-16 12:09:39 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 12/12, 大小: 3450686 bytes
+2026-01-16 12:09:39 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 12/12 (3.3MB)
+2026-01-16 12:09:39 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send
+2026-01-16 12:09:39 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] 上传文件: {'file': '<tuple, 3450686 bytes>'}
+2026-01-16 12:09:42 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] ✓ 成功 (HTTP 200, 5.00s)
+2026-01-16 12:09:42 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 1/14 上传成功 (耗时: 5.07s, 速度: 1.97MB/s)
+2026-01-16 12:09:42 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 2/14, 大小: 10485760 bytes
+2026-01-16 12:09:42 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 2/14 (10.0MB)
+2026-01-16 12:09:42 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send
+2026-01-16 12:09:42 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:42 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/send:0] ✓ 成功 (HTTP 200, 2.92s)
+2026-01-16 12:09:42 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 12/12 上传成功 (耗时: 2.93s, 速度: 1.12MB/s)
+2026-01-16 12:09:42 | INFO     | _upload_large_file_improved | [大文件上传] 所有分片上传完成，开始完成上传流程
+2026-01-16 12:09:44 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] ✓ 成功 (HTTP 200, 7.67s)
+2026-01-16 12:09:44 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 5/13 上传成功 (耗时: 7.67s, 速度: 1.30MB/s)
+2026-01-16 12:09:45 | DEBUG    | _upload_large_file_improved | [大文件上传] 调用 complete API (尝试 1)...
+2026-01-16 12:09:45 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/complete:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/complete
+2026-01-16 12:09:45 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 6/13, 大小: 10485760 bytes
+2026-01-16 12:09:45 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 6/13 (10.0MB)
+2026-01-16 12:09:45 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send
+2026-01-16 12:09:45 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811e-93bd-00b2e53c3bcc/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
+2026-01-16 12:09:46 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] ✓ 成功 (HTTP 200, 3.70s)
+2026-01-16 12:09:46 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 分片 2/14 上传成功 (耗时: 3.72s, 速度: 2.69MB/s)
+2026-01-16 12:09:46 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-8170-8fa3-00b2c9e6180d/complete:0] ✓ 成功 (HTTP 200, 1.33s)
+2026-01-16 12:09:46 | INFO     | _upload_large_file_improved | [大文件上传] ✓ 完成上传成功 (耗时: 1.34s)
+2026-01-16 12:09:46 | DEBUG    | _upload_large_file_improved | [大文件上传] 附加文件到页面: 2ea644ea-d11a-81dd-a379-cb5f90bf6400
+2026-01-16 12:09:48 | DEBUG    | _attach_file_to_page      | [附加文件] 文件: 15.《两汉的科技和文化》 (17).mp4
+2026-01-16 12:09:48 | DEBUG    | _attach_file_to_page      | [附加文件] Block类型: video
+2026-01-16 12:09:48 | DEBUG    | _attach_file_to_page      | [附加文件] 上传ID: 2ea644ea-d11a-8170-8fa3-00b2c9e6180d
+2026-01-16 12:09:48 | DEBUG    | _attach_file_to_page      | [附加文件] 目标页面: 2ea644ea-d11a-81dd-a379-cb5f90bf6400
+2026-01-16 12:09:48 | DEBUG    | _api_request              | [PATCH:blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children:0] 开始请求: https://api.notion.com/v1/blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children
+2026-01-16 12:09:48 | DEBUG    | _api_request              | [PATCH:blocks/2ea644ea-d11a-81dd-a379-cb5f90bf6400/children:0] 请求数据: {'children': [{'type': 'video', 'video': {'type': 'file_upload', 'file_upload': {'id': '2ea644ea-d11a-8170-8fa3-00b2c9e6180d'}, 'caption': [{'type': 'text', 'text': {'content': '15.《两汉的科技和文化》 (17).mp4'}}]}}]}
+2026-01-16 12:09:48 | DEBUG    | _upload_large_file_improved | [大文件上传] 准备分片 3/14, 大小: 10485760 bytes
+2026-01-16 12:09:48 | INFO     | _upload_large_file_improved | [大文件上传] 上传分片 3/14 (10.0MB)
+2026-01-16 12:09:48 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] 开始请求: https://api.notion.com/v1/file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send
+2026-01-16 12:09:48 | DEBUG    | _api_request              | [POST:file_uploads/2ea644ea-d11a-811f-bc48-00b26b320f2b/send:0] 上传文件: {'file': '<tuple, 10485760 bytes>'}
