@@ -1,0 +1,12 @@
+<Page x:Class="Notion_Files_Management.Views.UploadPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="上传">
+	<Grid>
+		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+			<ui:SymbolIcon Symbol="ArrowUpload24" FontSize="64" Margin="0,0,0,20"/>
+			<ui:TextBlock Text="文件上传 Upload" FontTypography="Title" HorizontalAlignment="Center"/>
+		</StackPanel>
+	</Grid>
+</Page>

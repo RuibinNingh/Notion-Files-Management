@@ -1,0 +1,12 @@
+<Page x:Class="Notion_Files_Management.Views.DashboardPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="主页">
+	<Grid>
+		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+			<ui:SymbolIcon Symbol="Home24" FontSize="64" Margin="0,0,0,20"/>
+			<ui:TextBlock Text="主页 Dashboard" FontTypography="Title" HorizontalAlignment="Center"/>
+		</StackPanel>
+	</Grid>
+</Page>
