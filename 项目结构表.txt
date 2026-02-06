@@ -1,0 +1,1066 @@
+├── .git/
+│   ├── hooks/
+│   │   ├── applypatch-msg.sample
+│   │   ├── commit-msg.sample
+│   │   ├── fsmonitor-watchman.sample
+│   │   ├── post-update.sample
+│   │   ├── pre-applypatch.sample
+│   │   ├── pre-commit.sample
+│   │   ├── pre-merge-commit.sample
+│   │   ├── pre-push.sample
+│   │   ├── pre-rebase.sample
+│   │   ├── pre-receive.sample
+│   │   ├── prepare-commit-msg.sample
+│   │   ├── push-to-checkout.sample
+│   │   ├── sendemail-validate.sample
+│   │   └── update.sample
+│   ├── info/
+│   │   └── exclude
+│   ├── logs/
+│   │   ├── refs/
+│   │   │   ├── heads/
+│   │   │   │   └── main
+│   │   │   └── remotes/
+│   │   │       └── origin/
+│   │   │           ├── HEAD
+│   │   │           └── main
+│   │   └── HEAD
+│   ├── objects/
+│   │   ├── 09/
+│   │   │   └── ba7bfe98092e1f106f632fc60e38a1f38fccd5
+│   │   ├── 0b/
+│   │   │   └── 3134aa81b716fbdedcb27b8d9f4557f537f149
+│   │   ├── 10/
+│   │   │   └── 6c2b5ab71fd90d657bbaba7c58cacaed6750b9
+│   │   ├── 16/
+│   │   │   └── e0c23112341df5d99627c2ed246c0dbe400b7d
+│   │   ├── 18/
+│   │   │   ├── 15191cbac9e3b709933254cfbd116e6438d36c
+│   │   │   └── 242fccf6d6a88248b0372567c3513482da8675
+│   │   ├── 21/
+│   │   │   └── aa0e06262f40fc2d038bb73b7111ee42458098
+│   │   ├── 27/
+│   │   │   └── 1b1d92b6731fd76af48a463edee26a6edf1ee5
+│   │   ├── 28/
+│   │   │   └── 6ec95905ecee597c4de3870863435eb053cf9b
+│   │   ├── 35/
+│   │   │   ├── 82266cd1e5c9bae094fa2a79328d98ce267aea
+│   │   │   └── 9146a88b00ce20be9cb978e971dea70501ac88
+│   │   ├── 4c/
+│   │   │   └── e2afb6f85e19d15ccb6501f391058ef7c1ac77
+│   │   ├── 6c/
+│   │   │   └── bb10b76083040155b411b19ce6f8f39d0852ec
+│   │   ├── 6f/
+│   │   │   └── 48f2631a4704ad78e1b7924f6f5420e45ccf6d
+│   │   ├── 73/
+│   │   │   └── 4b70c2be2a162799a0963da56c14c0e43d6da2
+│   │   ├── 77/
+│   │   │   └── 1506c0ad2ee7b938d5b238a45afb4920f744ef
+│   │   ├── 85/
+│   │   │   └── c726c84bd3d98b586d6b0693a72574603ee041
+│   │   ├── 92/
+│   │   │   └── 036e46d7e4c76db19aeaa0688674c3026e2952
+│   │   ├── 9d/
+│   │   │   └── 58a00682bbea15128d955e0f50de65ed423afc
+│   │   ├── b3/
+│   │   │   └── 68523a4e9306cc53ff43a4653e3ab68a426e9e
+│   │   ├── bc/
+│   │   │   └── 86fd8851652ccbc342158f85d764967f9cc779
+│   │   ├── c3/
+│   │   │   └── 74dc0012b41fa3083cc57a978eb85141f9265b
+│   │   ├── c9/
+│   │   │   ├── 2d45894d7ac114ed27f5cac02822e612447d3b
+│   │   │   └── 9366cbc762db7f6b41859097c4ee7e8b56a8a3
+│   │   ├── ca/
+│   │   │   └── 4c6f242ed84ad087b64899bc0da075991eb658
+│   │   ├── cb/
+│   │   │   └── 29a6392f8c2149657ec3b86f10de485a6ad73f
+│   │   ├── cd/
+│   │   │   └── 941d250a802484b858d3a13b183f0f2d23552a
+│   │   ├── d1/
+│   │   │   └── 45f897046a153fdc0c34d79b6218a0fdd1874c
+│   │   ├── d6/
+│   │   │   └── 0bccdb86fe71d5bb43f9fe7d5233e8be4cfcfd
+│   │   ├── d8/
+│   │   │   └── 99db4edbaefc7660bb0205208eb19a2d7e3b15
+│   │   ├── d9/
+│   │   │   └── f5326d7df7c87332288f508f409b4369c61857
+│   │   ├── e1/
+│   │   │   └── f4652e0d41af5284eb384fd46c30e257536cf8
+│   │   ├── f0/
+│   │   │   └── 41b4e60204803990622daa4c959b8a31a06837
+│   │   ├── f3/
+│   │   │   └── d59d360eb582adc6c14e7557121ae4f39e2e2a
+│   │   ├── fa/
+│   │   │   └── 2ea7989836d642d1fad58f73a0b0738fbe6e29
+│   │   ├── fe/
+│   │   │   └── 7e0a268a0b8fa85c27cd68f60ef873311c512e
+│   │   ├── info/
+│   │   └── pack/
+│   │       ├── pack-45854d7acdbe17461fff96474a75538cc3a34de5.idx
+│   │       ├── pack-45854d7acdbe17461fff96474a75538cc3a34de5.pack
+│   │       └── pack-45854d7acdbe17461fff96474a75538cc3a34de5.rev
+│   ├── refs/
+│   │   ├── heads/
+│   │   │   └── main
+│   │   ├── remotes/
+│   │   │   └── origin/
+│   │   │       ├── HEAD
+│   │   │       └── main
+│   │   └── tags/
+│   ├── COMMIT_EDITMSG
+│   ├── config
+│   ├── description
+│   ├── FETCH_HEAD
+│   ├── HEAD
+│   ├── index
+│   ├── ORIG_HEAD
+│   └── packed-refs
+├── bin/
+│   ├── Debug/
+│   │   └── net8.0-windows/
+│   │       ├── Notion-Files-Management.deps.json
+│   │       ├── Notion-Files-Management.dll
+│   │       ├── Notion-Files-Management.exe
+│   │       ├── Notion-Files-Management.pdb
+│   │       ├── Notion-Files-Management.runtimeconfig.json
+│   │       ├── Python.Runtime.dll
+│   │       ├── Wpf.Ui.Abstractions.dll
+│   │       └── Wpf.Ui.dll
+│   └── Release/
+│       └── net8.0-windows/
+│           └── win-x64/
+│               ├── cs/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── de/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── es/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── fr/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── it/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── ja/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── ko/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── pl/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── pt-BR/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── publish/
+│               │   └── Notion-Files-Management.exe
+│               ├── ru/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── tr/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── zh-Hans/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── zh-Hant/
+│               │   ├── Microsoft.VisualBasic.Forms.resources.dll
+│               │   ├── PresentationCore.resources.dll
+│               │   ├── PresentationFramework.resources.dll
+│               │   ├── PresentationUI.resources.dll
+│               │   ├── ReachFramework.resources.dll
+│               │   ├── System.Windows.Controls.Ribbon.resources.dll
+│               │   ├── System.Windows.Forms.Design.resources.dll
+│               │   ├── System.Windows.Forms.Primitives.resources.dll
+│               │   ├── System.Windows.Forms.resources.dll
+│               │   ├── System.Windows.Input.Manipulations.resources.dll
+│               │   ├── System.Xaml.resources.dll
+│               │   ├── UIAutomationClient.resources.dll
+│               │   ├── UIAutomationClientSideProviders.resources.dll
+│               │   ├── UIAutomationProvider.resources.dll
+│               │   ├── UIAutomationTypes.resources.dll
+│               │   ├── WindowsBase.resources.dll
+│               │   └── WindowsFormsIntegration.resources.dll
+│               ├── Accessibility.dll
+│               ├── clretwrc.dll
+│               ├── clrgc.dll
+│               ├── clrjit.dll
+│               ├── coreclr.dll
+│               ├── createdump.exe
+│               ├── D3DCompiler_47_cor3.dll
+│               ├── DirectWriteForwarder.dll
+│               ├── hostfxr.dll
+│               ├── hostpolicy.dll
+│               ├── Microsoft.CSharp.dll
+│               ├── Microsoft.DiaSymReader.Native.amd64.dll
+│               ├── Microsoft.VisualBasic.Core.dll
+│               ├── Microsoft.VisualBasic.dll
+│               ├── Microsoft.VisualBasic.Forms.dll
+│               ├── Microsoft.Win32.Primitives.dll
+│               ├── Microsoft.Win32.Registry.AccessControl.dll
+│               ├── Microsoft.Win32.Registry.dll
+│               ├── Microsoft.Win32.SystemEvents.dll
+│               ├── mscordaccore.dll
+│               ├── mscordaccore_amd64_amd64_8.0.2325.60607.dll
+│               ├── mscordbi.dll
+│               ├── mscorlib.dll
+│               ├── mscorrc.dll
+│               ├── msquic.dll
+│               ├── netstandard.dll
+│               ├── Notion-Files-Management.deps.json
+│               ├── Notion-Files-Management.dll
+│               ├── Notion-Files-Management.exe
+│               ├── Notion-Files-Management.runtimeconfig.json
+│               ├── PenImc_cor3.dll
+│               ├── PresentationCore.dll
+│               ├── PresentationFramework-SystemCore.dll
+│               ├── PresentationFramework-SystemData.dll
+│               ├── PresentationFramework-SystemDrawing.dll
+│               ├── PresentationFramework-SystemXml.dll
+│               ├── PresentationFramework-SystemXmlLinq.dll
+│               ├── PresentationFramework.Aero.dll
+│               ├── PresentationFramework.Aero2.dll
+│               ├── PresentationFramework.AeroLite.dll
+│               ├── PresentationFramework.Classic.dll
+│               ├── PresentationFramework.dll
+│               ├── PresentationFramework.Luna.dll
+│               ├── PresentationFramework.Royale.dll
+│               ├── PresentationNative_cor3.dll
+│               ├── PresentationUI.dll
+│               ├── Python.Runtime.dll
+│               ├── ReachFramework.dll
+│               ├── System.AppContext.dll
+│               ├── System.Buffers.dll
+│               ├── System.CodeDom.dll
+│               ├── System.Collections.Concurrent.dll
+│               ├── System.Collections.dll
+│               ├── System.Collections.Immutable.dll
+│               ├── System.Collections.NonGeneric.dll
+│               ├── System.Collections.Specialized.dll
+│               ├── System.ComponentModel.Annotations.dll
+│               ├── System.ComponentModel.DataAnnotations.dll
+│               ├── System.ComponentModel.dll
+│               ├── System.ComponentModel.EventBasedAsync.dll
+│               ├── System.ComponentModel.Primitives.dll
+│               ├── System.ComponentModel.TypeConverter.dll
+│               ├── System.Configuration.ConfigurationManager.dll
+│               ├── System.Configuration.dll
+│               ├── System.Console.dll
+│               ├── System.Core.dll
+│               ├── System.Data.Common.dll
+│               ├── System.Data.DataSetExtensions.dll
+│               ├── System.Data.dll
+│               ├── System.Design.dll
+│               ├── System.Diagnostics.Contracts.dll
+│               ├── System.Diagnostics.Debug.dll
+│               ├── System.Diagnostics.DiagnosticSource.dll
+│               ├── System.Diagnostics.EventLog.dll
+│               ├── System.Diagnostics.EventLog.Messages.dll
+│               ├── System.Diagnostics.FileVersionInfo.dll
+│               ├── System.Diagnostics.PerformanceCounter.dll
+│               ├── System.Diagnostics.Process.dll
+│               ├── System.Diagnostics.StackTrace.dll
+│               ├── System.Diagnostics.TextWriterTraceListener.dll
+│               ├── System.Diagnostics.Tools.dll
+│               ├── System.Diagnostics.TraceSource.dll
+│               ├── System.Diagnostics.Tracing.dll
+│               ├── System.DirectoryServices.dll
+│               ├── System.dll
+│               ├── System.Drawing.Common.dll
+│               ├── System.Drawing.Design.dll
+│               ├── System.Drawing.dll
+│               ├── System.Drawing.Primitives.dll
+│               ├── System.Dynamic.Runtime.dll
+│               ├── System.Formats.Asn1.dll
+│               ├── System.Formats.Tar.dll
+│               ├── System.Globalization.Calendars.dll
+│               ├── System.Globalization.dll
+│               ├── System.Globalization.Extensions.dll
+│               ├── System.IO.Compression.Brotli.dll
+│               ├── System.IO.Compression.dll
+│               ├── System.IO.Compression.FileSystem.dll
+│               ├── System.IO.Compression.Native.dll
+│               ├── System.IO.Compression.ZipFile.dll
+│               ├── System.IO.dll
+│               ├── System.IO.FileSystem.AccessControl.dll
+│               ├── System.IO.FileSystem.dll
+│               ├── System.IO.FileSystem.DriveInfo.dll
+│               ├── System.IO.FileSystem.Primitives.dll
+│               ├── System.IO.FileSystem.Watcher.dll
+│               ├── System.IO.IsolatedStorage.dll
+│               ├── System.IO.MemoryMappedFiles.dll
+│               ├── System.IO.Packaging.dll
+│               ├── System.IO.Pipes.AccessControl.dll
+│               ├── System.IO.Pipes.dll
+│               ├── System.IO.UnmanagedMemoryStream.dll
+│               ├── System.Linq.dll
+│               ├── System.Linq.Expressions.dll
+│               ├── System.Linq.Parallel.dll
+│               ├── System.Linq.Queryable.dll
+│               ├── System.Memory.dll
+│               ├── System.Net.dll
+│               ├── System.Net.Http.dll
+│               ├── System.Net.Http.Json.dll
+│               ├── System.Net.HttpListener.dll
+│               ├── System.Net.Mail.dll
+│               ├── System.Net.NameResolution.dll
+│               ├── System.Net.NetworkInformation.dll
+│               ├── System.Net.Ping.dll
+│               ├── System.Net.Primitives.dll
+│               ├── System.Net.Quic.dll
+│               ├── System.Net.Requests.dll
+│               ├── System.Net.Security.dll
+│               ├── System.Net.ServicePoint.dll
+│               ├── System.Net.Sockets.dll
+│               ├── System.Net.WebClient.dll
+│               ├── System.Net.WebHeaderCollection.dll
+│               ├── System.Net.WebProxy.dll
+│               ├── System.Net.WebSockets.Client.dll
+│               ├── System.Net.WebSockets.dll
+│               ├── System.Numerics.dll
+│               ├── System.Numerics.Vectors.dll
+│               ├── System.ObjectModel.dll
+│               ├── System.Printing.dll
+│               ├── System.Private.CoreLib.dll
+│               ├── System.Private.DataContractSerialization.dll
+│               ├── System.Private.Uri.dll
+│               ├── System.Private.Xml.dll
+│               ├── System.Private.Xml.Linq.dll
+│               ├── System.Reflection.DispatchProxy.dll
+│               ├── System.Reflection.dll
+│               ├── System.Reflection.Emit.dll
+│               ├── System.Reflection.Emit.ILGeneration.dll
+│               ├── System.Reflection.Emit.Lightweight.dll
+│               ├── System.Reflection.Extensions.dll
+│               ├── System.Reflection.Metadata.dll
+│               ├── System.Reflection.Primitives.dll
+│               ├── System.Reflection.TypeExtensions.dll
+│               ├── System.Resources.Extensions.dll
+│               ├── System.Resources.Reader.dll
+│               ├── System.Resources.ResourceManager.dll
+│               ├── System.Resources.Writer.dll
+│               ├── System.Runtime.CompilerServices.Unsafe.dll
+│               ├── System.Runtime.CompilerServices.VisualC.dll
+│               ├── System.Runtime.dll
+│               ├── System.Runtime.Extensions.dll
+│               ├── System.Runtime.Handles.dll
+│               ├── System.Runtime.InteropServices.dll
+│               ├── System.Runtime.InteropServices.JavaScript.dll
+│               ├── System.Runtime.InteropServices.RuntimeInformation.dll
+│               ├── System.Runtime.Intrinsics.dll
+│               ├── System.Runtime.Loader.dll
+│               ├── System.Runtime.Numerics.dll
+│               ├── System.Runtime.Serialization.dll
+│               ├── System.Runtime.Serialization.Formatters.dll
+│               ├── System.Runtime.Serialization.Json.dll
+│               ├── System.Runtime.Serialization.Primitives.dll
+│               ├── System.Runtime.Serialization.Xml.dll
+│               ├── System.Security.AccessControl.dll
+│               ├── System.Security.Claims.dll
+│               ├── System.Security.Cryptography.Algorithms.dll
+│               ├── System.Security.Cryptography.Cng.dll
+│               ├── System.Security.Cryptography.Csp.dll
+│               ├── System.Security.Cryptography.dll
+│               ├── System.Security.Cryptography.Encoding.dll
+│               ├── System.Security.Cryptography.OpenSsl.dll
+│               ├── System.Security.Cryptography.Pkcs.dll
+│               ├── System.Security.Cryptography.Primitives.dll
+│               ├── System.Security.Cryptography.ProtectedData.dll
+│               ├── System.Security.Cryptography.X509Certificates.dll
+│               ├── System.Security.Cryptography.Xml.dll
+│               ├── System.Security.dll
+│               ├── System.Security.Permissions.dll
+│               ├── System.Security.Principal.dll
+│               ├── System.Security.Principal.Windows.dll
+│               ├── System.Security.SecureString.dll
+│               ├── System.ServiceModel.Web.dll
+│               ├── System.ServiceProcess.dll
+│               ├── System.Text.Encoding.CodePages.dll
+│               ├── System.Text.Encoding.dll
+│               ├── System.Text.Encoding.Extensions.dll
+│               ├── System.Text.Encodings.Web.dll
+│               ├── System.Text.Json.dll
+│               ├── System.Text.RegularExpressions.dll
+│               ├── System.Threading.AccessControl.dll
+│               ├── System.Threading.Channels.dll
+│               ├── System.Threading.dll
+│               ├── System.Threading.Overlapped.dll
+│               ├── System.Threading.Tasks.Dataflow.dll
+│               ├── System.Threading.Tasks.dll
+│               ├── System.Threading.Tasks.Extensions.dll
+│               ├── System.Threading.Tasks.Parallel.dll
+│               ├── System.Threading.Thread.dll
+│               ├── System.Threading.ThreadPool.dll
+│               ├── System.Threading.Timer.dll
+│               ├── System.Transactions.dll
+│               ├── System.Transactions.Local.dll
+│               ├── System.ValueTuple.dll
+│               ├── System.Web.dll
+│               ├── System.Web.HttpUtility.dll
+│               ├── System.Windows.Controls.Ribbon.dll
+│               ├── System.Windows.dll
+│               ├── System.Windows.Extensions.dll
+│               ├── System.Windows.Forms.Design.dll
+│               ├── System.Windows.Forms.Design.Editors.dll
+│               ├── System.Windows.Forms.dll
+│               ├── System.Windows.Forms.Primitives.dll
+│               ├── System.Windows.Input.Manipulations.dll
+│               ├── System.Windows.Presentation.dll
+│               ├── System.Xaml.dll
+│               ├── System.Xml.dll
+│               ├── System.Xml.Linq.dll
+│               ├── System.Xml.ReaderWriter.dll
+│               ├── System.Xml.Serialization.dll
+│               ├── System.Xml.XDocument.dll
+│               ├── System.Xml.XmlDocument.dll
+│               ├── System.Xml.XmlSerializer.dll
+│               ├── System.Xml.XPath.dll
+│               ├── System.Xml.XPath.XDocument.dll
+│               ├── UIAutomationClient.dll
+│               ├── UIAutomationClientSideProviders.dll
+│               ├── UIAutomationProvider.dll
+│               ├── UIAutomationTypes.dll
+│               ├── vcruntime140_cor3.dll
+│               ├── WindowsBase.dll
+│               ├── WindowsFormsIntegration.dll
+│               ├── Wpf.Ui.Abstractions.dll
+│               ├── Wpf.Ui.dll
+│               └── wpfgfx_cor3.dll
+├── obj/
+│   ├── Debug/
+│   │   └── net8.0-windows/
+│   │       ├── ref/
+│   │       │   └── Notion-Files-Management.dll
+│   │       ├── refint/
+│   │       │   └── Notion-Files-Management.dll
+│   │       ├── Views/
+│   │       │   ├── DashboardPage.baml
+│   │       │   ├── DashboardPage.g.cs
+│   │       │   ├── DashboardPage.g.i.cs
+│   │       │   ├── DownloadPage.baml
+│   │       │   ├── DownloadPage.g.cs
+│   │       │   ├── DownloadPage.g.i.cs
+│   │       │   ├── SettingsPage.baml
+│   │       │   ├── SettingsPage.g.cs
+│   │       │   ├── SettingsPage.g.i.cs
+│   │       │   ├── ToolsPage.baml
+│   │       │   ├── ToolsPage.g.cs
+│   │       │   ├── ToolsPage.g.i.cs
+│   │       │   ├── UploadPage.baml
+│   │       │   ├── UploadPage.g.cs
+│   │       │   └── UploadPage.g.i.cs
+│   │       ├── .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+│   │       ├── App.baml
+│   │       ├── App.g.cs
+│   │       ├── App.g.i.cs
+│   │       ├── apphost.exe
+│   │       ├── GeneratedInternalTypeHelper.g.cs
+│   │       ├── GeneratedInternalTypeHelper.g.i.cs
+│   │       ├── MainWindow.baml
+│   │       ├── MainWindow.g.cs
+│   │       ├── MainWindow.g.i.cs
+│   │       ├── Notion-F.99D621E4.Up2Date
+│   │       ├── Notion-Files-Management.AssemblyInfo.cs
+│   │       ├── Notion-Files-Management.AssemblyInfoInputs.cache
+│   │       ├── Notion-Files-Management.assets.cache
+│   │       ├── Notion-Files-Management.csproj.AssemblyReference.cache
+│   │       ├── Notion-Files-Management.csproj.BuildWithSkipAnalyzers
+│   │       ├── Notion-Files-Management.csproj.CoreCompileInputs.cache
+│   │       ├── Notion-Files-Management.csproj.FileListAbsolute.txt
+│   │       ├── Notion-Files-Management.designer.deps.json
+│   │       ├── Notion-Files-Management.designer.runtimeconfig.json
+│   │       ├── Notion-Files-Management.dll
+│   │       ├── Notion-Files-Management.g.resources
+│   │       ├── Notion-Files-Management.GeneratedMSBuildEditorConfig.editorconfig
+│   │       ├── Notion-Files-Management.genruntimeconfig.cache
+│   │       ├── Notion-Files-Management.GlobalUsings.g.cs
+│   │       ├── Notion-Files-Management.pdb
+│   │       ├── Notion-Files-Management.sourcelink.json
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.AssemblyInfo.cs
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.AssemblyInfoInputs.cache
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.assets.cache
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.csproj.BuildWithSkipAnalyzers
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.GeneratedMSBuildEditorConfig.editorconfig
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.GlobalUsings.g.cs
+│   │       ├── Notion-Files-Management_intjlsnh_wpftmp.sourcelink.json
+│   │       ├── Notion-Files-Management_MarkupCompile.cache
+│   │       ├── Notion-Files-Management_MarkupCompile.i.cache
+│   │       ├── Notion-Files-Management_MarkupCompile.lref
+│   │       ├── Notion-Files-Management_mqlljsvm_wpftmp.AssemblyInfo.cs
+│   │       ├── Notion-Files-Management_mqlljsvm_wpftmp.AssemblyInfoInputs.cache
+│   │       ├── Notion-Files-Management_mqlljsvm_wpftmp.assets.cache
+│   │       ├── Notion-Files-Management_mqlljsvm_wpftmp.GeneratedMSBuildEditorConfig.editorconfig
+│   │       ├── Notion-Files-Management_mqlljsvm_wpftmp.GlobalUsings.g.cs
+│   │       └── Notion-Files-Management_mqlljsvm_wpftmp.sourcelink.json
+│   ├── Release/
+│   │   └── net8.0-windows/
+│   │       ├── ref/
+│   │       ├── refint/
+│   │       ├── Views/
+│   │       │   ├── DashboardPage.baml
+│   │       │   ├── DashboardPage.g.cs
+│   │       │   ├── DownloadPage.baml
+│   │       │   ├── DownloadPage.g.cs
+│   │       │   ├── SettingsPage.baml
+│   │       │   ├── SettingsPage.g.cs
+│   │       │   ├── ToolsPage.baml
+│   │       │   ├── ToolsPage.g.cs
+│   │       │   ├── UploadPage.baml
+│   │       │   └── UploadPage.g.cs
+│   │       ├── win-x64/
+│   │       │   ├── R2R/
+│   │       │   │   ├── Accessibility.dll
+│   │       │   │   ├── DirectWriteForwarder.dll
+│   │       │   │   ├── Microsoft.CSharp.dll
+│   │       │   │   ├── Microsoft.VisualBasic.Core.dll
+│   │       │   │   ├── Microsoft.VisualBasic.dll
+│   │       │   │   ├── Microsoft.VisualBasic.Forms.dll
+│   │       │   │   ├── Microsoft.Win32.Primitives.dll
+│   │       │   │   ├── Microsoft.Win32.Registry.AccessControl.dll
+│   │       │   │   ├── Microsoft.Win32.Registry.dll
+│   │       │   │   ├── Microsoft.Win32.SystemEvents.dll
+│   │       │   │   ├── mscorlib.dll
+│   │       │   │   ├── netstandard.dll
+│   │       │   │   ├── Notion-Files-Management.dll
+│   │       │   │   ├── Notion-Files-Management.r2r.dll
+│   │       │   │   ├── PresentationCore.dll
+│   │       │   │   ├── PresentationFramework-SystemCore.dll
+│   │       │   │   ├── PresentationFramework-SystemData.dll
+│   │       │   │   ├── PresentationFramework-SystemDrawing.dll
+│   │       │   │   ├── PresentationFramework-SystemXml.dll
+│   │       │   │   ├── PresentationFramework-SystemXmlLinq.dll
+│   │       │   │   ├── PresentationFramework.Aero.dll
+│   │       │   │   ├── PresentationFramework.Aero2.dll
+│   │       │   │   ├── PresentationFramework.AeroLite.dll
+│   │       │   │   ├── PresentationFramework.Classic.dll
+│   │       │   │   ├── PresentationFramework.dll
+│   │       │   │   ├── PresentationFramework.Luna.dll
+│   │       │   │   ├── PresentationFramework.Royale.dll
+│   │       │   │   ├── PresentationUI.dll
+│   │       │   │   ├── Python.Runtime.dll
+│   │       │   │   ├── ReachFramework.dll
+│   │       │   │   ├── System.AppContext.dll
+│   │       │   │   ├── System.Buffers.dll
+│   │       │   │   ├── System.CodeDom.dll
+│   │       │   │   ├── System.Collections.Concurrent.dll
+│   │       │   │   ├── System.Collections.dll
+│   │       │   │   ├── System.Collections.Immutable.dll
+│   │       │   │   ├── System.Collections.NonGeneric.dll
+│   │       │   │   ├── System.Collections.Specialized.dll
+│   │       │   │   ├── System.ComponentModel.Annotations.dll
+│   │       │   │   ├── System.ComponentModel.DataAnnotations.dll
+│   │       │   │   ├── System.ComponentModel.dll
+│   │       │   │   ├── System.ComponentModel.EventBasedAsync.dll
+│   │       │   │   ├── System.ComponentModel.Primitives.dll
+│   │       │   │   ├── System.ComponentModel.TypeConverter.dll
+│   │       │   │   ├── System.Configuration.ConfigurationManager.dll
+│   │       │   │   ├── System.Configuration.dll
+│   │       │   │   ├── System.Console.dll
+│   │       │   │   ├── System.Core.dll
+│   │       │   │   ├── System.Data.Common.dll
+│   │       │   │   ├── System.Data.DataSetExtensions.dll
+│   │       │   │   ├── System.Data.dll
+│   │       │   │   ├── System.Design.dll
+│   │       │   │   ├── System.Diagnostics.Contracts.dll
+│   │       │   │   ├── System.Diagnostics.Debug.dll
+│   │       │   │   ├── System.Diagnostics.DiagnosticSource.dll
+│   │       │   │   ├── System.Diagnostics.EventLog.dll
+│   │       │   │   ├── System.Diagnostics.EventLog.Messages.dll
+│   │       │   │   ├── System.Diagnostics.FileVersionInfo.dll
+│   │       │   │   ├── System.Diagnostics.PerformanceCounter.dll
+│   │       │   │   ├── System.Diagnostics.Process.dll
+│   │       │   │   ├── System.Diagnostics.StackTrace.dll
+│   │       │   │   ├── System.Diagnostics.TextWriterTraceListener.dll
+│   │       │   │   ├── System.Diagnostics.Tools.dll
+│   │       │   │   ├── System.Diagnostics.TraceSource.dll
+│   │       │   │   ├── System.Diagnostics.Tracing.dll
+│   │       │   │   ├── System.DirectoryServices.dll
+│   │       │   │   ├── System.dll
+│   │       │   │   ├── System.Drawing.Common.dll
+│   │       │   │   ├── System.Drawing.Design.dll
+│   │       │   │   ├── System.Drawing.dll
+│   │       │   │   ├── System.Drawing.Primitives.dll
+│   │       │   │   ├── System.Dynamic.Runtime.dll
+│   │       │   │   ├── System.Formats.Asn1.dll
+│   │       │   │   ├── System.Formats.Tar.dll
+│   │       │   │   ├── System.Globalization.Calendars.dll
+│   │       │   │   ├── System.Globalization.dll
+│   │       │   │   ├── System.Globalization.Extensions.dll
+│   │       │   │   ├── System.IO.Compression.Brotli.dll
+│   │       │   │   ├── System.IO.Compression.dll
+│   │       │   │   ├── System.IO.Compression.FileSystem.dll
+│   │       │   │   ├── System.IO.Compression.ZipFile.dll
+│   │       │   │   ├── System.IO.dll
+│   │       │   │   ├── System.IO.FileSystem.AccessControl.dll
+│   │       │   │   ├── System.IO.FileSystem.dll
+│   │       │   │   ├── System.IO.FileSystem.DriveInfo.dll
+│   │       │   │   ├── System.IO.FileSystem.Primitives.dll
+│   │       │   │   ├── System.IO.FileSystem.Watcher.dll
+│   │       │   │   ├── System.IO.IsolatedStorage.dll
+│   │       │   │   ├── System.IO.MemoryMappedFiles.dll
+│   │       │   │   ├── System.IO.Packaging.dll
+│   │       │   │   ├── System.IO.Pipes.AccessControl.dll
+│   │       │   │   ├── System.IO.Pipes.dll
+│   │       │   │   ├── System.IO.UnmanagedMemoryStream.dll
+│   │       │   │   ├── System.Linq.dll
+│   │       │   │   ├── System.Linq.Expressions.dll
+│   │       │   │   ├── System.Linq.Parallel.dll
+│   │       │   │   ├── System.Linq.Queryable.dll
+│   │       │   │   ├── System.Memory.dll
+│   │       │   │   ├── System.Net.dll
+│   │       │   │   ├── System.Net.Http.dll
+│   │       │   │   ├── System.Net.Http.Json.dll
+│   │       │   │   ├── System.Net.HttpListener.dll
+│   │       │   │   ├── System.Net.Mail.dll
+│   │       │   │   ├── System.Net.NameResolution.dll
+│   │       │   │   ├── System.Net.NetworkInformation.dll
+│   │       │   │   ├── System.Net.Ping.dll
+│   │       │   │   ├── System.Net.Primitives.dll
+│   │       │   │   ├── System.Net.Quic.dll
+│   │       │   │   ├── System.Net.Requests.dll
+│   │       │   │   ├── System.Net.Security.dll
+│   │       │   │   ├── System.Net.ServicePoint.dll
+│   │       │   │   ├── System.Net.Sockets.dll
+│   │       │   │   ├── System.Net.WebClient.dll
+│   │       │   │   ├── System.Net.WebHeaderCollection.dll
+│   │       │   │   ├── System.Net.WebProxy.dll
+│   │       │   │   ├── System.Net.WebSockets.Client.dll
+│   │       │   │   ├── System.Net.WebSockets.dll
+│   │       │   │   ├── System.Numerics.dll
+│   │       │   │   ├── System.Numerics.Vectors.dll
+│   │       │   │   ├── System.ObjectModel.dll
+│   │       │   │   ├── System.Printing.dll
+│   │       │   │   ├── System.Private.CoreLib.dll
+│   │       │   │   ├── System.Private.DataContractSerialization.dll
+│   │       │   │   ├── System.Private.Uri.dll
+│   │       │   │   ├── System.Private.Xml.dll
+│   │       │   │   ├── System.Private.Xml.Linq.dll
+│   │       │   │   ├── System.Reflection.DispatchProxy.dll
+│   │       │   │   ├── System.Reflection.dll
+│   │       │   │   ├── System.Reflection.Emit.dll
+│   │       │   │   ├── System.Reflection.Emit.ILGeneration.dll
+│   │       │   │   ├── System.Reflection.Emit.Lightweight.dll
+│   │       │   │   ├── System.Reflection.Extensions.dll
+│   │       │   │   ├── System.Reflection.Metadata.dll
+│   │       │   │   ├── System.Reflection.Primitives.dll
+│   │       │   │   ├── System.Reflection.TypeExtensions.dll
+│   │       │   │   ├── System.Resources.Extensions.dll
+│   │       │   │   ├── System.Resources.Reader.dll
+│   │       │   │   ├── System.Resources.ResourceManager.dll
+│   │       │   │   ├── System.Resources.Writer.dll
+│   │       │   │   ├── System.Runtime.CompilerServices.Unsafe.dll
+│   │       │   │   ├── System.Runtime.CompilerServices.VisualC.dll
+│   │       │   │   ├── System.Runtime.dll
+│   │       │   │   ├── System.Runtime.Extensions.dll
+│   │       │   │   ├── System.Runtime.Handles.dll
+│   │       │   │   ├── System.Runtime.InteropServices.dll
+│   │       │   │   ├── System.Runtime.InteropServices.JavaScript.dll
+│   │       │   │   ├── System.Runtime.InteropServices.RuntimeInformation.dll
+│   │       │   │   ├── System.Runtime.Intrinsics.dll
+│   │       │   │   ├── System.Runtime.Loader.dll
+│   │       │   │   ├── System.Runtime.Numerics.dll
+│   │       │   │   ├── System.Runtime.Serialization.dll
+│   │       │   │   ├── System.Runtime.Serialization.Formatters.dll
+│   │       │   │   ├── System.Runtime.Serialization.Json.dll
+│   │       │   │   ├── System.Runtime.Serialization.Primitives.dll
+│   │       │   │   ├── System.Runtime.Serialization.Xml.dll
+│   │       │   │   ├── System.Security.AccessControl.dll
+│   │       │   │   ├── System.Security.Claims.dll
+│   │       │   │   ├── System.Security.Cryptography.Algorithms.dll
+│   │       │   │   ├── System.Security.Cryptography.Cng.dll
+│   │       │   │   ├── System.Security.Cryptography.Csp.dll
+│   │       │   │   ├── System.Security.Cryptography.dll
+│   │       │   │   ├── System.Security.Cryptography.Encoding.dll
+│   │       │   │   ├── System.Security.Cryptography.OpenSsl.dll
+│   │       │   │   ├── System.Security.Cryptography.Pkcs.dll
+│   │       │   │   ├── System.Security.Cryptography.Primitives.dll
+│   │       │   │   ├── System.Security.Cryptography.ProtectedData.dll
+│   │       │   │   ├── System.Security.Cryptography.X509Certificates.dll
+│   │       │   │   ├── System.Security.Cryptography.Xml.dll
+│   │       │   │   ├── System.Security.dll
+│   │       │   │   ├── System.Security.Permissions.dll
+│   │       │   │   ├── System.Security.Principal.dll
+│   │       │   │   ├── System.Security.Principal.Windows.dll
+│   │       │   │   ├── System.Security.SecureString.dll
+│   │       │   │   ├── System.ServiceModel.Web.dll
+│   │       │   │   ├── System.ServiceProcess.dll
+│   │       │   │   ├── System.Text.Encoding.CodePages.dll
+│   │       │   │   ├── System.Text.Encoding.dll
+│   │       │   │   ├── System.Text.Encoding.Extensions.dll
+│   │       │   │   ├── System.Text.Encodings.Web.dll
+│   │       │   │   ├── System.Text.Json.dll
+│   │       │   │   ├── System.Text.RegularExpressions.dll
+│   │       │   │   ├── System.Threading.AccessControl.dll
+│   │       │   │   ├── System.Threading.Channels.dll
+│   │       │   │   ├── System.Threading.dll
+│   │       │   │   ├── System.Threading.Overlapped.dll
+│   │       │   │   ├── System.Threading.Tasks.Dataflow.dll
+│   │       │   │   ├── System.Threading.Tasks.dll
+│   │       │   │   ├── System.Threading.Tasks.Extensions.dll
+│   │       │   │   ├── System.Threading.Tasks.Parallel.dll
+│   │       │   │   ├── System.Threading.Thread.dll
+│   │       │   │   ├── System.Threading.ThreadPool.dll
+│   │       │   │   ├── System.Threading.Timer.dll
+│   │       │   │   ├── System.Transactions.dll
+│   │       │   │   ├── System.Transactions.Local.dll
+│   │       │   │   ├── System.ValueTuple.dll
+│   │       │   │   ├── System.Web.dll
+│   │       │   │   ├── System.Web.HttpUtility.dll
+│   │       │   │   ├── System.Windows.Controls.Ribbon.dll
+│   │       │   │   ├── System.Windows.dll
+│   │       │   │   ├── System.Windows.Extensions.dll
+│   │       │   │   ├── System.Windows.Forms.Design.dll
+│   │       │   │   ├── System.Windows.Forms.Design.Editors.dll
+│   │       │   │   ├── System.Windows.Forms.dll
+│   │       │   │   ├── System.Windows.Forms.Primitives.dll
+│   │       │   │   ├── System.Windows.Input.Manipulations.dll
+│   │       │   │   ├── System.Windows.Presentation.dll
+│   │       │   │   ├── System.Xaml.dll
+│   │       │   │   ├── System.Xml.dll
+│   │       │   │   ├── System.Xml.Linq.dll
+│   │       │   │   ├── System.Xml.ReaderWriter.dll
+│   │       │   │   ├── System.Xml.Serialization.dll
+│   │       │   │   ├── System.Xml.XDocument.dll
+│   │       │   │   ├── System.Xml.XmlDocument.dll
+│   │       │   │   ├── System.Xml.XmlSerializer.dll
+│   │       │   │   ├── System.Xml.XPath.dll
+│   │       │   │   ├── System.Xml.XPath.XDocument.dll
+│   │       │   │   ├── UIAutomationClient.dll
+│   │       │   │   ├── UIAutomationClientSideProviders.dll
+│   │       │   │   ├── UIAutomationProvider.dll
+│   │       │   │   ├── UIAutomationTypes.dll
+│   │       │   │   ├── WindowsBase.dll
+│   │       │   │   ├── WindowsFormsIntegration.dll
+│   │       │   │   ├── Wpf.Ui.Abstractions.dll
+│   │       │   │   └── Wpf.Ui.dll
+│   │       │   ├── ref/
+│   │       │   │   └── Notion-Files-Management.dll
+│   │       │   ├── refint/
+│   │       │   │   └── Notion-Files-Management.dll
+│   │       │   ├── Views/
+│   │       │   │   ├── DashboardPage.baml
+│   │       │   │   ├── DashboardPage.g.cs
+│   │       │   │   ├── DownloadPage.baml
+│   │       │   │   ├── DownloadPage.g.cs
+│   │       │   │   ├── SettingsPage.baml
+│   │       │   │   ├── SettingsPage.g.cs
+│   │       │   │   ├── ToolsPage.baml
+│   │       │   │   ├── ToolsPage.g.cs
+│   │       │   │   ├── UploadPage.baml
+│   │       │   │   └── UploadPage.g.cs
+│   │       │   ├── .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+│   │       │   ├── App.baml
+│   │       │   ├── App.g.cs
+│   │       │   ├── apphost.exe
+│   │       │   ├── GeneratedInternalTypeHelper.g.cs
+│   │       │   ├── MainWindow.baml
+│   │       │   ├── MainWindow.g.cs
+│   │       │   ├── Notion-F.99D621E4.Up2Date
+│   │       │   ├── Notion-Files-Management.AssemblyInfo.cs
+│   │       │   ├── Notion-Files-Management.AssemblyInfoInputs.cache
+│   │       │   ├── Notion-Files-Management.assets.cache
+│   │       │   ├── Notion-Files-Management.csproj.AssemblyReference.cache
+│   │       │   ├── Notion-Files-Management.csproj.CoreCompileInputs.cache
+│   │       │   ├── Notion-Files-Management.csproj.FileListAbsolute.txt
+│   │       │   ├── Notion-Files-Management.deps.json
+│   │       │   ├── Notion-Files-Management.dll
+│   │       │   ├── Notion-Files-Management.g.resources
+│   │       │   ├── Notion-Files-Management.genbundle.cache
+│   │       │   ├── Notion-Files-Management.GeneratedMSBuildEditorConfig.editorconfig
+│   │       │   ├── Notion-Files-Management.genpublishdeps.cache
+│   │       │   ├── Notion-Files-Management.genruntimeconfig.cache
+│   │       │   ├── Notion-Files-Management.GlobalUsings.g.cs
+│   │       │   ├── Notion-Files-Management_brlj5oqp_wpftmp.AssemblyInfo.cs
+│   │       │   ├── Notion-Files-Management_brlj5oqp_wpftmp.AssemblyInfoInputs.cache
+│   │       │   ├── Notion-Files-Management_brlj5oqp_wpftmp.assets.cache
+│   │       │   ├── Notion-Files-Management_brlj5oqp_wpftmp.GeneratedMSBuildEditorConfig.editorconfig
+│   │       │   ├── Notion-Files-Management_brlj5oqp_wpftmp.GlobalUsings.g.cs
+│   │       │   ├── Notion-Files-Management_doxcmfjw_wpftmp.AssemblyInfo.cs
+│   │       │   ├── Notion-Files-Management_doxcmfjw_wpftmp.AssemblyInfoInputs.cache
+│   │       │   ├── Notion-Files-Management_doxcmfjw_wpftmp.assets.cache
+│   │       │   ├── Notion-Files-Management_doxcmfjw_wpftmp.GeneratedMSBuildEditorConfig.editorconfig
+│   │       │   ├── Notion-Files-Management_doxcmfjw_wpftmp.GlobalUsings.g.cs
+│   │       │   ├── Notion-Files-Management_MarkupCompile.cache
+│   │       │   ├── Notion-Files-Management_MarkupCompile.lref
+│   │       │   ├── PublishOutputs.9c6b791787.txt
+│   │       │   └── singlefilehost.exe
+│   │       ├── .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+│   │       ├── App.baml
+│   │       ├── App.g.cs
+│   │       ├── GeneratedInternalTypeHelper.g.cs
+│   │       ├── MainWindow.g.cs
+│   │       ├── Notion-Files-Management.AssemblyInfo.cs
+│   │       ├── Notion-Files-Management.AssemblyInfoInputs.cache
+│   │       ├── Notion-Files-Management.assets.cache
+│   │       ├── Notion-Files-Management.csproj.AssemblyReference.cache
+│   │       ├── Notion-Files-Management.GeneratedMSBuildEditorConfig.editorconfig
+│   │       ├── Notion-Files-Management.GlobalUsings.g.cs
+│   │       ├── Notion-Files-Management_doxcmfjw_wpftmp.AssemblyInfo.cs
+│   │       ├── Notion-Files-Management_doxcmfjw_wpftmp.AssemblyInfoInputs.cache
+│   │       ├── Notion-Files-Management_doxcmfjw_wpftmp.assets.cache
+│   │       ├── Notion-Files-Management_doxcmfjw_wpftmp.csproj.AssemblyReference.cache
+│   │       ├── Notion-Files-Management_doxcmfjw_wpftmp.GeneratedMSBuildEditorConfig.editorconfig
+│   │       ├── Notion-Files-Management_doxcmfjw_wpftmp.GlobalUsings.g.cs
+│   │       ├── Notion-Files-Management_MarkupCompile.cache
+│   │       ├── Notion-Files-Management_MarkupCompile.lref
+│   │       ├── Notion-Files-Management_oofduv05_wpftmp.AssemblyInfo.cs
+│   │       ├── Notion-Files-Management_oofduv05_wpftmp.AssemblyInfoInputs.cache
+│   │       ├── Notion-Files-Management_oofduv05_wpftmp.assets.cache
+│   │       ├── Notion-Files-Management_oofduv05_wpftmp.csproj.AssemblyReference.cache
+│   │       ├── Notion-Files-Management_oofduv05_wpftmp.GeneratedMSBuildEditorConfig.editorconfig
+│   │       └── Notion-Files-Management_oofduv05_wpftmp.GlobalUsings.g.cs
+│   ├── Notion-Files-Management.csproj.nuget.dgspec.json
+│   ├── Notion-Files-Management.csproj.nuget.g.props
+│   ├── Notion-Files-Management.csproj.nuget.g.targets
+│   ├── Notion-Files-Management_doxcmfjw_wpftmp.csproj.nuget.dgspec.json
+│   ├── Notion-Files-Management_doxcmfjw_wpftmp.csproj.nuget.g.props
+│   ├── Notion-Files-Management_doxcmfjw_wpftmp.csproj.nuget.g.targets
+│   ├── project.assets.json
+│   └── project.nuget.cache
+├── Properties/
+│   └── PublishProfiles/
+├── PythonEnv/
+│   ├── _asyncio.pyd
+│   ├── _bz2.pyd
+│   ├── _ctypes.pyd
+│   ├── _decimal.pyd
+│   ├── _elementtree.pyd
+│   ├── _hashlib.pyd
+│   ├── _lzma.pyd
+│   ├── _msi.pyd
+│   ├── _multiprocessing.pyd
+│   ├── _overlapped.pyd
+│   ├── _queue.pyd
+│   ├── _socket.pyd
+│   ├── _sqlite3.pyd
+│   ├── _ssl.pyd
+│   ├── _uuid.pyd
+│   ├── _zoneinfo.pyd
+│   ├── libcrypto-1_1.dll
+│   ├── libffi-8.dll
+│   ├── libssl-1_1.dll
+│   ├── LICENSE.txt
+│   ├── pyexpat.pyd
+│   ├── python.cat
+│   ├── python.exe
+│   ├── python3.dll
+│   ├── python311._pth
+│   ├── python311.dll
+│   ├── python311.zip
+│   ├── pythonw.exe
+│   ├── select.pyd
+│   ├── sqlite3.dll
+│   ├── unicodedata.pyd
+│   ├── vcruntime140.dll
+│   ├── vcruntime140_1.dll
+│   └── winsound.pyd
+├── Scripts/
+│   ├── download.py
+│   └── notion.py
+├── Views/
+│   ├── DashboardPage.xaml
+│   ├── DashboardPage.xaml.cs
+│   ├── DownloadPage.xaml
+│   ├── DownloadPage.xaml.cs
+│   ├── SettingsPage.xaml
+│   ├── SettingsPage.xaml.cs
+│   ├── ToolsPage.xaml
+│   ├── ToolsPage.xaml.cs
+│   ├── UploadPage.xaml
+│   └── UploadPage.xaml.cs
+├── App.xaml
+├── App.xaml.cs
+├── AssemblyInfo.cs
+├── icon.ico
+├── MainWindow.xaml
+├── MainWindow.xaml.cs
+├── Notion-Files-Management.csproj
+├── Notion-Files-Management.csproj.user
+├── PUBLIST-framework-dependent.bat
+├── PUBLIST-self-contained.bat
+└── README.md

@@ -4,9 +4,15 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="工具箱">
 	<Grid>
-		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+		<!--StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
 			<ui:SymbolIcon Symbol="Toolbox24" FontSize="64" Margin="0,0,0,20"/>
 			<ui:TextBlock Text="工具箱 Tools" FontTypography="Title" HorizontalAlignment="Center"/>
-		</StackPanel>
+		</StackPanel-->
+		<ui:Button
+    Content="测试 Python 连接"
+    Appearance="Primary"
+    Click="btn_Click"
+    Icon="{ui:SymbolIcon Symbol=Play24}"
+    Margin="10" />
 	</Grid>
 </Page>

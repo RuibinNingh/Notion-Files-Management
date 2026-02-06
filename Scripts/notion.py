@@ -111,6 +111,14 @@ class Notion:
                 child_downloads = self.get_download_url(block["children"])
                 download_list.extend(child_downloads)
         return download_list
+
+
+##########以下为测试代码##########
+    def ceshi_pythonnet(self,str):
+        if str == "Are you ok?":
+            return "200OKK"
+        else:
+            return "400ERR"
         
         
 if __name__ == "__main__":
