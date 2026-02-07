@@ -6,7 +6,9 @@
         Title="Notion-Files-Management" Height="600" Width="1000"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica" 
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Icon="icon.ico">
+	<!-- 这里仍然要设置窗口图标 -->
 
 	<Grid>
 		<Grid.RowDefinitions>
@@ -14,13 +16,45 @@
 			<RowDefinition Height="*" />
 		</Grid.RowDefinitions>
 
-		<ui:TitleBar Grid.Row="0" Title="Notion-Files-Management" Background="Transparent" Height="32" />
+		<!-- 自定义 TitleBar，在其中手动添加图标 -->
+		<ui:TitleBar Grid.Row="0" 
+                     Title="Notion-Files-Management" 
+                     Background="Transparent" 
+                     Height="32">
+
+			<!-- 在 TitleBar 的 Header 中添加图标 -->
+			<ui:TitleBar.Header>
+				<Grid>
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="Auto" />
+						<ColumnDefinition Width="Auto" />
+					</Grid.ColumnDefinitions>
+
+					<!-- 图标 -->
+					<Image Grid.Column="0"
+                           Source="icon.ico"
+                           Width="32"
+                           Height="32"
+                           Margin="10,0,8,0"
+                           VerticalAlignment="Center" />
+
+					<!-- 标题文本 -->
+					<TextBlock Grid.Column="1"
+                               Text="Notion-Files-Management"
+                               VerticalAlignment="Center"
+                               FontSize="14"
+                               FontWeight="SemiBold" />
+				</Grid>
+			</ui:TitleBar.Header>
+
+		</ui:TitleBar>
 
 		<ui:NavigationView x:Name="RootNavigation" 
                            Grid.Row="1"
                            PaneDisplayMode="Left"
-						   OpenPaneLength="200"
+                           OpenPaneLength="200"
                            IsBackButtonVisible="Collapsed">
+
 			<ui:NavigationView.MenuItems>
 				<ui:NavigationViewItem Content="主页" Icon="{ui:SymbolIcon Home24}" TargetPageType="{x:Type views:DashboardPage}" />
 				<ui:NavigationViewItem Content="上传" Icon="{ui:SymbolIcon ArrowUpload24}" TargetPageType="{x:Type views:UploadPage}" />

@@ -3,10 +3,45 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="设置">
-	<Grid>
-		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-			<ui:SymbolIcon Symbol="Settings24" FontSize="64" Margin="0,0,0,20"/>
-			<ui:TextBlock Text="系统设置 Settings" FontTypography="Title" HorizontalAlignment="Center"/>
+	<Grid Margin="30">
+		<StackPanel MaxWidth="600" HorizontalAlignment="Left" Width="618">
+
+			<ui:TextBlock Text="Notion 服务配置" FontTypography="Subtitle" Margin="0,0,0,15"/>
+
+			<ui:Card Padding="15" Width="617">
+				<Grid>
+					<Grid.ColumnDefinitions>
+						<ColumnDefinition Width="*" />
+						<ColumnDefinition Width="Auto" />
+					</Grid.ColumnDefinitions>
+
+					<StackPanel Grid.Column="0">
+						<ui:TextBlock Text="Integration Token" Margin="0,0,0,8" Appearance="Tertiary"/>
+
+						<ui:PasswordBox 
+                            x:Name="TokenInput"
+                            PlaceholderText="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                            RevealButtonEnabled="True"
+                            Icon="{ui:SymbolIcon Symbol=Key24}"/>
+					</StackPanel>
+
+					<ui:Button 
+                        x:Name="BtnSave"
+                        Grid.Column="1"
+                        Content="保存配置"
+                        Appearance="Primary"
+                        Icon="{ui:SymbolIcon Symbol=Save24}"
+                        Click="OnSaveClick"
+                        Margin="15,25,0,0"
+                        VerticalAlignment="Bottom"/>
+				</Grid>
+			</ui:Card>
+
+			<ui:TextBlock 
+                Text="数据将存储在: AppData\Roaming\NotionFilesManagement\config.json" 
+                Appearance="Tertiary" 
+                FontSize="12"
+                Margin="0,15,0,0"/>
 		</StackPanel>
 	</Grid>
 </Page>
