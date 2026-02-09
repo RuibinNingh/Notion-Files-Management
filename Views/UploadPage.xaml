@@ -3,10 +3,74 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="上传">
-	<Grid>
-		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-			<ui:SymbolIcon Symbol="ArrowUpload24" FontSize="64" Margin="0,0,0,20"/>
-			<ui:TextBlock Text="文件上传 Upload" FontTypography="Title" HorizontalAlignment="Center"/>
-		</StackPanel>
+	<Grid Margin="30">
+		<!--StackPanel>
+			<StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,20">
+				<ui:SymbolIcon Symbol="ArrowUpload24" FontSize="32" Margin="0,0,15,0"/>
+				<ui:TextBlock Text="上传 Upload" FontTypography="Title" VerticalAlignment="Center"/>
+			</StackPanel>
+
+			<ui:Card Padding="20">
+				<StackPanel>
+
+					<StackPanel Margin="0,0,0,15">
+						<ui:TextBlock Text="上传模式" Appearance="Tertiary" Margin="0,0,0,8"/>
+						<ComboBox x:Name="ComboUploadType" SelectedIndex="0">
+							<ComboBoxItem Content="单文件上传 (Single File)"/>
+							<ComboBoxItem Content="文件夹批量上传 (Folder)"/>
+						</ComboBox>
+					</StackPanel>
+
+					<StackPanel Margin="0,0,0,15">
+						<ui:TextBlock Text="本地路径" Appearance="Tertiary" Margin="0,0,0,8"/>
+						<Grid>
+							<Grid.ColumnDefinitions>
+								<ColumnDefinition Width="*" />
+								<ColumnDefinition Width="Auto" />
+							</Grid.ColumnDefinitions>
+							<ui:TextBox x:Name="UploadPathBox" 
+                                        PlaceholderText="请选择文件或文件夹..." 
+                                        IsReadOnly="True"
+                                        Icon="{ui:SymbolIcon Symbol=FolderOpen24}"/>
+							<ui:Button Grid.Column="1" 
+                                       Content="浏览" 
+                                       Icon="{ui:SymbolIcon Symbol=FolderOpen24}"
+                                       Margin="10,0,0,0"
+                                       Click="BrowseFile_Click"/>
+						</Grid>
+						</StackPanel>
+
+						<StackPanel Margin="0,0,0,15">
+							<ui:TextBlock Text="目标 Notion 页面 ID" Appearance="Tertiary" Margin="0,0,0,8"/>
+							<ui:TextBox x:Name="PageIdBox" 
+                                    PlaceholderText="粘贴 Notion 页面 ID (如: 18b4e...)" 
+                                    Icon="{ui:SymbolIcon Symbol=Link24}"/>
+							<ui:TextBlock Text="提示：请确保 Token 对应的机器人已被邀请至该页面。" 
+                                      FontSize="10" 
+                                      Appearance="Tertiary" 
+                                      Margin="0,5,0,0"/>
+						</StackPanel>
+
+						<StackPanel Margin="0,0,0,15">
+							<Grid Margin="0,0,0,8">
+								<ui:TextBlock Text="上传进度" Appearance="Tertiary"/>
+								<ui:TextBlock x:Name="UploadPercentText" Text="0%" HorizontalAlignment="Right" Appearance="Tertiary"/>
+							</Grid>
+							<ProgressBar x:Name="UploadProgressBar" 
+                                     Value="0" 
+                                     Minimum="0"
+                                     Maximum="100" 
+                                     Height="6"/>
+						</StackPanel>
+
+						<ui:Button x:Name="BtnStartUpload" 
+                               Content="执行上传" 
+                               Appearance="Primary" 
+                               HorizontalAlignment="Right"
+                               Icon="{ui:SymbolIcon Symbol=CloudUpload24}"
+                               Click="StartUpload_Click"/>
+					</StackPanel>
+			</ui:Card>
+		</StackPanel-->
 	</Grid>
 </Page>

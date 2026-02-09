@@ -3,10 +3,161 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="下载">
+
 	<Grid>
-		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-			<ui:SymbolIcon Symbol="ArrowDownload24" FontSize="64" Margin="0,0,0,20"/>
-			<ui:TextBlock Text="文件下载 Download" FontTypography="Title" HorizontalAlignment="Center"/>
-		</StackPanel>
+		<Grid Margin="30">
+			<StackPanel>
+				<StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,20">
+					<ui:SymbolIcon Symbol="ArrowDownload24" FontSize="32" Margin="0,0,15,0"/>
+					<ui:TextBlock Text="文件下载 Download" FontTypography="Title" VerticalAlignment="Center"/>
+				</StackPanel>
+
+				<ui:Card Padding="20">
+					<StackPanel>
+						<ui:Button x:Name="BtnOpenDownloadDialog" 
+                                   Content="下载新文件" 
+                                   Icon="{ui:SymbolIcon Symbol=Add24}"
+                                   Appearance="Primary"
+                                   Click="BtnOpenDownloadDialog_Click"/>
+
+						<ui:TextBlock Text="活动下载任务" Appearance="Tertiary" Margin="0,20,0,8"/>
+
+						<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" 
+                                BorderThickness="1" CornerRadius="8">
+							<ListView x:Name="DownloadTaskListView" MinHeight="200" MaxHeight="450" Background="Transparent">
+								<ListView.ItemTemplate>
+									<DataTemplate>
+										<Grid Margin="0,8">
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="200"/>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="180"/>
+											</Grid.ColumnDefinitions>
+
+											<StackPanel VerticalAlignment="Center">
+												<ui:TextBlock Text="{Binding real_name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+												<ui:TextBlock Text="{Binding status}" FontSize="11" Appearance="Tertiary"/>
+											</StackPanel>
+
+											<StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
+												<ProgressBar Value="{Binding progress}" Maximum="100" Height="4" Margin="0,0,0,5"/>
+
+												<!-- 只显示大小，不显示百分比 -->
+												<Grid>
+													<Grid.ColumnDefinitions>
+														<ColumnDefinition Width="Auto"/>
+														<ColumnDefinition Width="Auto"/>
+													</Grid.ColumnDefinitions>
+
+													<ui:TextBlock Grid.Column="0"
+                      Text="{Binding downloaded_mb, StringFormat={}{0:0.0} MB}"
+                      FontSize="10"
+                      Appearance="Tertiary"/>
+
+													<ui:TextBlock Grid.Column="1"
+                      Text="{Binding total_mb, StringFormat={}/ {0:0.0} MB}"
+                      Margin="6,0,0,0"
+                      FontSize="10"
+                      Appearance="Tertiary"/>
+												</Grid>
+											</StackPanel>
+
+											<StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+												<!-- ✅ 百分比挪到右边 -->
+												<ui:TextBlock Text="{Binding progress, StringFormat={}{0:0}%}"
+                  HorizontalAlignment="Right"
+                  FontSize="12"
+                  FontWeight="SemiBold"
+                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
+
+												<ui:TextBlock Text="{Binding speed_mb_s, StringFormat={}{0:0.0} MB/s}"
+                  HorizontalAlignment="Right"
+                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
+
+												<ui:TextBlock Text="{Binding ETA, StringFormat=剩余时间: {0}s}"
+                  FontSize="11"
+                  Appearance="Tertiary"
+                  HorizontalAlignment="Right"/>
+											</StackPanel>
+
+										</Grid>
+									</DataTemplate>
+								</ListView.ItemTemplate>
+							</ListView>
+						</Border>
+					</StackPanel>
+				</ui:Card>
+			</StackPanel>
+		</Grid>
+
+		<Grid x:Name="ModalOverlay" Background="#99000000" Visibility="Collapsed">
+
+			<ui:Card x:Name="ModalStep1" Background="#ff222329" Width="420" VerticalAlignment="Center" Visibility="Collapsed">
+				<StackPanel Margin="10">
+					<ui:TextBlock Text="获取 Notion 内容" FontTypography="Subtitle" Margin="0,0,0,15"/>
+					<ui:TextBlock Text="请输入目标页面 ID" Appearance="Tertiary" Margin="0,0,0,8"/>
+					<Grid>
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="Auto"/>
+						</Grid.ColumnDefinitions>
+						<ui:TextBox x:Name="PageIdInput" PlaceholderText="粘贴 ID (如: 18b4e...)"/>
+						<ui:Button x:Name="BtnConfirmId" 
+           Grid.Column="1" 
+           Content="获取列表" 
+           Appearance="Primary" 
+           Margin="10,0,0,0" 
+           Click="ConfirmId_Click"/>
+					</Grid>
+					<ui:Button Content="取消" HorizontalAlignment="Right" Margin="0,20,0,0" Click="CloseModal_Click"/>
+				</StackPanel>
+			</ui:Card>
+
+			<ui:Card x:Name="ModalStep2" Background="#ff222329" Width="600" VerticalAlignment="Center" Visibility="Collapsed">
+				<StackPanel Margin="10">
+					<ui:TextBlock Text="选择下载项" FontTypography="Subtitle" Margin="0,0,0,15"/>
+
+					<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="4" Margin="0,0,0,15">
+						<ListView x:Name="FileListSelector"
+          Height="280"
+          ScrollViewer.VerticalScrollBarVisibility="Auto"
+          Background="Transparent"
+          Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+							<ListView.ItemTemplate>
+								<DataTemplate>
+									<CheckBox IsChecked="{Binding IsSelected}"
+                      Content="{Binding real_name}"
+                      VerticalContentAlignment="Center"
+                      Margin="0,2"
+                      Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+								</DataTemplate>
+							</ListView.ItemTemplate>
+						</ListView>
+
+					</Border>
+
+					<ui:TextBlock Text="下载至" Appearance="Tertiary" Margin="0,0,0,8"/>
+					<Grid Margin="0,0,0,20">
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="Auto"/>
+						</Grid.ColumnDefinitions>
+						<ui:TextBox x:Name="SavePathDisplay" IsReadOnly="True" PlaceholderText="请选择保存目录..."/>
+						<ui:Button Grid.Column="1" Content="浏览" Margin="10,0,0,0" Click="SelectFolder_Click"/>
+					</Grid>
+
+					<Grid>
+						<StackPanel Orientation="Horizontal">
+							<ui:Button Content="全选" Margin="0,0,8,0" Click="SelectAll_Click"/>
+							<ui:Button Content="反选" Click="InvertSelect_Click"/>
+						</StackPanel>
+						<StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+							<ui:Button Content="返回" Margin="0,0,8,0" Click="BackToStep1_Click"/>
+							<ui:Button Content="开始下载任务" Appearance="Primary" Click="SubmitDownload_Click"/>
+						</StackPanel>
+					</Grid>
+				</StackPanel>
+			</ui:Card>
+		</Grid>
 	</Grid>
 </Page>

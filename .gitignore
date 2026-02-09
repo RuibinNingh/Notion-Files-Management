@@ -1,7 +1,4 @@
 bin/
 obj/
-obj/
-obj/
-obj/
-obj/
 PythonEnv/
+Scripts/__pycache__/
