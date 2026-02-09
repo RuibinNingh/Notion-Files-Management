@@ -72,7 +72,8 @@ class Notion:
                 "name": "example.zip.txt"
                 "real_name": "example.zip"
                 "url": "https://s3.us-west-2.amazonaws.com/secure.notion-static.com/...."
-                "expiry_time": "2024-10-01T12:00:00.000Z"
+                "expiry_time": "2024-10-01T12:00:00.000Z",
+                "size_mb": 2.5
             }
         ]
         """
@@ -81,44 +82,49 @@ class Notion:
             return download_list
 
         for block in body:
-            # 1. 检查是否是文件块
             if block.get("type") == "file":
                 file_info = block["file"]
-                
-                # 提取原始文件名
                 original_name = file_info.get("name", "unknown")
-                # 提取 URL 和 过期时间 (Notion 托管的文件在 file.file 下)
-                # 兼容处理：Notion 也有 external 类型的链接
+
                 if file_info["type"] == "file":
                     url = file_info["file"]["url"]
                     expiry_time = file_info["file"].get("expiry_time")
                 else:
                     url = file_info["external"]["url"]
                     expiry_time = None
-                # 提取 real_name (标题)
-                # caption 是一个 rich_text 数组，需要拼接
+
+                size_mb = self._get_remote_file_size(url)
+
                 captions = file_info.get("caption", [])
                 caption_text = "".join([t.get("plain_text", "") for t in captions]).strip()
                 real_name = caption_text if caption_text else original_name
+
                 download_list.append({
                     "name": original_name,
                     "real_name": real_name,
                     "url": url,
-                    "expiry_time": expiry_time
+                    "expiry_time": expiry_time,
+                    "size_mb": size_mb 
                 })
-            # 3. 递归处理子块 (处理嵌套在页面、折叠框里的文件)
+
             if block.get("has_children") and "children" in block:
                 child_downloads = self.get_download_url(block["children"])
                 download_list.extend(child_downloads)
+
         return download_list
 
 
-##########以下为测试代码##########
-    def ceshi_pythonnet(self,str):
-        if str == "Are you ok?":
-            return "200OKK"
-        else:
-            return "400ERR"
+    def _get_remote_file_size(self, url):
+        """探测远程文件大小，返回 MB"""
+        try:
+            # 使用 stream=True 或 head 请求来避免下载文件体
+            response = requests.head(url, allow_redirects=True, timeout=5)
+            size_bytes = response.headers.get('content-length')
+            if size_bytes:
+                return round(int(size_bytes) / (1024 * 1024), 2)
+        except Exception as e:
+            print(f"[Notion-_get_remote_file_size]获取文件大小失败: {e}")
+        return 0
         
         
 if __name__ == "__main__":
