@@ -87,15 +87,6 @@ class Main:
     ]
     """
 if __name__ == "__main__":
-    main=Main(notion_token="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")
+    main=Main(notion_token="[这里我调试的时候是notion-token，不能泄露，所以在调试过后换成了这个占位符]")
     download_list=main.get_download_list(page_id="2fc644ea-d11a-8010-9665-e5fbaba0fd58")
-    print(main.download_notion_files(download_list,save_directory="./downloads"))
-    # 模拟轮询状态
-    import time
-    while True:
-        statuses = main.get_download_statuses()
-        for status in statuses:
-            print(status)
-        if all(s["status"] in ["completed", "error"] for s in statuses):
-            break
-        time.sleep(5)
+    print(download_list)
