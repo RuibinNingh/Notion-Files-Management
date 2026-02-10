@@ -36,10 +36,9 @@ namespace Notion_Files_Management.Views {
                 }
             }
         }
-        private void btn_Click(object sender, RoutedEventArgs e)
+        private void notion_Info(object sender, RoutedEventArgs e)
         {
-            string reply = InvokePython("Are you ok?");
-            MessageBox.Show($"Python返回结果：{reply}");
+            // 点击按钮后
         }
     }
 }
