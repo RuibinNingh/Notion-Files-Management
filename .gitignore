@@ -2,3 +2,4 @@ bin/
 obj/
 PythonEnv/
 Scripts/__pycache__/
+Scripts/.env

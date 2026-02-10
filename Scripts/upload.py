@@ -1,14 +1,58 @@
 import math
-import os
 import time
 import mimetypes
 import threading
 import random
+import queue
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Optional, Any, Dict, Tuple
 
+from dotenv import load_dotenv
+import os
 import requests
-from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+# =========================
+# Rate Limiter: Token Bucket
+# =========================
+class TokenBucketRateLimiter:
+    """
+    rate: 每秒生成多少 token（例如 3 rps）
+    burst: 桶容量（允许短时突发）
+    """
+    def __init__(self, rate: float, burst: int):
+        self.rate = float(rate)
+        self.capacity = float(burst)
+        self.tokens = float(burst)
+        self.updated_at = time.monotonic()
+        self.lock = threading.Lock()
+
+    def acquire(self, tokens: float = 1.0) -> None:
+        while True:
+            with self.lock:
+                now = time.monotonic()
+                elapsed = now - self.updated_at
+                if elapsed > 0:
+                    self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+                    self.updated_at = now
+
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    return
+
+                missing = tokens - self.tokens
+                wait_s = missing / self.rate if self.rate > 1e-9 else 0.5
+
+            time.sleep(min(wait_s, 1.0))
+
+
+@dataclass
+class UploadTask:
+    file_path: str
+    page_id: str
 
 
 class Upload:
@@ -19,138 +63,239 @@ class Upload:
         version: str = "2025-09-03",
         url: str = "https://api.notion.com/v1",
         *,
-        # ✅ 新增：分片重试次数 & 任务重启次数（默认都是 3）
+        queue_maxsize: int = 200,
+
         max_part_retries: int = 3,
         max_task_restarts: int = 3,
-        # ✅ 新增：指数退避参数（可不改，默认够用）
+
         backoff_base_s: float = 1.0,
         backoff_cap_s: float = 30.0,
-        # ✅ 新增：调试开关
+
+        # ✅ 全局 RPS 限制
+        rps: float = 3.0,
+        burst: int = 6,
+
+        # ✅ 大文件分片大小（建议 15/20/30 MiB）
+        part_size_bytes: int = 20 * 1024 * 1024,
+
         debug: bool = True,
     ):
         self.notion_token = notion_token
         self.max_workers = max_workers
         self.version = version
-        self.url = url
+        self.url = url.rstrip("/")
 
+        self.queue_maxsize = queue_maxsize
         self.max_part_retries = max_part_retries
         self.max_task_restarts = max_task_restarts
+
         self.backoff_base_s = backoff_base_s
         self.backoff_cap_s = backoff_cap_s
+
+        self.part_size_bytes = part_size_bytes
         self.debug = debug
 
         self.lock = threading.Lock()
-        self.status_map: dict[str, dict] = {}
+        self.status_map: Dict[str, dict] = {}
 
-        # JSON 接口默认请求头（Create/Complete/Attach 等）
         self.default_headers = {
             "Notion-Version": self.version,
             "Authorization": f"Bearer {self.notion_token}",
             "Content-Type": "application/json",
         }
 
-        # 线程池：限制并发，避免无限开线程
-        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        # ✅ Session 复用连接 + 连接池
+        self.session = self._make_session(pool_maxsize=max(16, self.max_workers * 4))
 
-        # 获取工作区单文件最大上传限制（bytes -> MiB）
+        # ✅ 全局 rate limiter
+        self.limiter = TokenBucketRateLimiter(rate=rps, burst=burst)
+
+        # 队列 + worker
+        self.task_queue: queue.Queue[UploadTask] = queue.Queue(maxsize=self.queue_maxsize)
+        self.stop_event = threading.Event()
+        self.workers: list[threading.Thread] = []
+        for i in range(self.max_workers):
+            t = threading.Thread(target=self._worker_loop, args=(i,), daemon=True)
+            t.start()
+            self.workers.append(t)
+
+        # 工作区限制
         k = self.get_max_upload_bytes()
         self.max_upload_mib = (k / (1024 * 1024)) if k else None
-        self._dbg("__init__", f"max_upload_mib={self.max_upload_mib}")
+        self._dbg(
+            "__init__",
+            f"max_upload_mib={self.max_upload_mib}, workers={self.max_workers}, "
+            f"rps={rps}, burst={burst}, part_size={self.part_size_bytes/(1024*1024):.1f}MiB",
+        )
 
     # -------------------------
-    # Debug：统一输出格式
+    # Session
+    # -------------------------
+    def _make_session(self, pool_maxsize: int) -> requests.Session:
+        s = requests.Session()
+        retry = Retry(total=0, raise_on_status=False)
+        adapter = HTTPAdapter(
+            max_retries=retry,
+            pool_connections=pool_maxsize,
+            pool_maxsize=pool_maxsize,
+        )
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        return s
+
+    # -------------------------
+    # Debug / Backoff
     # -------------------------
     def _dbg(self, method: str, msg: str) -> None:
         if self.debug:
             print(f"[{self.__class__.__name__}-{method}] {msg}")
 
-    # -------------------------
-    # Backoff：指数退避等待
-    # -------------------------
     def _sleep_backoff(self, *, attempt: int) -> float:
-        """
-        指数退避：base * 2^attempt + jitter（抖动），并做上限封顶。
-        attempt 从 0 开始：第一次失败后等待 attempt=0。
-        """
         wait = self.backoff_base_s * (2 ** attempt)
-        # 加一点抖动，避免多线程同时重试造成“同步风暴”
         wait += random.uniform(0, 0.2 * self.backoff_base_s)
         wait = min(wait, self.backoff_cap_s)
         time.sleep(wait)
         return wait
 
-    def _is_retryable(self, exc: Exception) -> bool:
-        """
-        判断该错误是否值得重试：
-        - 网络错误/超时/连接中断
-        - HTTP 429/500/502/503/504 这类临时性错误
-        """
-        if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
-            return True
-        if isinstance(exc, requests.HTTPError) and exc.response is not None:
-            return exc.response.status_code in {429, 500, 502, 503, 504}
-        return False
+    def _is_retryable_status(self, status_code: int) -> bool:
+        return status_code in {429, 500, 502, 503, 504}
+
+    def _retry_after_seconds(self, resp: requests.Response) -> Optional[float]:
+        ra = resp.headers.get("Retry-After")
+        if not ra:
+            return None
+        try:
+            return float(ra)
+        except Exception:
+            return None
 
     # -------------------------
-    # 公开方法：提交任务 + 查询任务
+    # Unified Request (Session + RateLimiter + Retry-After)
+    # -------------------------
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        json: Optional[dict] = None,
+        data: Any = None,
+        files: Any = None,
+        timeout: int = 30,
+        task_key: Optional[str] = None,
+        retry_limit: int = 3,
+        apply_rate_limit: bool = True,
+    ) -> requests.Response:
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(retry_limit + 1):
+            if apply_rate_limit:
+                self.limiter.acquire(1.0)
+
+            try:
+                resp = self.session.request(
+                    method,
+                    url,
+                    headers=headers,
+                    json=json,
+                    data=data,
+                    files=files,
+                    timeout=timeout,
+                )
+                _ = resp.content  # 读完响应体，连接可回收
+
+                if resp.status_code < 400:
+                    return resp
+
+                if self._is_retryable_status(resp.status_code):
+                    ra = self._retry_after_seconds(resp)
+                    if ra is not None:
+                        if task_key:
+                            self._update_task(task_key, stage="backoff_wait")
+                        time.sleep(min(max(ra, 0.0), self.backoff_cap_s))
+                        if task_key:
+                            self._update_task(task_key, stage="uploading")
+                        continue
+
+                    if attempt < retry_limit:
+                        if task_key:
+                            self._update_task(task_key, stage="backoff_wait")
+                        self._sleep_backoff(attempt=attempt)
+                        if task_key:
+                            self._update_task(task_key, stage="uploading")
+                        continue
+
+                resp.raise_for_status()
+                return resp
+
+            except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as e:
+                last_exc = e
+                if attempt < retry_limit:
+                    if task_key:
+                        self._update_task(task_key, stage="backoff_wait")
+                    self._sleep_backoff(attempt=attempt)
+                    if task_key:
+                        self._update_task(task_key, stage="uploading")
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("request failed (unknown)")
+
+    # -------------------------
+    # Public: enqueue task
     # -------------------------
     def upload_file(self, file_path: str, page_id: str) -> dict:
-        """
-        提交上传任务到线程池。
-        """
-        method = "upload_file"
         p = Path(file_path)
         if not p.is_file():
             return {"msg": "文件不存在", "file_path": file_path}
 
         size_bytes = p.stat().st_size
+        real_filename = p.name  # ✅ 真实文件名（用于挂载显示/下载）
 
         with self.lock:
-            # 去重：同路径且状态未结束则不重复提交
             exist = self.status_map.get(file_path)
             if exist and exist.get("status") in {"waiting", "uploading", "completed"}:
                 return {"msg": "任务已存在", "status": exist["status"], "file_path": file_path}
 
-            # ✅ 初始化任务状态（更丰富）
             now_mono = time.monotonic()
             self.status_map[file_path] = {
                 "file_path": file_path,
                 "page_id": page_id,
-
-                # status：大状态；stage：细阶段
-                "status": "waiting",     # waiting/uploading/completed/error
-                "stage": "waiting",      # waiting/creating/uploading/attaching/done/failed/backoff_wait
+                "real_filename": real_filename,  # ✅ 存一份
+                "status": "waiting",
+                "stage": "waiting",
                 "error": None,
 
                 "total_bytes": size_bytes,
                 "uploaded_bytes": 0,
                 "progress": 0.0,
 
-                # ✅ 用单调时钟统计耗时/速度，避免系统时间变化影响
                 "start_mono": now_mono,
                 "last_mono": now_mono,
                 "last_uploaded_bytes": 0,
                 "speed_mib_s": 0.0,
                 "eta_s": None,
 
-                # ✅ 重试相关计数
                 "task_restart_attempt": 0,
                 "part_retry_attempt": 0,
                 "current_part": None,
                 "part_total": None,
                 "part_done": 0,
+                "end_mono": None,
             }
 
-            fut = self.executor.submit(self._worker, file_path, page_id)
-            self.status_map[file_path]["future"] = fut
+        try:
+            self.task_queue.put(UploadTask(file_path=file_path, page_id=page_id), timeout=2.0)
+        except queue.Full:
+            self._set_error(file_path, "队列已满，任务被拒绝")
+            return {"msg": "队列已满，任务被拒绝", "file_path": file_path}
 
-        self._dbg(method, f"任务已提交 file={file_path} page={page_id} size={size_bytes} bytes")
-        return {"msg": "任务已提交", "file_path": file_path, "page_id": page_id}
+        self._dbg("upload_file", f"任务已入队 file={file_path} size={size_bytes}")
+        return {"msg": "任务已入队", "file_path": file_path, "page_id": page_id}
 
     def list_status(self) -> list[dict]:
-        """
-        查询所有任务状态，返回你指定的列表结构。
-        """
         with self.lock:
             snapshot = [dict(v) for v in self.status_map.values()]
 
@@ -164,108 +309,68 @@ class Upload:
             total_mib = total_bytes / (1024 * 1024) if total_bytes else 0.0
             uploaded_mib = uploaded_bytes / (1024 * 1024) if uploaded_bytes else 0.0
 
-            used = max(0.0, now_mono - (t.get("start_mono") or now_mono))
-
-            # ✅ 速度/ETA：优先使用回调计算的“滑动窗口速度”
+            start = t.get("start_mono") or now_mono
+            end = t.get("end_mono") or now_mono
+            used = max(0.0, end - start)
             speed = t.get("speed_mib_s", 0.0)
             eta = t.get("eta_s", None)
 
-            progress = 0.0
-            if total_bytes > 0:
-                progress = min(100.0, uploaded_bytes / total_bytes * 100.0)
+            progress = (uploaded_bytes / total_bytes * 100.0) if total_bytes else 0.0
+            progress = min(100.0, progress)
 
             out.append({
                 "progress": round(progress, 2),
                 "uploaded_mb": round(uploaded_mib, 3),
                 "total_mb": round(total_mib, 3),
                 "status": t.get("status"),
-                "stage": t.get("stage"),  # ✅ 新增：更细阶段
+                "stage": t.get("stage"),
                 "file_path": t.get("file_path"),
                 "page_id": t.get("page_id"),
+                "real_filename": t.get("real_filename"),
                 "usedTime": int(used),
                 "ETA": 0 if progress >= 100.0 else eta,
                 "speed_mb_s": round(speed, 3),
                 "error": t.get("error"),
-
-                # ✅ 新增：调试/排查非常有用
                 "task_restart_attempt": t.get("task_restart_attempt"),
                 "part_retry_attempt": t.get("part_retry_attempt"),
                 "current_part": t.get("current_part"),
                 "part_done": t.get("part_done"),
                 "part_total": t.get("part_total"),
             })
-
         return out
 
-    # -------------------------
-    # 工作区上限：/users/me
-    # -------------------------
-    def get_max_upload_bytes(self) -> int | None:
-        """
-        获取当前 token 对应 bot 的单文件最大上传大小（字节数）。
-        """
-        r = requests.get(
-            f"{self.url}/users/me",
-            headers=self.default_headers,
-            timeout=30,
-        )
-        r.raise_for_status()
-        data = r.json()
-        limits = data.get("workspace_limits") or {}
-        return limits.get("max_file_upload_size_in_bytes")
+    def shutdown(self, wait: bool = True) -> None:
+        self.stop_event.set()
+        if wait:
+            try:
+                self.task_queue.join()
+            except Exception:
+                pass
+            for t in self.workers:
+                t.join(timeout=1.0)
+        try:
+            self.session.close()
+        except Exception:
+            pass
 
     # -------------------------
-    # MIME/文件名推断
+    # Worker Loop
     # -------------------------
-    def get_mime_type(self, file_path: str) -> tuple[str, str]:
-        """
-        输入文件路径，返回 (content_type, upload_filename)。
-        不支持的 MIME 统一伪装为 text/plain + .txt
-        """
-        NOTION_SUPPORTED_MIME = {
-            # Audio
-            "audio/aac", "audio/midi", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/x-ms-wma",
-            # Document
-            "application/pdf", "text/plain", "application/json",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.openxmlformats-officedocument.presentationml.template",
-            # Image
-            "image/gif", "image/heic", "image/jpeg", "image/png", "image/svg+xml", "image/tiff", "image/webp",
-            "image/vnd.microsoft.icon",
-            # Video
-            "video/x-amv", "video/x-ms-asf", "video/x-msvideo", "video/x-f4v", "video/x-flv",
-            "video/mp4", "application/mp4", "video/webm", "video/quicktime", "video/mpeg",
-        }
+    def _worker_loop(self, worker_id: int) -> None:
+        self._dbg(f"_worker_loop#{worker_id}", "worker started")
+        while not self.stop_event.is_set():
+            try:
+                task = self.task_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
 
-        p = Path(file_path)
-        name = p.name
-        mime, _ = mimetypes.guess_type(str(p))
+            try:
+                self._run_task_with_restarts(task.file_path, task.page_id, worker_id)
+            finally:
+                self.task_queue.task_done()
+        self._dbg(f"_worker_loop#{worker_id}", "worker stopped")
 
-        if mime in NOTION_SUPPORTED_MIME:
-            return mime, name
-
-        if not name.lower().endswith(".txt"):
-            name = name + ".txt"
-        return "text/plain", name
-
-    # -------------------------
-    # Worker：加入“任务重启”外层循环
-    # -------------------------
-    def _worker(self, file_path: str, page_id: str) -> None:
-        """
-        外层：任务级重启（从头 Create + 从头上传）
-        内层：单次执行（_run_once）
-        """
-        method = "_worker"
-        self._dbg(method, f"开始执行任务 file={file_path}")
-
+    def _run_task_with_restarts(self, file_path: str, page_id: str, worker_id: int) -> None:
         for restart_attempt in range(self.max_task_restarts + 1):
             self._update_task(
                 file_path,
@@ -277,72 +382,55 @@ class Upload:
                 current_part=None,
                 part_done=0,
             )
-            self._dbg(method, f"任务轮次 restart={restart_attempt}/{self.max_task_restarts}")
-
             try:
                 self._run_once(file_path, page_id)
-                self._dbg(method, "任务完成 ✅")
                 return
             except Exception as e:
-                # 如果已经到达重启上限，直接失败
-                self._dbg(method, f"本轮失败 err={e!r}")
+                self._dbg(f"_task#{worker_id}", f"failed restart={restart_attempt} err={e!r}")
                 if restart_attempt >= self.max_task_restarts:
                     self._set_error(file_path, f"任务重启次数耗尽：{e!r}")
                     return
-
-                # 进入任务级 backoff 等待后重启
                 self._update_task(file_path, stage="backoff_wait")
-                waited = self._sleep_backoff(attempt=restart_attempt)
-                self._dbg(method, f"准备任务重启，等待 {waited:.2f}s")
+                self._sleep_backoff(attempt=restart_attempt)
 
+    # -------------------------
+    # One Run
+    # -------------------------
     def _run_once(self, file_path: str, page_id: str) -> None:
-        """
-        单次任务执行（不包含任务重启循环）：
-        - small：Create -> Send -> Attach
-        - large：Create -> Send(parts) -> Complete -> Attach
-        """
-        method = "_run_once"
-
         p = Path(file_path)
         if not p.is_file():
             raise RuntimeError("File not found")
 
         size_bytes = p.stat().st_size
         size_mib = size_bytes / (1024 * 1024)
+        real_filename = p.name  # ✅ 真实文件名（用于挂载）
 
-        # 工作区上限检查
         if self.max_upload_mib is not None and size_mib > self.max_upload_mib:
             raise RuntimeError(f"文件大小 {size_mib:.2f}MiB 超过上限 {self.max_upload_mib:.2f}MiB")
 
+        # upload_filename 可能是“伪装名”（.txt），content_type 也可能是 text/plain
         content_type, upload_filename = self.get_mime_type(file_path)
-        self._dbg(method, f"content_type={content_type}, upload_filename={upload_filename}, size_mib={size_mib:.2f}")
 
         TWENTY_MIB_BYTES = 20 * 1024 * 1024
-
-        # 申请上传（creating）
         self._update_task(file_path, stage="creating")
 
         if size_bytes > TWENTY_MIB_BYTES:
-            # ---------- multi_part ----------
-            part_size = 10 * 1024 * 1024
+            part_size = self.part_size_bytes
             part_total = math.ceil(size_bytes / part_size)
-
             self._update_task(file_path, part_total=part_total, part_done=0)
-            self._dbg(method, f"multi_part create part_total={part_total}, part_size={part_size}")
 
             fu = self._create_file_upload(
                 mode="multi_part",
                 filename=upload_filename,
                 content_type=content_type,
                 number_of_parts=part_total,
+                task_key=file_path,
             )
             file_upload_id = fu["id"]
             upload_url = fu["upload_url"]
-            self._dbg(method, f"create ok file_upload_id={file_upload_id}")
 
-            # 上传阶段（uploading）
             self._update_task(file_path, stage="uploading")
-            self._upload_parts_with_retry(
+            self._upload_parts_serial_with_retry(
                 file_path=file_path,
                 upload_url=upload_url,
                 upload_filename=upload_filename,
@@ -351,47 +439,49 @@ class Upload:
                 part_total=part_total,
             )
 
-            # complete（completing）
             self._update_task(file_path, stage="completing")
-            self._dbg(method, "complete multi_part")
-            self._complete_file_upload(file_upload_id)
+            self._complete_file_upload(file_upload_id, task_key=file_path)
 
         else:
-            # ---------- single_part ----------
-            self._dbg(method, "single_part create")
             fu = self._create_file_upload(
                 mode="single_part",
                 filename=upload_filename,
                 content_type=content_type,
+                task_key=file_path,
             )
             file_upload_id = fu["id"]
             upload_url = fu["upload_url"]
-            self._dbg(method, f"create ok file_upload_id={file_upload_id}")
 
             self._update_task(file_path, stage="uploading")
-            self._send_with_retry(
+            self._send_single_file(
                 task_key=file_path,
                 upload_url=upload_url,
                 local_path=file_path,
                 upload_filename=upload_filename,
                 content_type=content_type,
-                base_uploaded_bytes=0,
-                part_len_bytes=size_bytes,
-                part_number=None,
             )
 
-        # 挂载（attaching）
+        # ✅ 挂载：把 name 设置成真实文件名（关键）
         self._update_task(file_path, stage="attaching")
-        self._dbg(method, f"attach to page/block {page_id}")
-        self._attach_to_page_as_file_block(page_id, file_upload_id)
-
-        # 完成（done）
-        self._update_task(file_path, status="completed", stage="done", uploaded_bytes=size_bytes, progress=100.0)
+        self._attach_to_page_as_file_block(
+            page_id,
+            file_upload_id,
+            task_key=file_path,
+            display_name=real_filename,
+        )
+        self._update_task(
+            file_path,
+            status="completed",
+            stage="done",
+            uploaded_bytes=size_bytes,
+            progress=100.0,
+            end_mono=time.monotonic(),
+        )
 
     # -------------------------
-    # multi_part：分片上传（带重试）
+    # Serial parts + per-part retry (HIGH THROUGHPUT)
     # -------------------------
-    def _upload_parts_with_retry(
+    def _upload_parts_serial_with_retry(
         self,
         *,
         file_path: str,
@@ -401,58 +491,95 @@ class Upload:
         part_size: int,
         part_total: int,
     ) -> None:
-        """
-        对每个分片执行：
-        - 写临时文件
-        - 调用 _send_with_retry（分片级重试 + 指数退避）
-        - 成功后删除临时文件
-        - 失败（重试耗尽）直接抛异常，触发任务重启
-        """
-        method = "_upload_parts_with_retry"
-        uploaded_bytes_acc = 0
-
+        uploaded_acc = 0
         with open(file_path, "rb") as f:
             for part_no in range(1, part_total + 1):
                 chunk = f.read(part_size)
                 if not chunk:
                     break
 
-                tmp_path = f"{file_path}.part{part_no:04d}"
-                part_len = len(chunk)
-
-                # 写临时分片文件
-                with open(tmp_path, "wb") as pf:
-                    pf.write(chunk)
-
                 self._update_task(file_path, current_part=part_no)
-                self._dbg(method, f"part {part_no}/{part_total} bytes={part_len} tmp={tmp_path}")
 
-                try:
-                    self._send_with_retry(
-                        task_key=file_path,
-                        upload_url=upload_url,
-                        local_path=tmp_path,
-                        upload_filename=upload_filename,
-                        content_type=content_type,
-                        base_uploaded_bytes=uploaded_bytes_acc,
-                        part_len_bytes=part_len,
-                        part_number=part_no,
-                    )
-                finally:
-                    # 无论成功或失败，都尽量清理临时文件（避免残留）
-                    try:
-                        os.remove(tmp_path)
-                    except OSError:
-                        pass
+                self._send_part_with_retry(
+                    task_key=file_path,
+                    upload_url=upload_url,
+                    upload_filename=upload_filename,
+                    content_type=content_type,
+                    part_number=part_no,
+                    payload_bytes=chunk,
+                )
 
-                uploaded_bytes_acc += part_len
+                uploaded_acc += len(chunk)
+                self._update_progress(file_path, uploaded_acc)
                 self._update_task(file_path, part_done=part_no)
-                self._dbg(method, f"part done {part_no}/{part_total}")
 
-    # -------------------------
-    # 分片级重试封装：指数退避
-    # -------------------------
-    def _send_with_retry(
+    def _send_part_with_retry(
+        self,
+        *,
+        task_key: str,
+        upload_url: str,
+        upload_filename: str,
+        content_type: str,
+        part_number: Optional[int],
+        payload_bytes: bytes,
+    ) -> None:
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(self.max_part_retries + 1):
+            self._update_task(task_key, part_retry_attempt=attempt)
+            try:
+                self._send_upload_fast(
+                    task_key=task_key,
+                    upload_url=upload_url,
+                    upload_filename=upload_filename,
+                    content_type=content_type,
+                    part_number=part_number,
+                    payload_bytes=payload_bytes,
+                )
+                return
+            except Exception as e:
+                last_exc = e
+                if attempt >= self.max_part_retries:
+                    break
+                self._update_task(task_key, stage="backoff_wait")
+                self._sleep_backoff(attempt=attempt)
+                self._update_task(task_key, stage="uploading")
+
+        raise RuntimeError(f"send part failed: {last_exc!r}")
+
+    def _send_upload_fast(
+        self,
+        *,
+        task_key: str,
+        upload_url: str,
+        upload_filename: str,
+        content_type: str,
+        part_number: Optional[int],
+        payload_bytes: bytes,
+    ) -> None:
+        data = {"part_number": str(part_number)} if part_number is not None else None
+        files = {"file": (upload_filename, payload_bytes, content_type)}
+        resp = self._request(
+            "POST",
+            upload_url,
+            headers={
+                "Authorization": self.default_headers["Authorization"],
+                "Notion-Version": self.default_headers["Notion-Version"],
+            },
+            data=data,
+            files=files,
+            timeout=600,
+            task_key=task_key,
+            retry_limit=3,
+            apply_rate_limit=False,
+        )
+        # ✅ upload_url 有时不返回 JSON，尽力解析但不强依赖
+        try:
+            _ = resp.json()
+        except (ValueError, Exception):
+            pass
+
+    def _send_single_file(
         self,
         *,
         task_key: str,
@@ -460,190 +587,108 @@ class Upload:
         local_path: str,
         upload_filename: str,
         content_type: str,
-        base_uploaded_bytes: int,
-        part_len_bytes: int,
-        part_number: int | None,
-    ) -> dict:
-        """
-        对 _send_upload_with_progress 增加“分片级重试”：
-        - retry 次数：max_part_retries
-        - 每次失败后指数退避
-        - 若超过重试次数仍失败：抛异常 -> 上层触发任务重启
-        """
-        method = "_send_with_retry"
-        last_exc: Exception | None = None
-
-        for attempt in range(self.max_part_retries + 1):
-            self._update_task(task_key, part_retry_attempt=attempt)
-
-            label = "single" if part_number is None else f"part={part_number}"
-            self._dbg(method, f"{label} try {attempt}/{self.max_part_retries}")
-
-            try:
-                return self._send_upload_with_progress(
-                    upload_url=upload_url,
-                    local_path=local_path,
-                    upload_filename=upload_filename,
-                    content_type=content_type,
-                    task_key=task_key,
-                    base_uploaded_bytes=base_uploaded_bytes,
-                    part_len_bytes=part_len_bytes,
-                    part_number=part_number,
-                )
-
-            except Exception as e:
-                last_exc = e
-                retryable = self._is_retryable(e)
-                self._dbg(method, f"{label} failed retryable={retryable} err={e!r}")
-
-                # 不可重试：直接退出（交给任务重启）
-                if not retryable:
-                    break
-
-                # 已经到最后一次还失败：退出（交给任务重启）
-                if attempt >= self.max_part_retries:
-                    break
-
-                # backoff 等待后再试
-                self._update_task(task_key, stage="backoff_wait")
-                waited = self._sleep_backoff(attempt=attempt)
-                self._dbg(method, f"{label} backoff wait {waited:.2f}s")
-                self._update_task(task_key, stage="uploading")
-
-        # 触发任务重启（上层 _worker 会捕获并重启任务）
-        raise RuntimeError(f"分片上传失败且重试耗尽：{last_exc!r}")
+    ) -> None:
+        payload = Path(local_path).read_bytes()  # <=20MiB
+        self._send_part_with_retry(
+            task_key=task_key,
+            upload_url=upload_url,
+            upload_filename=upload_filename,
+            content_type=content_type,
+            part_number=None,
+            payload_bytes=payload,
+        )
+        self._update_progress(task_key, len(payload))
 
     # -------------------------
-    # Notion：Create / Send / Complete / Attach
+    # Progress update (COARSE: per-part only)
     # -------------------------
+    def _update_progress(self, task_key: str, uploaded_total: int) -> None:
+        now = time.monotonic()
+        with self.lock:
+            t = self.status_map.get(task_key, {})
+            total_bytes = t.get("total_bytes") or 0
+
+            t["uploaded_bytes"] = uploaded_total
+            if total_bytes > 0:
+                t["progress"] = min(100.0, uploaded_total / total_bytes * 100.0)
+
+            last_t = t.get("last_mono", now)
+            last_u = t.get("last_uploaded_bytes", uploaded_total)
+            dt = now - last_t
+            du = uploaded_total - last_u
+
+            if dt >= 0.5:
+                speed_mib_s = (du / (1024 * 1024)) / dt if dt > 0 else 0.0
+                t["speed_mib_s"] = speed_mib_s
+                remain_bytes = max(0, total_bytes - uploaded_total)
+                t["eta_s"] = int((remain_bytes / (1024 * 1024)) / speed_mib_s) if speed_mib_s > 1e-9 else None
+                t["last_mono"] = now
+                t["last_uploaded_bytes"] = uploaded_total
+
+            self.status_map[task_key] = t
+
+    # -------------------------
+    # Notion APIs
+    # -------------------------
+    def get_max_upload_bytes(self) -> Optional[int]:
+        resp = self._request(
+            "GET",
+            f"{self.url}/users/me",
+            headers=self.default_headers,
+            timeout=30,
+            task_key=None,
+            retry_limit=3,
+        )
+        data = resp.json()
+        limits = data.get("workspace_limits") or {}
+        return limits.get("max_file_upload_size_in_bytes")
+
     def _create_file_upload(
         self,
+        *,
         mode: str,
         filename: str,
         content_type: str,
-        number_of_parts: int | None = None,
+        number_of_parts: Optional[int] = None,
+        task_key: Optional[str],
     ) -> dict:
-        method = "_create_file_upload"
         payload = {"mode": mode, "filename": filename, "content_type": content_type}
         if number_of_parts is not None:
             payload["number_of_parts"] = number_of_parts
 
-        self._dbg(method, f"POST /file_uploads mode={mode} filename={filename} parts={number_of_parts}")
-        r = requests.post(
+        resp = self._request(
+            "POST",
             f"{self.url}/file_uploads",
             headers=self.default_headers,
             json=payload,
             timeout=30,
+            task_key=task_key,
+            retry_limit=3,
         )
-        self._dbg(method, f"HTTP {r.status_code}")
-        r.raise_for_status()
-        return r.json()
+        return resp.json()
 
-    def _send_upload_with_progress(
-        self,
-        *,
-        upload_url: str,
-        local_path: str,
-        upload_filename: str,
-        content_type: str,
-        task_key: str,
-        base_uploaded_bytes: int,
-        part_len_bytes: int,
-        part_number: int | None = None,
-    ) -> dict:
-        """
-        Send：multipart/form-data 上传数据 + 进度回调更新速度/ETA。
-        """
-        method = "_send_upload_with_progress"
-
-        fields = {}
-        if part_number is not None:
-            fields["part_number"] = str(part_number)
-
-        f = open(local_path, "rb")
-        fields["file"] = (upload_filename, f, content_type)
-
-        encoder = MultipartEncoder(fields=fields)
-
-        # 控制“写回状态”的频率（越小越实时，但也更耗；0.2~0.5 推荐）
-        STATUS_PUSH_INTERVAL_S = 0.3
-
-        last_push_mono = time.monotonic()
-
-        def cb(m: MultipartEncoderMonitor):
-            nonlocal last_push_mono
-            now = time.monotonic()
-
-            # 当前请求已发送字节 -> 合并成全局累计
-            uploaded_total = base_uploaded_bytes + min(m.bytes_read, part_len_bytes)
-
-            # ✅ 高频回调直接返回：不加锁、不改 dict
-            if now - last_push_mono < STATUS_PUSH_INTERVAL_S:
-                return
-            last_push_mono = now
-
-            # ✅ 只有低频写回才加锁
-            with self.lock:
-                t = self.status_map.get(task_key, {})
-                total_bytes = t.get("total_bytes") or 0
-
-                # 进度（低频写回也足够准）
-                t["uploaded_bytes"] = uploaded_total
-                if total_bytes > 0:
-                    t["progress"] = min(100.0, uploaded_total / total_bytes * 100.0)
-
-                # 滑动窗口速度：dt >= 0.5s 才更新，减少抖动
-                last_t = t.get("last_mono", now)
-                last_u = t.get("last_uploaded_bytes", uploaded_total)
-
-                dt = now - last_t
-                du = uploaded_total - last_u
-
-                if dt >= 0.5:
-                    speed_mib_s = (du / (1024 * 1024)) / dt if dt > 0 else 0.0
-                    t["speed_mib_s"] = speed_mib_s
-
-                    remain_bytes = max(0, total_bytes - uploaded_total)
-                    t["eta_s"] = int((remain_bytes / (1024 * 1024)) / speed_mib_s) if speed_mib_s > 1e-9 else None
-
-                    t["last_mono"] = now
-                    t["last_uploaded_bytes"] = uploaded_total
-
-                self.status_map[task_key] = t
-
-        monitor = MultipartEncoderMonitor(encoder, cb)
-
-        headers = {
-            "Authorization": self.default_headers["Authorization"],
-            "Notion-Version": self.default_headers["Notion-Version"],
-            # ✅ 让 toolbelt 自动提供带 boundary 的 content-type（不要手写）
-            "Content-Type": monitor.content_type,
-        }
-
-        try:
-            self._dbg(method, f"POST upload_url part={part_number} file={local_path}")
-            r = requests.post(upload_url, data=monitor, headers=headers, timeout=600)
-            self._dbg(method, f"HTTP {r.status_code}")
-            r.raise_for_status()
-            return r.json()
-        finally:
-            f.close()
-
-    def _complete_file_upload(self, file_upload_id: str) -> dict:
-        method = "_complete_file_upload"
-        self._dbg(method, f"POST /file_uploads/{file_upload_id}/complete")
-        r = requests.post(
+    def _complete_file_upload(self, file_upload_id: str, *, task_key: Optional[str]) -> dict:
+        resp = self._request(
+            "POST",
             f"{self.url}/file_uploads/{file_upload_id}/complete",
             headers=self.default_headers,
             json={},
             timeout=30,
+            task_key=task_key,
+            retry_limit=3,
         )
-        self._dbg(method, f"HTTP {r.status_code}")
-        r.raise_for_status()
-        return r.json()
+        return resp.json()
 
-    def _attach_to_page_as_file_block(self, page_id: str, file_upload_id: str) -> dict:
-        method = "_attach_to_page_as_file_block"
+    def _attach_to_page_as_file_block(
+        self,
+        page_id: str,
+        file_upload_id: str,
+        *,
+        task_key: Optional[str],
+        display_name: str,
+    ) -> dict:
+        caption = [{"type": "text", "text": {"content": display_name}}]
+
         payload = {
             "children": [
                 {
@@ -651,23 +696,60 @@ class Upload:
                     "file": {
                         "type": "file_upload",
                         "file_upload": {"id": file_upload_id},
+                        "caption": caption,
+                        "name": display_name,
                     },
                 }
             ]
         }
-        self._dbg(method, f"PATCH /blocks/{page_id}/children attach file_upload_id={file_upload_id}")
-        r = requests.patch(
+        resp = self._request(
+            "PATCH",
             f"{self.url}/blocks/{page_id}/children",
             headers=self.default_headers,
             json=payload,
             timeout=30,
+            task_key=task_key,
+            retry_limit=3,
         )
-        self._dbg(method, f"HTTP {r.status_code}")
-        r.raise_for_status()
-        return r.json()
+        return resp.json()
 
     # -------------------------
-    # 任务状态更新（线程安全）
+    # MIME
+    # -------------------------
+    def get_mime_type(self, file_path: str) -> Tuple[str, str]:
+        NOTION_SUPPORTED_MIME = {
+            "audio/aac", "audio/midi", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/x-ms-wma",
+            "application/pdf", "text/plain", "application/json",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.openxmlformats-officedocument.presentationml.template",
+            "image/gif", "image/heic", "image/jpeg", "image/png", "image/svg+xml", "image/tiff", "image/webp",
+            "image/vnd.microsoft.icon",
+            "video/x-amv", "video/x-ms-asf", "video/x-msvideo", "video/x-f4v", "video/x-flv",
+            "video/mp4", "application/mp4", "video/webm", "video/quicktime", "video/mpeg",
+        }
+
+        p = Path(file_path)
+        name = p.name
+        mime, _ = mimetypes.guess_type(str(p))
+
+        # 支持则原样
+        if mime in NOTION_SUPPORTED_MIME:
+            return mime, name
+
+        # 不支持：伪装成 text/plain + .txt（上传侧）
+        if not name.lower().endswith(".txt"):
+            name = name + ".txt"
+        return "text/plain", name
+
+    # -------------------------
+    # Status helpers
     # -------------------------
     def _update_task(self, task_key: str, **kwargs) -> None:
         with self.lock:
@@ -682,20 +764,23 @@ class Upload:
             t = self.status_map.get(task_key)
             if not t:
                 return
-            t.update({"status": "error", "stage": "failed", "error": msg})
+            t.update({"status": "error", "stage": "failed", "error": msg, "end_mono": time.monotonic()})
             self.status_map[task_key] = t
         self._dbg("_set_error", f"task={task_key} error={msg}")
 
 
 if __name__ == "__main__":
-    # ✅ 强烈建议：用环境变量 NOTION_TOKEN，避免把 token 写死在代码里
-    token = ""
+    load_dotenv()
+    token = os.getenv("NOTION_TOKEN", "")
+    if not token:
+        raise RuntimeError("Please set NOTION_TOKEN env var")
+
     u = Upload(
         notion_token=token,
-        max_workers=3,
-        # 你要的默认 3/3
-        max_part_retries=3,
-        max_task_restarts=3,
+        max_workers=1,        # 单文件测速建议 1
+        rps=3.0,
+        burst=4,
+        part_size_bytes=15 * 1024 * 1024,
         debug=True,
     )
 
@@ -703,11 +788,11 @@ if __name__ == "__main__":
         "C:/Ruibin_Ningh/program/Notion-Files-Management-Beta/Notion-Files-Management.7z",
         "2fc644ea-d11a-8010-9665-e5fbaba0fd58",
     )
-    u.upload_file(
-        "C:/Ruibin_Ningh/program/Notion-Files-Management-Beta/aria2c.exe",
-        "2fc644ea-d11a-8010-9665-e5fbaba0fd58",
-    )
 
-    while True:
-        print(u.list_status())
-        time.sleep(1)
+    try:
+        while True:
+            time.sleep(1)
+            print(u.list_status())
+    except KeyboardInterrupt:
+        u.shutdown(True)
+        print("shutdown")
