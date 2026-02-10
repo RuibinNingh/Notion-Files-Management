@@ -2,7 +2,6 @@ from download import Download
 from notion import Notion
 from upload import Upload
 
-
 class Main:
     def __init__(self, notion_token: str, max_workers: int = 3):
         self.notion = Notion(notion_token)
@@ -216,6 +215,7 @@ class Main:
                 self.Uploader.shutdown(True)
             except Exception:
                 pass
+
 
 
 if __name__ == "__main__":
