@@ -101,7 +101,7 @@
 							<ColumnDefinition Width="*"/>
 							<ColumnDefinition Width="Auto"/>
 						</Grid.ColumnDefinitions>
-						<ui:TextBox x:Name="PageIdInput" PlaceholderText="粘贴 ID (如: 18b4e...)"/>
+						<ui:TextBox x:Name="PageIdInput" PlaceholderText="粘贴 Notion 页面 ID"/>
 						<ui:Button x:Name="BtnConfirmId" 
            Grid.Column="1" 
            Content="获取列表" 

@@ -1,20 +1,700 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using Python.Runtime;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using Microsoft.Win32;
-using Python.Runtime;
+using Notion_Files_Management.Utils;
 
 namespace Notion_Files_Management.Views
 {
-	// C# 端用来勾选的包装类
-	public class FileSelectItem
+	public partial class DownloadPage : Page
 	{
+		// ===== UI 数据 =====
+		public ObservableCollection<FileSelectItem> FileSelectionList { get; } = new();
+		public ObservableCollection<DownloadTaskStatus> DisplayTasks { get; } = new();
+
+		private string _saveDirectory = "";
+
+		// ===== Python =====
+		private dynamic? _pyMain;
+		private string _currentNotionToken = "";
+		private static readonly SemaphoreSlim _pyLock = new(1, 1);
+
+		// ===== 获取列表：取消支持 =====
+		private CancellationTokenSource? _getListCts;
+		private int _getListReqId = 0;
+
+		// ===== 下载状态轮询 =====
+		private readonly DispatcherTimer _downloadStatusTimer = new DispatcherTimer();
+
+		public DownloadPage()
+		{
+			InitializeComponent();
+			DataContext = this;
+			Logger.Info("DownloadPage initialized");
+
+			// 如果 XAML 没有绑 ItemsSource，也能跑
+			try
+			{
+				FileListSelector.ItemsSource = FileSelectionList;
+			}
+			catch { }
+			try
+			{
+				DownloadTaskListView.ItemsSource = DisplayTasks;
+			}
+			catch { }
+
+			_downloadStatusTimer.Interval = TimeSpan.FromSeconds(1);
+			_downloadStatusTimer.Tick += UpdateDownloadStatusesTick;
+
+			// 预热 Python（不阻塞 UI）
+			_ = Task.Run(() => EnsureBackendReady(out _));
+		}
+
+		// =========================
+		// UI：打开 / 关闭模态
+		// =========================
+		private void BtnOpenDownloadDialog_Click(object sender, RoutedEventArgs e)
+		{
+			Logger.Info("Open download dialog");
+			ModalOverlay.Visibility = Visibility.Visible;
+			ModalStep1.Visibility = Visibility.Visible;
+			ModalStep2.Visibility = Visibility.Collapsed;
+
+			BtnConfirmId.IsEnabled = true;
+		}
+
+		private void CloseModal_Click(object sender, RoutedEventArgs e)
+		{
+			Logger.Info("Close download dialog (cancel probe if running)");
+			_getListCts?.Cancel();
+
+			ModalOverlay.Visibility = Visibility.Collapsed;
+			ModalStep1.Visibility = Visibility.Collapsed;
+			ModalStep2.Visibility = Visibility.Collapsed;
+
+			BtnConfirmId.IsEnabled = true;
+		}
+
+		private void BackToStep1_Click(object sender, RoutedEventArgs e)
+		{
+			Logger.Info("Back to Step1");
+			ModalStep2.Visibility = Visibility.Collapsed;
+			ModalStep1.Visibility = Visibility.Visible;
+		}
+
+		// =========================
+		// 核心：获取列表（按 API 文档：get_download_list -> probe -> download_list）
+		// 1) Main.get_download_list(page_id) 触发查询，返回 dict{status,msg,probe_id,total}
+		// 2) 循环 Main.download_list_processing(probe_id) 轮询进度，直到 status=="done"
+		// 3) done 后 Main.download_list 为最终列表（list[dict]）
+		// =========================
+		private async void ConfirmId_Click(object sender, RoutedEventArgs e)
+		{
+			if (!EnsureBackendReady(out string err))
+			{
+				MessageBox.Show(err);
+				return;
+			}
+
+			string pageId = (PageIdInput.Text ?? "").Trim().Replace(" ", "");
+			if (string.IsNullOrWhiteSpace(pageId))
+			{
+				MessageBox.Show("请输入目标页面 ID。");
+				return;
+			}
+
+			// 新请求：取消旧请求
+			_getListCts?.Cancel();
+			_getListCts = new CancellationTokenSource();
+			var token = _getListCts.Token;
+			int reqId = ++_getListReqId;
+
+			BtnConfirmId.IsEnabled = false;
+			Logger.Info($"Get list clicked. pageId={pageId}");
+
+			try
+			{
+				// 1) get_download_list：触发后端查询并返回 probe_id
+				var (probeId, total, msg, status) = await RunPython(() =>
+				{
+					using (Logger.Time("Py:Main.get_download_list"))
+					{
+						dynamic ret = _pyMain!.get_download_list(pageId);
+						string pid = "";
+						int tot = 0;
+						string m = "";
+						string st = "";
+						try
+						{
+							pid = ret["probe_id"]?.ToString() ?? "";
+						}
+						catch { }
+						try
+						{
+							tot = Convert.ToInt32(ret["total"] ?? 0);
+						}
+						catch { }
+						try
+						{
+							m = ret["msg"]?.ToString() ?? "";
+						}
+						catch { }
+						try
+						{
+							st = ret["status"]?.ToString() ?? "";
+						}
+						catch { }
+						if (string.Equals(pid, "None", StringComparison.OrdinalIgnoreCase))
+							pid = "";
+						return (pid, tot, m, st);
+					}
+				}, token);
+
+				Logger.Info($"get_download_list => status={status}, total={total}, probe_id={probeId}, msg={msg}");
+				token.ThrowIfCancellationRequested();
+				if (reqId != _getListReqId)
+					return;
+
+				if (string.IsNullOrWhiteSpace(probeId))
+				{
+					// 文档契约：probeId 为空通常表示失败/无文件
+					MessageBox.Show(string.IsNullOrWhiteSpace(msg) ? "获取列表失败或页面无文件" : msg);
+					Logger.Warn($"probe_id empty. status={status}, msg={msg}");
+					return;
+				}
+
+				// 2) 轮询 probe：download_list_processing(probe_id) 直到 done
+				double lastPct = -1;
+				while (true)
+				{
+					token.ThrowIfCancellationRequested();
+					if (reqId != _getListReqId)
+						return;
+
+					var (pStatus, percent, done, pTotal, pError) = await RunPython(() =>
+					{
+						using (Logger.Time("Py:Main.download_list_processing"))
+						{
+							dynamic prog = _pyMain!.download_list_processing(probeId);
+							string st = prog["status"]?.ToString() ?? "";
+							double pct = 0.0;
+							int dn = 0;
+							int tt = 0;
+							string? errText = null;
+							try
+							{
+								pct = Convert.ToDouble(prog["percent"] ?? 0.0);
+							}
+							catch { }
+							try
+							{
+								dn = Convert.ToInt32(prog["done"] ?? 0);
+							}
+							catch { }
+							try
+							{
+								tt = Convert.ToInt32(prog["total"] ?? 0);
+							}
+							catch { }
+							try
+							{
+								var eobj = prog["error"];
+								if (eobj != null)
+								{
+									var s = eobj.ToString();
+									if (!string.IsNullOrWhiteSpace(s) && !string.Equals(s, "None", StringComparison.OrdinalIgnoreCase))
+										errText = s;
+								}
+							}
+							catch { }
+							return (st, pct, dn, tt, errText);
+						}
+					}, token);
+
+					if (Math.Abs(percent - lastPct) > 0.01)
+					{
+						lastPct = percent;
+						Logger.Info($"probe => status={pStatus}, percent={percent:0.0}, done={done}/{pTotal}, error={(pError ?? "")}");
+						await Dispatcher.InvokeAsync(() =>
+						{
+							// 不改 XAML 的前提下：用按钮文案显示进度
+							BtnConfirmId.Content = $"探测中 {percent:0}% ({done}/{pTotal})";
+						});
+					}
+
+					if (string.Equals(pStatus, "done", StringComparison.OrdinalIgnoreCase))
+						break;
+
+					await Task.Delay(400, token);
+				}
+
+				// 3) done 后：main.download_list 才是最终列表
+				var list = await RunPython(() =>
+				{
+					using (Logger.Time("Py:Read main.download_list"))
+					{
+						var result = new List<FileSelectItem>();
+						dynamic pyList = _pyMain!.download_list;
+						foreach (var item in pyList)
+						{
+							if (!IsPyMapping(item))
+							{
+								string repr = "";
+								try
+								{
+									repr = item?.ToString() ?? "";
+								}
+								catch { }
+								throw new Exception($"main.download_list 的元素不是 dict（mapping），实际={item?.GetPythonType()?.ToString() ?? "unknown"}，值={repr}");
+							}
+
+							string realName = item["real_name"]?.ToString() ?? "";
+							string url = "";
+							try
+							{
+								url = item["url"]?.ToString() ?? "";
+							}
+							catch { }
+							double size = 0.0;
+							try
+							{
+								size = Convert.ToDouble(item["size_mb"] ?? 0.0);
+							}
+							catch { }
+
+							result.Add(new FileSelectItem
+							{
+								//url = url,
+								real_name = realName,
+								size_mb = size,
+								raw_dict = item,
+								IsSelected = true
+							});
+						}
+						return result;
+					}
+				}, token);
+
+				token.ThrowIfCancellationRequested();
+				if (reqId != _getListReqId)
+					return;
+
+				// UI：更新列表（保留勾选状态）
+				var selected = FileSelectionList.ToDictionary(x => x.real_name ?? "", x => x.IsSelected, StringComparer.OrdinalIgnoreCase);
+
+				FileSelectionList.Clear();
+				foreach (var x in list)
+				{
+					if (!string.IsNullOrWhiteSpace(x.real_name) && selected.TryGetValue(x.real_name, out bool sel))
+						x.IsSelected = sel;
+
+					FileSelectionList.Add(x);
+				}
+
+				// 切到 Step2
+				ModalStep1.Visibility = Visibility.Collapsed;
+				ModalStep2.Visibility = Visibility.Visible;
+				Logger.Info($"Download list ready. count={FileSelectionList.Count}");
+
+				if (FileSelectionList.Count == 0)
+					MessageBox.Show("该页面没有可下载的文件。");
+			}
+			catch (OperationCanceledException)
+			{
+				// ignore
+				Logger.Warn("Get list canceled");
+			}
+			catch (Exception ex)
+			{
+				MessageBox.Show("获取列表失败: " + ex.Message);
+				Logger.Error("Get list failed", ex);
+			}
+			finally
+			{
+				if (reqId == _getListReqId)
+				{
+					BtnConfirmId.IsEnabled = true;
+					BtnConfirmId.Content = "获取列表";
+				}
+			}
+		}
+
+		// =========================
+		// UI：选目录（不使用 WinForms）
+		// =========================
+		private void SelectFolder_Click(object sender, RoutedEventArgs e)
+		{
+			Logger.Info("SelectFolder clicked");
+			// WPF 无原生 FolderPicker：用 OpenFileDialog 取所在目录
+			var dlg = new OpenFileDialog
+			{
+				Title = "请选择保存目录（进入目标文件夹后点“打开”即可）",
+				CheckFileExists = false,
+				CheckPathExists = true,
+				FileName = "选择此文件夹",
+				Filter = "文件夹|*.folder"
+			};
+
+			if (dlg.ShowDialog() == true)
+			{
+				string? dir = Path.GetDirectoryName(dlg.FileName);
+				if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+				{
+					_saveDirectory = dir;
+					SavePathDisplay.Text = _saveDirectory;
+					Logger.Info($"SaveDirectory set: {_saveDirectory}");
+				}
+			}
+		}
+
+		private void SelectAll_Click(object sender, RoutedEventArgs e)
+		{
+			foreach (var x in FileSelectionList)
+				x.IsSelected = true;
+		}
+
+		private void InvertSelect_Click(object sender, RoutedEventArgs e)
+		{
+			foreach (var x in FileSelectionList)
+				x.IsSelected = !x.IsSelected;
+		}
+
+		// =========================
+		// 核心：开始下载
+		// main.download_notion_files(download_list, save_directory)
+		// =========================
+		private async void SubmitDownload_Click(object sender, RoutedEventArgs e)
+		{
+			Logger.Info("SubmitDownload clicked");
+			if (!EnsureBackendReady(out string err))
+			{
+				MessageBox.Show(err);
+				return;
+			}
+
+			var selected = FileSelectionList.Where(x => x.IsSelected).ToList();
+			if (selected.Count == 0)
+			{
+				MessageBox.Show("请至少选择一个下载项。");
+				return;
+			}
+
+			if (string.IsNullOrWhiteSpace(_saveDirectory) || !Directory.Exists(_saveDirectory))
+			{
+				MessageBox.Show("请选择有效的保存目录。");
+				return;
+			}
+
+			try
+			{
+				Logger.Info($"Starting download. selected={selected.Count}, saveDir={_saveDirectory}");
+				string ret = await RunPython(() =>
+				{
+					using (Logger.Time("Py:Main.download_notion_files"))
+					{
+						using var pyListToDownload = new PyList();
+						foreach (var s in selected)
+							pyListToDownload.Append(s.raw_dict);
+
+						var r = _pyMain!.download_notion_files(pyListToDownload, _saveDirectory);
+						return r?.ToString() ?? "";
+					}
+				}, CancellationToken.None);
+
+				// 关闭模态
+				ModalOverlay.Visibility = Visibility.Collapsed;
+				ModalStep1.Visibility = Visibility.Collapsed;
+				ModalStep2.Visibility = Visibility.Collapsed;
+
+				Logger.Info($"download_notion_files returned: {ret}");
+				if (!string.IsNullOrWhiteSpace(ret))
+					MessageBox.Show(ret);
+
+				// 启动状态轮询
+				if (!_downloadStatusTimer.IsEnabled)
+					_downloadStatusTimer.Start();
+			}
+			catch (Exception ex)
+			{
+				MessageBox.Show("启动下载失败: " + ex.Message);
+				Logger.Error("Start download failed", ex);
+			}
+		}
+
+		// =========================
+		// 轮询下载状态（完成后移除）
+		// main.get_download_statuses()
+		// =========================
+		private async void UpdateDownloadStatusesTick(object? sender, EventArgs e)
+		{
+			if (_pyMain == null)
+				return;
+
+			Logger.Debug($"Polling download statuses. currentDisplayed={DisplayTasks.Count}");
+
+			try
+			{
+				var statuses = await RunPython(() =>
+				{
+					using (Logger.Time("Py:Main.get_download_statuses"))
+					{
+						dynamic pyStatuses = _pyMain!.get_download_statuses();
+						var result = new List<DownloadTaskStatus>();
+
+						foreach (var s in pyStatuses)
+						{
+							string status = s["status"]?.ToString() ?? "";
+
+							// 完成：不展示（你要“完成就从列表删”）
+							if (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+								continue;
+
+							result.Add(new DownloadTaskStatus
+							{
+								url = s["url"]?.ToString(),
+								name = s["name"]?.ToString(),
+								real_name = s["real_name"]?.ToString(),
+								status = status,
+								progress = ToDoubleSafe(s, "progress"),
+								downloaded_mb = ToDoubleSafe(s, "downloaded_mb"),
+								total_mb = ToDoubleSafe(s, "total_mb"),
+								speed_mb_s = ToDoubleSafe(s, "speed_mb_s"),
+								ETA = ToIntSafe(s, "ETA"),
+								error = NormalizePythonNone(s, "error")
+							});
+						}
+
+						return result;
+					}
+				}, CancellationToken.None);
+
+				Logger.Debug($"Statuses polled. count={statuses.Count}");
+
+				// 增量更新（按 url）
+				var map = DisplayTasks.ToDictionary(x => x.url ?? "", x => x, StringComparer.OrdinalIgnoreCase);
+
+				foreach (var s in statuses)
+				{
+					string key = s.url ?? "";
+					if (string.IsNullOrWhiteSpace(key))
+						continue;
+
+					if (!map.TryGetValue(key, out var item))
+					{
+						DisplayTasks.Add(s);
+						map[key] = s;
+					}
+					else
+					{
+						item.name = s.name;
+						item.real_name = s.real_name;
+						item.status = s.status;
+						item.progress = s.progress;
+						item.downloaded_mb = s.downloaded_mb;
+						item.total_mb = s.total_mb;
+						item.speed_mb_s = s.speed_mb_s;
+						item.ETA = s.ETA;
+						item.error = s.error;
+					}
+				}
+
+				// 删除差集（后端不再返回的任务 or 已完成）
+				var alive = new HashSet<string>(statuses.Select(x => x.url ?? ""), StringComparer.OrdinalIgnoreCase);
+				for (int i = DisplayTasks.Count - 1; i >= 0; i--)
+				{
+					var u = DisplayTasks[i].url ?? "";
+					if (!alive.Contains(u))
+						DisplayTasks.RemoveAt(i);
+				}
+
+				if (DisplayTasks.Count == 0 && _downloadStatusTimer.IsEnabled)
+					_downloadStatusTimer.Stop();
+			}
+			catch (Exception ex)
+			{
+				// ignore UI 弹窗，但保留日志
+				Logger.Error("Polling download statuses failed", ex);
+			}
+		}
+
+		// =========================
+		// Python 初始化 & 工具
+		// =========================
+		private bool EnsureBackendReady(out string error)
+		{
+			error = "";
+			try
+			{
+				Logger.Debug("EnsureBackendReady called");
+				ConfigManager.Load();
+				string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
+				if (string.IsNullOrEmpty(token))
+				{
+					error = "未检测到 Notion Token，请先到【设置】页保存 Token。";
+					return false;
+				}
+
+				if (_pyMain != null && token == _currentNotionToken)
+				{
+					Logger.Debug("Python backend already initialized (token unchanged)");
+					return true;
+				}
+
+				using (Logger.Time("Init Python Main(token)"))
+				using (Py.GIL())
+				{
+					InjectDotenvStubIfMissing();
+
+					dynamic sys = Py.Import("sys");
+					string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
+					sys.path.append(scriptsPath);
+
+					dynamic mainMod = Py.Import("main");
+					_pyMain = mainMod.Main(token, 3);
+					_currentNotionToken = token;
+					Logger.Info("Python Main initialized");
+				}
+
+				return true;
+			}
+			catch (Exception ex)
+			{
+				error = "初始化失败: " + ex.Message;
+				return false;
+			}
+		}
+
+		private async Task<T> RunPython<T>(Func<T> func, CancellationToken token)
+		{
+			Logger.Debug("RunPython: waiting for _pyLock...");
+			await _pyLock.WaitAsync(token);
+			try
+			{
+				return await Task.Run(() =>
+				{
+					token.ThrowIfCancellationRequested();
+					using (Logger.Time("Py:GIL scope"))
+					using (Py.GIL())
+					{
+						return func();
+					}
+				}, token);
+			}
+			catch (Exception ex)
+			{
+				Logger.Error("RunPython failed", ex);
+				throw;
+			}
+			finally
+			{
+				_pyLock.Release();
+				Logger.Debug("RunPython: _pyLock released");
+			}
+		}
+
+		private static void InjectDotenvStubIfMissing()
+		{
+			try
+			{
+				Py.Import("dotenv");
+			}
+			catch
+			{
+				dynamic types = Py.Import("types");
+				dynamic sys = Py.Import("sys");
+				dynamic mod = types.ModuleType("dotenv");
+				mod.__dict__["load_dotenv"] = new Action(() => { });
+				sys.modules["dotenv"] = mod;
+			}
+		}
+
+		private static bool IsPyMapping(dynamic obj)
+		{
+			try
+			{
+				// 用 Python 的 collections.abc.Mapping 判断
+				dynamic collections = Py.Import("collections.abc");
+				dynamic mapping = collections.Mapping;
+				return mapping.__instancecheck__(obj);
+			}
+			catch
+			{
+				// 保底：常见 dict 类型
+				try
+				{
+					return obj is PyDict;
+				}
+				catch { return false; }
+			}
+		}
+
+		private static double ToDoubleSafe(dynamic dict, string key)
+		{
+			try
+			{
+				var v = dict[key];
+				if (v == null)
+					return 0.0;
+				return Convert.ToDouble(v);
+			}
+			catch { return 0.0; }
+		}
+
+		private static int ToIntSafe(dynamic dict, string key)
+		{
+			try
+			{
+				var v = dict[key];
+				if (v == null)
+					return 0;
+				return Convert.ToInt32(v);
+			}
+			catch { return 0; }
+		}
+
+		private static string? NormalizePythonNone(dynamic dict, string key)
+		{
+			try
+			{
+				var v = dict[key];
+				if (v == null)
+					return null;
+				var s = v.ToString();
+				if (string.IsNullOrWhiteSpace(s) || string.Equals(s, "None", StringComparison.OrdinalIgnoreCase))
+					return null;
+				return s;
+			}
+			catch { return null; }
+		}
+	}
+
+	// =========================
+	// ViewModel
+	// =========================
+	public class FileSelectItem : INotifyPropertyChanged
+	{
+		private bool _isSelected;
+		public bool IsSelected
+		{
+			get => _isSelected;
+			set
+			{
+				_isSelected = value;
+				OnPropertyChanged();
+			}
+		}
+
 		public string? real_name
 		{
 			get; set;
@@ -23,438 +703,112 @@ namespace Notion_Files_Management.Views
 		{
 			get; set;
 		}
-		public bool IsSelected { get; set; } = true;
-		public dynamic? raw_dict
-		{
-			get; set;
-		} // 存储 Python 返回的原始字典
+
+		// PyDict：回传给 download_notion_files 用
+		public dynamic raw_dict { get; set; } = null!;
+
+		public event PropertyChangedEventHandler? PropertyChanged;
+		private void OnPropertyChanged([CallerMemberName] string? name = null)
+			=> PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 	}
 
-	// 对应文档中 get_download_statuses 的返回结构
-	public class DownloadTaskStatus
+	public class DownloadTaskStatus : INotifyPropertyChanged
 	{
+		private string? _url;
+		private string? _name;
+		private string? _real_name;
+		private string? _status;
+		private double _progress;
+		private double _downloaded;
+		private double _total;
+		private double _speed;
+		private int _eta;
+		private string? _error;
+
+		public string? url
+		{
+			get => _url; set
+			{
+				_url = value;
+				OnPropertyChanged();
+			}
+		}
+		public string? name
+		{
+			get => _name; set
+			{
+				_name = value;
+				OnPropertyChanged();
+			}
+		}
 		public string? real_name
 		{
-			get; set;
+			get => _real_name; set
+			{
+				_real_name = value;
+				OnPropertyChanged();
+			}
 		}
+
 		public string? status
 		{
-			get; set;
+			get => _status; set
+			{
+				_status = value;
+				OnPropertyChanged();
+			}
 		}
 		public double progress
 		{
-			get; set;
+			get => _progress; set
+			{
+				_progress = value;
+				OnPropertyChanged();
+			}
 		}
 		public double downloaded_mb
 		{
-			get; set;
+			get => _downloaded; set
+			{
+				_downloaded = value;
+				OnPropertyChanged();
+			}
 		}
 		public double total_mb
 		{
-			get; set;
+			get => _total; set
+			{
+				_total = value;
+				OnPropertyChanged();
+			}
 		}
 		public double speed_mb_s
 		{
-			get; set;
+			get => _speed; set
+			{
+				_speed = value;
+				OnPropertyChanged();
+			}
 		}
 		public int ETA
 		{
-			get; set;
+			get => _eta; set
+			{
+				_eta = value;
+				OnPropertyChanged();
+			}
 		}
 		public string? error
 		{
-			get; set;
-		}
-	}
-
-	public partial class DownloadPage : Page
-	{
-		private dynamic? _pyMain;
-		private DispatcherTimer _statusTimer;
-
-		public ObservableCollection<FileSelectItem> FileSelectionList { get; set; } = new();
-		public ObservableCollection<DownloadTaskStatus> DisplayTasks { get; set; } = new();
-
-		public DownloadPage()
-		{
-			InitializeComponent();
-			FileListSelector.ItemsSource = FileSelectionList;
-			DownloadTaskListView.ItemsSource = DisplayTasks;
-
-			_statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-			_statusTimer.Tick += UpdateStatusLoop;
-
-			InitBackend();
-		}
-
-		private string _currentNotionToken = "";
-
-		private void InitBackend()
-		{
-			Task.Run(() =>
+			get => _error; set
 			{
-				using (Py.GIL())
-				{
-					try
-					{
-						// ✅ 1) 确保读取到最新配置（你 Settings 保存到 AppData 的就是这里）
-						ConfigManager.Load();
-						string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
-
-						if (string.IsNullOrEmpty(token))
-						{
-							Dispatcher.BeginInvoke(() =>
-								MessageBox.Show("未检测到 Notion Token，请先到【设置】页保存 Token。"));
-							return;
-						}
-
-						// ✅ 2) 设置 python 脚本路径
-						dynamic sys = Py.Import("sys");
-						string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
-						sys.path.append(scriptsPath);
-
-						// ✅ 3) 导入 main，并把 token 传进去
-						dynamic mainMod = Py.Import("main");
-
-						// 如果你希望 max_workers 可配，这里可以加第二个参数
-						_pyMain = mainMod.Main(token);
-
-						_currentNotionToken = token;
-					}
-					catch (Exception ex)
-					{
-						Dispatcher.BeginInvoke(() =>
-							MessageBox.Show("初始化失败: " + ex.Message));
-					}
-				}
-			});
-		}
-
-		private CancellationTokenSource? _getListCts;
-		private int _getListReqId = 0; // 每次获取列表自增，防止旧任务回写UI
-
-
-		// ========== 新增：打开下载对话框 ==========
-		private void BtnOpenDownloadDialog_Click(object sender, RoutedEventArgs e)
-		{
-			ModalOverlay.Visibility = Visibility.Visible;
-			ModalStep1.Visibility = Visibility.Visible;
-			ModalStep2.Visibility = Visibility.Collapsed;
-		}
-
-		// --- 动作 1: 获取列表 (对应 get_download_list) ---
-		private async void ConfirmId_Click(object sender, RoutedEventArgs e)
-		{
-			// 1) 读取 token，确保后端已用最新 token 初始化
-			ConfigManager.Load();
-			string latestToken = ConfigManager.Current?.NotionToken?.Trim() ?? "";
-			if (string.IsNullOrEmpty(latestToken))
-			{
-				MessageBox.Show("Token 为空，请先到【设置】页保存 Token。");
-				return;
-			}
-
-			if (_pyMain == null || latestToken != _currentNotionToken)
-			{
-				InitBackend();
-				MessageBox.Show("检测到 Token 更新或后端未初始化，已重新初始化。请再点一次【获取列表】。");
-				return;
-			}
-
-			// 2) 处理 PageId
-			string pidRaw = PageIdInput.Text.Trim();
-			if (string.IsNullOrEmpty(pidRaw) || _pyMain == null)
-				return;
-
-			// 你当前代码只去空格；这里我保留你的策略（不动业务假设）
-			string pid = pidRaw.Replace(" ", "");
-
-			// 3) 取消上一次请求
-			_getListCts?.Cancel();
-			_getListCts = new CancellationTokenSource();
-			var token = _getListCts.Token;
-
-			int reqId = ++_getListReqId;
-			BtnConfirmId.IsEnabled = false;
-
-			// 可选：给用户一个“正在获取”的可见反馈（如果你有状态栏/文本控件可以替换）
-			// 这里用 Title 临时提示，不改 XAML 也能看到变化
-			string oldTitle = Application.Current.MainWindow?.Title ?? "";
-			if (Application.Current.MainWindow != null)
-				Application.Current.MainWindow.Title = "正在获取文件列表…（可能需要 10~40 秒）";
-
-			try
-			{
-				// 4) 后台跑 Python，并捕获 Python stdout/stderr
-				var workTask = Task.Run(() =>
-				{
-					token.ThrowIfCancellationRequested();
-
-					using (Py.GIL())
-					{
-						// ---- 捕获 Python 输出 ----
-						dynamic sys = Py.Import("sys");
-						dynamic io = Py.Import("io");
-
-						dynamic oldOut = sys.stdout;
-						dynamic oldErr = sys.stderr;
-						dynamic bufOut = io.StringIO();
-						dynamic bufErr = io.StringIO();
-
-						sys.stdout = bufOut;
-						sys.stderr = bufErr;
-
-						try
-						{
-							dynamic pyList = _pyMain.get_download_list(pid);
-
-							int pyLen = 0;
-							try
-							{
-								pyLen = (int)pyList.__len__();
-							}
-							catch { }
-
-							var result = new List<FileSelectItem>();
-							foreach (var item in pyList)
-							{
-								token.ThrowIfCancellationRequested();
-
-								result.Add(new FileSelectItem
-								{
-									real_name = item["real_name"]?.ToString(),
-									size_mb = (double)(item["size_mb"] ?? 0.0),
-									raw_dict = item // 先保留：不改 Py 的情况下，你下载还在用它
-								});
-							}
-
-							string outText = "";
-							string errText = "";
-							try
-							{
-								outText = bufOut.getvalue().ToString();
-							}
-							catch { }
-							try
-							{
-								errText = bufErr.getvalue().ToString();
-							}
-							catch { }
-
-							return (result, pyLen, outText, errText);
-						}
-						finally
-						{
-							// 还原输出
-							sys.stdout = oldOut;
-							sys.stderr = oldErr;
-						}
-					}
-				}, token);
-
-				//// 5) C# 侧超时（比如 20 秒）
-				//var timeoutTask = Task.Delay(TimeSpan.FromSeconds(20), token);
-				//var finished = await Task.WhenAny(workTask, timeoutTask);
-
-				//if (finished == timeoutTask)
-				//{
-				//	// 注意：不能强杀 Python 内部 requests，但我们可以“不再等它”，并给用户解释
-				//	_getListCts.Cancel();
-
-				//	MessageBox.Show(
-				//		"获取列表超时（20 秒）。\n\n" +
-				//		"可能原因：\n" +
-				//		"1) Token 无效/无权限（常见：401/403）\n" +
-				//		"2) 被 Notion 限流（429）\n" +
-				//		"3) 网络超时（requests timeout=10 且最多重试 4 次，最差可接近 47 秒）\n\n" +
-				//		"你可以再点一次获取，或先检查 Token / 页面权限。"
-				//	);
-
-				//	return;
-				//}
-
-				// 6) 取结果
-				var res = await workTask;
-
-				if (token.IsCancellationRequested || reqId != _getListReqId)
-					return;
-
-				var list = res.Item1;
-				int pyLen = res.Item2;
-				string pyOut = res.Item3;
-				string pyErr = res.Item4;
-
-				// 7) 为空就把 Python 输出直接给你（这是定位关键）
-				if (list.Count == 0)
-				{
-					string msg =
-						$"Python 返回 0 个文件项（pyList.__len__() = {pyLen}）。\n\n" +
-						"Python 输出(stdout)：\n" + (string.IsNullOrWhiteSpace(pyOut) ? "(空)" : pyOut) + "\n\n" +
-						"Python 输出(stderr)：\n" + (string.IsNullOrWhiteSpace(pyErr) ? "(空)" : pyErr) + "\n";
-
-					MessageBox.Show(msg, "获取列表为空（用于定位）");
-				}
-
-				// 8) 更新 UI
-				FileSelectionList.Clear();
-				foreach (var x in list)
-					FileSelectionList.Add(x);
-
-				ModalStep1.Visibility = Visibility.Collapsed;
-				ModalStep2.Visibility = Visibility.Visible;
-			}
-			catch (OperationCanceledException)
-			{
-				// ignore
-			}
-			catch (Exception ex)
-			{
-				MessageBox.Show("获取列表失败: " + ex.Message);
-			}
-			finally
-			{
-				if (Application.Current.MainWindow != null)
-					Application.Current.MainWindow.Title = oldTitle;
-
-				if (reqId == _getListReqId)
-					BtnConfirmId.IsEnabled = true;
+				_error = value;
+				OnPropertyChanged();
 			}
 		}
 
-
-
-
-
-		// --- 动作 2: 提交下载 (对应 download_notion_files) ---
-		private async void SubmitDownload_Click(object sender, RoutedEventArgs e)
-		{
-			if (string.IsNullOrEmpty(SavePathDisplay.Text) || _pyMain == null)
-				return;
-
-			// 过滤出用户勾选的项目
-			var selected = FileSelectionList.Where(x => x.IsSelected).ToList();
-			if (selected.Count == 0)
-				return;
-
-			string saveDir = SavePathDisplay.Text;
-
-			await Task.Run(() => {
-				using (Py.GIL())
-				{
-					// 构建符合文档要求的 download_list (Python 字典列表)
-					PyList pyListToDownload = new PyList();
-					foreach (var s in selected)
-					{
-						pyListToDownload.Append(s.raw_dict);
-					}
-
-					// 调用文档中的 download_notion_files
-					_pyMain.download_notion_files(pyListToDownload, saveDir);
-				}
-			});
-
-			ModalOverlay.Visibility = Visibility.Collapsed;
-			if (!_statusTimer.IsEnabled)
-				_statusTimer.Start();
-		}
-
-		// --- 动作 3: 状态更新轮询 (对应 get_download_statuses) ---
-		private async void UpdateStatusLoop(object? sender, EventArgs e)
-		{
-			if (_pyMain == null)
-				return;
-
-			try
-			{
-				var statuses = await Task.Run(() =>
-				{
-					using (Py.GIL())
-					{
-						dynamic pyStatuses = _pyMain.get_download_statuses();
-
-						var result = new List<DownloadTaskStatus>();
-						foreach (var s in pyStatuses)
-						{
-							// 取字段时做容错
-							string status = s["status"]?.ToString() ?? "";
-
-							// ✅ 关键：过滤 completed（不动 Python 的情况下只能前端过滤）
-							if (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
-								continue;
-
-							// 你也可以顺便过滤 cancelled/failed，看你想不想保留失败任务显示
-							// if (status == "cancelled") continue;
-
-							result.Add(new DownloadTaskStatus
-							{
-								real_name = s["real_name"]?.ToString(),
-								status = status,
-								progress = Convert.ToDouble(s["progress"] ?? 0.0),
-								downloaded_mb = Convert.ToDouble(s["downloaded_mb"] ?? 0.0),
-								total_mb = Convert.ToDouble(s["total_mb"] ?? 0.0),
-								speed_mb_s = Convert.ToDouble(s["speed_mb_s"] ?? 0.0),
-								ETA = Convert.ToInt32(s["ETA"] ?? 0),
-								error = s["error"]?.ToString()
-							});
-						}
-
-						return result;
-					}
-				});
-
-				// UI 线程更新
-				DisplayTasks.Clear();
-				foreach (var x in statuses)
-					DisplayTasks.Add(x);
-			}
-			catch
-			{
-				// 保持安静即可
-			}
-		}
-
-
-
-		private void SelectFolder_Click(object sender, RoutedEventArgs e)
-		{
-			var dialog = new OpenFolderDialog();
-			if (dialog.ShowDialog() == true)
-				SavePathDisplay.Text = dialog.FolderName;
-		}
-
-		private void SelectAll_Click(object sender, RoutedEventArgs e)
-		{
-			foreach (var i in FileSelectionList)
-				i.IsSelected = true;
-			FileListSelector.Items.Refresh();
-		}
-
-		private void InvertSelect_Click(object sender, RoutedEventArgs e)
-		{
-			foreach (var i in FileSelectionList)
-				i.IsSelected = !i.IsSelected;
-			FileListSelector.Items.Refresh();
-		}
-
-		// ========== 新增：返回 Step1 ==========
-		private void BackToStep1_Click(object sender, RoutedEventArgs e)
-		{
-			ModalStep2.Visibility = Visibility.Collapsed;
-			ModalStep1.Visibility = Visibility.Visible;
-		}
-
-		private void CloseModal_Click(object sender, RoutedEventArgs e)
-		{
-			// 取消获取列表（只能做到“取消回写UI/取消等待”，不能强杀Python内部请求）
-			_getListCts?.Cancel();
-
-			// 立刻恢复按钮，避免下次打开还是灰
-			BtnConfirmId.IsEnabled = true;
-
-			ModalOverlay.Visibility = Visibility.Collapsed;
-			ModalStep1.Visibility = Visibility.Collapsed;
-			ModalStep2.Visibility = Visibility.Collapsed;
-		}
-
+		public event PropertyChangedEventHandler? PropertyChanged;
+		private void OnPropertyChanged([CallerMemberName] string? name = null)
+			=> PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 	}
 }
