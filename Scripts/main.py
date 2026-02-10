@@ -228,10 +228,27 @@ if __name__ == "__main__":
     if not token:
         raise RuntimeError("Please set NOTION_TOKEN env var")
 
+    # ====== 配置区 ======
     page_id = "2fc644ea-d11a-8010-9665-e5fbaba0fd58"
     save_dir = r"C:/Ruibin_Ningh/program/Notion-Files-Management/Notion-Files-Management/downloads"
 
-    main = Main(notion_token=token, max_workers=3)
+    # 下载线程数（影响同时下载数量 + probe 并发）
+    max_workers = 6
+
+    # probe 轮询打印频率
+    probe_print_interval_s = 1.0
+
+    # 下载状态打印频率
+    download_print_interval_s = 1.0
+    # ====================
+
+    main = Main(notion_token=token, max_workers=max_workers)
+
+    def _fmt_size(x: float) -> str:
+        try:
+            return f"{float(x):.2f}MB"
+        except Exception:
+            return "0.00MB"
 
     try:
         # 1) 发起：获取下载列表 + 启动 size 探测
@@ -240,10 +257,10 @@ if __name__ == "__main__":
 
         probe_id = ret.get("probe_id")
         if not probe_id:
-            print("没有可探测的 url，直接结束。")
+            print("没有可探测的 url（下载列表为空或无 url）。")
             raise SystemExit(0)
 
-        # 2) 轮询：探测进度（直到 done）
+        # 2) 轮询：探测进度
         print("\n=== Probing sizes... ===")
         last_print = 0.0
         while True:
@@ -251,17 +268,22 @@ if __name__ == "__main__":
             # prog: {"status","percent","done","total","error"}
 
             now = time.time()
-            if now - last_print >= 1.0:
+            if now - last_print >= probe_print_interval_s:
                 err = prog.get("error") or {}
                 err_count = len(err) if isinstance(err, dict) else 0
+
                 print(
-                    f"[probe] status={prog['status']} "
-                    f"{prog['percent']:.2f}% ({prog['done']}/{prog['total']}) "
+                    f"[probe] status={prog.get('status')} "
+                    f"{prog.get('percent', 0.0):.2f}% "
+                    f"({prog.get('done', 0)}/{prog.get('total', 0)}) "
                     f"errors={err_count}"
                 )
-                # 如果想看具体错误（会比较长），取消注释：
+
+                # 如果你想看具体 error（会很长）：
                 # if err_count:
-                #     print("[probe-errors]", err)
+                #     for u, e in err.items():
+                #         print("  -", u, e)
+
                 last_print = now
 
             if prog.get("status") == "done":
@@ -271,41 +293,79 @@ if __name__ == "__main__":
 
         print("=== Probe done. ===\n")
 
-        # 3) 开始下载：注意这里传 main.download_list（列表），不是 ret
+        # 3) 展示最终列表（带 size_mb）
+        print("=== Download list (after probe) ===")
+        for i, item in enumerate(main.download_list, 1):
+            print(
+                f"{i:02d}. {item.get('real_name') or item.get('name')} | "
+                f"size={_fmt_size(item.get('size_mb', 0.0))} | "
+                f"url={(item.get('url') or '')[:60]}..."
+            )
+        print()
+
+        # 4) 启动下载
         print("=== Starting downloads... ===")
         main.download_notion_files(main.download_list, save_directory=save_dir)
 
-        # 4) 轮询：下载进度
+        # 5) 轮询下载状态
         print("\n=== Downloading... ===")
+        last_print = 0.0
+        start = time.time()
+
         while True:
             statuses = main.get_download_statuses()
 
-            # 打印总体汇总
             total = len(statuses)
             done = sum(1 for s in statuses if s.get("status") == "completed")
             errn = sum(1 for s in statuses if s.get("status") == "error")
             downloading = sum(1 for s in statuses if s.get("status") == "downloading")
             waiting = sum(1 for s in statuses if s.get("status") == "waiting")
 
-            print(f"[sum] total={total} waiting={waiting} downloading={downloading} done={done} error={errn}")
+            now = time.time()
+            if now - last_print >= download_print_interval_s:
+                elapsed = int(now - start)
+                print(f"[sum] t={elapsed}s total={total} waiting={waiting} downloading={downloading} done={done} error={errn}")
 
-            # 打印每个文件的状态（你也可以只打印 downloading 的）
-            for s in statuses:
-                print(
-                    f" - {s.get('real_name') or s.get('name')}: "
-                    f"status={s.get('status')} "
-                    f"prog={s.get('progress', 0)}% "
-                    f"speed={s.get('speed_mb_s', 0)}MB/s "
-                    f"ETA={s.get('ETA', 0)}s "
-                    f"err={s.get('error')}"
-                )
+                # 每个文件一行（你也可以只打印 downloading 的）
+                for s in statuses:
+                    name = s.get("real_name") or s.get("name") or "unknown"
+                    print(
+                        f" - {name}: "
+                        f"{s.get('status')} "
+                        f"{s.get('progress', 0)}% "
+                        f"{_fmt_size(s.get('downloaded_mb', 0.0))}/{_fmt_size(s.get('total_mb', 0.0))} "
+                        f"spd={s.get('speed_mb_s', 0.0)}MB/s "
+                        f"ETA={s.get('ETA', 0)}s "
+                        f"err={s.get('error')}"
+                    )
 
-            # 结束条件：全部完成或错误（没有 downloading / waiting）
-            if done + errn >= total and total > 0:
-                print("\n=== All downloads finished. ===")
+                print("-" * 80)
+                last_print = now
+
+            # 结束条件：全部完成或错误
+            if total > 0 and (done + errn) >= total and downloading == 0 and waiting == 0:
+                print("\n=== All downloads finished. ===\n")
                 break
 
-            time.sleep(1)
+            time.sleep(0.2)
+
+        # 6) 收尾统计：最快/最慢/失败
+        statuses = main.get_download_statuses()
+        completed = [s for s in statuses if s.get("status") == "completed"]
+        failed = [s for s in statuses if s.get("status") == "error"]
+
+        if completed:
+            # 用 usedTime 估计
+            completed_sorted = sorted(completed, key=lambda x: x.get("usedTime", 0))
+            fastest = completed_sorted[0]
+            slowest = completed_sorted[-1]
+            print(f"[fastest] {fastest.get('real_name') or fastest.get('name')} usedTime={fastest.get('usedTime')}s")
+            print(f"[slowest] {slowest.get('real_name') or slowest.get('name')} usedTime={slowest.get('usedTime')}s")
+
+        if failed:
+            print("\n[failed list]")
+            for s in failed:
+                print(f" - {s.get('real_name') or s.get('name')} err={s.get('error')}")
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt -> shutdown")
