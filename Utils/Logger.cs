@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.IO;
 
 namespace Notion_Files_Management.Utils
 {
@@ -18,6 +19,9 @@ namespace Notion_Files_Management.Utils
 		private static readonly object _lock = new();
 		public static Level MinLevel { get; set; } = Level.Debug;
 		public static bool Enabled { get; set; } = true;
+
+		private static StreamWriter? _file;
+		private static string? _filePath;
 
 		public static void InitConsole(bool forceAllocConsole = false)
 		{
@@ -45,6 +49,32 @@ namespace Notion_Files_Management.Utils
 			}
 		}
 
+		public static void InitFileLogging()
+		{
+			try
+			{
+				var baseDir = AppContext.BaseDirectory;
+				var logDir = Path.Combine(baseDir, "logs");
+				Directory.CreateDirectory(logDir);
+
+				var ts = DateTime.Now.ToString("yyyyMMddHHmmss"); // 20260210161308
+				_filePath = Path.Combine(logDir, $"{ts}-C#.logs");
+				_file = new StreamWriter(_filePath, append: true, Encoding.UTF8) { AutoFlush = true };
+
+				Info($"File logging enabled: {_filePath}");
+			}
+			catch
+			{
+				// ignore
+			}
+		}
+
+		public static void ShutdownFileLogging()
+		{
+			try { _file?.Dispose(); } catch { }
+			_file = null;
+		}
+
 		public static void Debug(string message) => Write(Level.Debug, message);
 		public static void Info(string message) => Write(Level.Info, message);
 		public static void Warn(string message) => Write(Level.Warn, message);
@@ -66,10 +96,14 @@ namespace Notion_Files_Management.Utils
 
 			lock (_lock)
 			{
-				Console.WriteLine($"[{ts}][T{tid}][{lvl}] {message}");
+				var line = $"[{ts}][T{tid}][{lvl}] {message}";
+				Console.WriteLine(line);
+				if (_file != null) _file.WriteLine(line);
+
 				if (ex != null)
 				{
 					Console.WriteLine(ex);
+					if (_file != null) _file.WriteLine(ex.ToString());
 				}
 			}
 		}

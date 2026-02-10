@@ -6,7 +6,10 @@
 	<Grid>
 		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
 			<ui:SymbolIcon Symbol="Home24" FontSize="64" Margin="0,0,0,20"/>
-			<ui:TextBlock Text="主页 Dashboard" FontTypography="Title" HorizontalAlignment="Center"/>
+			<ui:TextBlock Text="主页 Dashboard"
+			              FontTypography="Title"
+			              HorizontalAlignment="Center"
+			              Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 		</StackPanel>
 	</Grid>
 </Page>

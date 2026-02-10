@@ -6,88 +6,106 @@
 
 	<Grid>
 		<Grid Margin="30">
-			<StackPanel>
-				<StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,20">
-					<ui:SymbolIcon Symbol="ArrowDownload24" FontSize="32" Margin="0,0,15,0"/>
-					<ui:TextBlock Text="文件下载 Download" FontTypography="Title" VerticalAlignment="Center"/>
-				</StackPanel>
+			<Grid.RowDefinitions>
+				<RowDefinition Height="Auto"/>
+				<RowDefinition Height="*"/>
+				<RowDefinition Height="Auto"/>
+			</Grid.RowDefinitions>
 
-				<ui:Card Padding="20">
-					<StackPanel>
-						<ui:Button x:Name="BtnOpenDownloadDialog" 
-                                   Content="下载新文件" 
-                                   Icon="{ui:SymbolIcon Symbol=Add24}"
-                                   Appearance="Primary"
-                                   Click="BtnOpenDownloadDialog_Click"/>
-
-						<ui:TextBlock Text="活动下载任务" Appearance="Tertiary" Margin="0,20,0,8"/>
-
-						<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" 
-                                BorderThickness="1" CornerRadius="8">
-							<ListView x:Name="DownloadTaskListView" MinHeight="200" MaxHeight="450" Background="Transparent">
-								<ListView.ItemTemplate>
-									<DataTemplate>
-										<Grid Margin="0,8">
-											<Grid.ColumnDefinitions>
-												<ColumnDefinition Width="200"/>
-												<ColumnDefinition Width="*"/>
-												<ColumnDefinition Width="180"/>
-											</Grid.ColumnDefinitions>
-
-											<StackPanel VerticalAlignment="Center">
-												<ui:TextBlock Text="{Binding real_name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-												<ui:TextBlock Text="{Binding status}" FontSize="11" Appearance="Tertiary"/>
-											</StackPanel>
-
-											<StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
-												<ProgressBar Value="{Binding progress}" Maximum="100" Height="4" Margin="0,0,0,5"/>
-
-												<!-- 只显示大小，不显示百分比 -->
-												<Grid>
-													<Grid.ColumnDefinitions>
-														<ColumnDefinition Width="Auto"/>
-														<ColumnDefinition Width="Auto"/>
-													</Grid.ColumnDefinitions>
-
-													<ui:TextBlock Grid.Column="0"
-                      Text="{Binding downloaded_mb, StringFormat={}{0:0.0} MB}"
-                      FontSize="10"
-                      Appearance="Tertiary"/>
-
-													<ui:TextBlock Grid.Column="1"
-                      Text="{Binding total_mb, StringFormat={}/ {0:0.0} MB}"
-                      Margin="6,0,0,0"
-                      FontSize="10"
-                      Appearance="Tertiary"/>
-												</Grid>
-											</StackPanel>
-
-											<StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-												<!-- ✅ 百分比挪到右边 -->
-												<ui:TextBlock Text="{Binding progress, StringFormat={}{0:0}%}"
-                  HorizontalAlignment="Right"
-                  FontSize="12"
-                  FontWeight="SemiBold"
-                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
-
-												<ui:TextBlock Text="{Binding speed_mb_s, StringFormat={}{0:0.0} MB/s}"
-                  HorizontalAlignment="Right"
-                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
-
-												<ui:TextBlock Text="{Binding ETA, StringFormat=剩余时间: {0}s}"
-                  FontSize="11"
-                  Appearance="Tertiary"
-                  HorizontalAlignment="Right"/>
-											</StackPanel>
-
-										</Grid>
-									</DataTemplate>
-								</ListView.ItemTemplate>
-							</ListView>
-						</Border>
-					</StackPanel>
-				</ui:Card>
+			<!-- 顶部标题 -->
+			<StackPanel Grid.Row="0" HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,12">
+				<ui:SymbolIcon Symbol="ArrowDownload24" FontSize="32" Margin="0,0,15,0"/>
+				<ui:TextBlock Text="文件下载 Download"
+				              FontTypography="Title"
+				              VerticalAlignment="Center"
+				              Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 			</StackPanel>
+
+			<!-- 中间卡片：占据剩余空间 -->
+			<ui:Card Grid.Row="1" Padding="20" VerticalAlignment="Stretch">
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+					</Grid.RowDefinitions>
+
+					<!-- 按钮行 -->
+					<StackPanel Grid.Row="0">
+						<ui:Button x:Name="BtnOpenDownloadDialog" 
+							   Content="下载新文件" 
+							   Icon="{ui:SymbolIcon Symbol=Add24}"
+							   Appearance="Primary"
+							   Click="BtnOpenDownloadDialog_Click"/>
+						<ui:TextBlock Text="活动下载任务" Appearance="Tertiary" Margin="0,12,0,8"/>
+					</StackPanel>
+
+					<!-- 列表：吃满剩余空间 -->
+					<Border Grid.Row="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8">
+						<ListView x:Name="DownloadTaskListView" Background="Transparent" Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto">
+							<ListView.ItemTemplate>
+								<DataTemplate>
+									<Grid Margin="0,8">
+										<Grid.ColumnDefinitions>
+											<ColumnDefinition Width="200"/>
+											<ColumnDefinition Width="*"/>
+											<ColumnDefinition Width="180"/>
+										</Grid.ColumnDefinitions>
+
+										<StackPanel VerticalAlignment="Center">
+											<ui:TextBlock Text="{Binding real_name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+											<ui:TextBlock Text="{Binding status}" FontSize="11" Appearance="Tertiary"/>
+										</StackPanel>
+
+										<StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
+											<ProgressBar Value="{Binding progress}" Maximum="100" Height="6" Margin="0,0,0,5" HorizontalAlignment="Stretch"/>
+
+											<!-- 只显示大小，不显示百分比 -->
+											<Grid>
+												<Grid.ColumnDefinitions>
+													<ColumnDefinition Width="Auto"/>
+													<ColumnDefinition Width="Auto"/>
+												</Grid.ColumnDefinitions>
+
+												<ui:TextBlock Grid.Column="0"
+		                      Text="{Binding downloaded_mb, StringFormat={}{0:0.0} MB}"
+		                      FontSize="10"
+		                      Appearance="Tertiary"/>
+
+												<ui:TextBlock Grid.Column="1"
+		                      Text="{Binding total_mb, StringFormat={}/ {0:0.0} MB}"
+		                      Margin="6,0,0,0"
+		                      FontSize="10"
+		                      Appearance="Tertiary"/>
+											</Grid>
+										</StackPanel>
+
+										<StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+											<ui:TextBlock Text="{Binding progress, StringFormat={}{0:0}%}"
+		                  HorizontalAlignment="Right"
+		                  FontSize="12"
+		                  FontWeight="SemiBold"
+		                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
+
+											<ui:TextBlock Text="{Binding speed_mb_s, StringFormat={}{0:0.0} MB/s}"
+		                  HorizontalAlignment="Right"
+		                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
+
+											<ui:TextBlock Text="{Binding ETA, StringFormat=剩余时间: {0}s}"
+		                  FontSize="11"
+		                  Appearance="Tertiary"
+		                  HorizontalAlignment="Right"/>
+										</StackPanel>
+
+									</Grid>
+								</DataTemplate>
+							</ListView.ItemTemplate>
+						</ListView>
+					</Border>
+				</Grid>
+			</ui:Card>
+
+			<!-- 底部占位行（当前为空，但保留以便未来增加汇总/按钮） -->
+			<Grid Grid.Row="2" />
 		</Grid>
 
 		<Grid x:Name="ModalOverlay" Background="#99000000" Visibility="Collapsed">

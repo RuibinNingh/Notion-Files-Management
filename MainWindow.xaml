@@ -18,9 +18,9 @@
 
 		<!-- 自定义 TitleBar，在其中手动添加图标 -->
 		<ui:TitleBar Grid.Row="0" 
-                     Title="Notion-Files-Management" 
-                     Background="Transparent" 
-                     Height="32">
+                      Title="Notion-Files-Management" 
+                      Background="Transparent" 
+                      Height="32">
 
 			<!-- 在 TitleBar 的 Header 中添加图标 -->
 			<ui:TitleBar.Header>
@@ -40,20 +40,27 @@
 
 					<!-- 标题文本 -->
 					<TextBlock Grid.Column="1"
-                               Text="Notion-Files-Management"
-                               VerticalAlignment="Center"
-                               FontSize="14"
-                               FontWeight="SemiBold" />
+				               Text="Notion-Files-Management"
+				               VerticalAlignment="Center"
+				               FontSize="14"
+				               FontWeight="SemiBold"
+				               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 				</Grid>
 			</ui:TitleBar.Header>
 
 		</ui:TitleBar>
 
 		<ui:NavigationView x:Name="RootNavigation" 
-                           Grid.Row="1"
-                           PaneDisplayMode="Left"
-                           OpenPaneLength="200"
-                           IsBackButtonVisible="Collapsed">
+                            Grid.Row="1"
+                            PaneDisplayMode="Left"
+                            OpenPaneLength="200"
+                            IsBackButtonVisible="Collapsed">
+
+				<ui:NavigationView.Resources>
+					<Style TargetType="{x:Type ui:NavigationViewItem}">
+						<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+					</Style>
+				</ui:NavigationView.Resources>
 
 			<ui:NavigationView.MenuItems>
 				<ui:NavigationViewItem Content="主页" Icon="{ui:SymbolIcon Home24}" TargetPageType="{x:Type views:DashboardPage}" />

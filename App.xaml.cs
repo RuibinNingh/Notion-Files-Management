@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.IO;
 using System;
 using System.Runtime;
+using Notion_Files_Management.Utils;
 
 namespace Notion_Files_Management
 {
@@ -16,6 +17,9 @@ namespace Notion_Files_Management
 		protected override void OnStartup(StartupEventArgs e)
 		{
 			base.OnStartup(e);
+
+			// Init file logging first
+			Logger.InitFileLogging();
 
 			string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 			// 修正 DLL 名称和路径拼接
@@ -39,6 +43,8 @@ namespace Notion_Files_Management
 		protected override void OnExit(ExitEventArgs e)
 		{
 			PythonEngine.Shutdown(); // 彻底释放内存，关闭 Python 引擎
+			// Shutdown file logging
+			Logger.ShutdownFileLogging();
 			base.OnExit(e);
 		}
 	}

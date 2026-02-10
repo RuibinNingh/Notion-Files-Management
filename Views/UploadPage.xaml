@@ -10,7 +10,10 @@
 			<StackPanel>
 				<StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,20">
 					<ui:SymbolIcon Symbol="ArrowUpload24" FontSize="32" Margin="0,0,15,0"/>
-					<ui:TextBlock Text="文件上传 Upload" FontTypography="Title" VerticalAlignment="Center"/>
+					<ui:TextBlock Text="文件上传 Upload"
+                                  FontTypography="Title"
+                                  VerticalAlignment="Center"
+                                  Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 				</StackPanel>
 
 				<ui:Card Padding="20">

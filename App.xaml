@@ -9,6 +9,14 @@
 				<ui:ThemesDictionary Theme="Dark" />
 				<ui:ControlsDictionary />
 			</ResourceDictionary.MergedDictionaries>
+
+			<!-- Global styles to ensure icons and font-based controls use theme primary text color -->
+			<Style TargetType="{x:Type ui:SymbolIcon}">
+				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+			</Style>
+			<Style TargetType="{x:Type ui:FontIcon}">
+				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+			</Style>
 		</ResourceDictionary>
 	</Application.Resources>
 </Application>

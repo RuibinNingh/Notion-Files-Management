@@ -13,11 +13,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Notion_Files_Management.Utils;
+using System.Diagnostics;
 
 namespace Notion_Files_Management.Views
 {
 	public partial class DownloadPage : Page
 	{
+        private sealed record ProbeProgress(string Status, double Percent, int Done, int Total, string Error, string RawRepr);
+
 		// ===== UI 数据 =====
 		public ObservableCollection<FileSelectItem> FileSelectionList { get; } = new();
 		public ObservableCollection<DownloadTaskStatus> DisplayTasks { get; } = new();
@@ -101,9 +104,21 @@ namespace Notion_Files_Management.Views
 		// =========================
 		private async void ConfirmId_Click(object sender, RoutedEventArgs e)
 		{
+			var confirmBtn = sender as Button;
+			object? confirmOldContent = null;
+			if (confirmBtn != null)
+			{
+				confirmOldContent = confirmBtn.Content;
+				confirmBtn.Content = "稍等";
+			}
+
 			if (!EnsureBackendReady(out string err))
 			{
 				MessageBox.Show(err);
+				if (confirmBtn != null)
+				{
+					confirmBtn.Content = confirmOldContent;
+				}
 				return;
 			}
 
@@ -111,6 +126,10 @@ namespace Notion_Files_Management.Views
 			if (string.IsNullOrWhiteSpace(pageId))
 			{
 				MessageBox.Show("请输入目标页面 ID。");
+				if (confirmBtn != null)
+				{
+					confirmBtn.Content = confirmOldContent;
+				}
 				return;
 			}
 
@@ -131,18 +150,18 @@ namespace Notion_Files_Management.Views
 					using (Logger.Time("Py:Main.get_download_list"))
 					{
 						dynamic ret = _pyMain!.get_download_list(pageId);
-						string pid = "";
+						int pid = 0;
 						int tot = 0;
 						string m = "";
 						string st = "";
 						try
 						{
-							pid = ret["probe_id"]?.ToString() ?? "";
+							pid = PyConvert.ToInt(ret["probe_id"], 0);
 						}
 						catch { }
 						try
 						{
-							tot = Convert.ToInt32(ret["total"] ?? 0);
+							tot = PyConvert.ToInt(ret["total"], 0);
 						}
 						catch { }
 						try
@@ -155,8 +174,6 @@ namespace Notion_Files_Management.Views
 							st = ret["status"]?.ToString() ?? "";
 						}
 						catch { }
-						if (string.Equals(pid, "None", StringComparison.OrdinalIgnoreCase))
-							pid = "";
 						return (pid, tot, m, st);
 					}
 				}, token);
@@ -166,77 +183,126 @@ namespace Notion_Files_Management.Views
 				if (reqId != _getListReqId)
 					return;
 
-				if (string.IsNullOrWhiteSpace(probeId))
+				if (probeId <= 0)
 				{
-					// 文档契约：probeId 为空通常表示失败/无文件
+					// 文档契约：probeId 非正通常表示失败/无文件
 					MessageBox.Show(string.IsNullOrWhiteSpace(msg) ? "获取列表失败或页面无文件" : msg);
-					Logger.Warn($"probe_id empty. status={status}, msg={msg}");
+					Logger.Warn($"probe_id invalid. status={status}, msg={msg}");
 					return;
+				}
+
+				// Python-side introspection: log object ids and downloader contents to help debug probe registration
+				try
+				{
+					await RunPython<object>(() =>
+					{
+						using (Logger.Time("Py:Introspect downloader"))
+						{
+							dynamic builtins = Py.Import("builtins");
+							dynamic idFn = builtins.id;
+							try { Logger.Info($"id(_pyMain)={idFn(_pyMain!)}"); } catch { }
+							try { Logger.Info($"id(_pyMain.downloader)={idFn(_pyMain!.downloader)}"); } catch { }
+
+							dynamic d = _pyMain!.downloader;
+							try
+							{
+								var dObj = (PyObject)d;
+								using var dirList = dObj.Dir(); // list[str]
+								var names = dirList.As<string[]>();
+								Logger.Info("downloader dir contains: " + string.Join(", ", names));
+							}
+							catch (Exception ex)
+							{
+								Logger.Warn($"downloader dir introspect failed: {ex.Message}");
+							}
+
+							// 尝试输出 probe keys（常见字段名 probe_statuses / probe_tasks）
+							try
+							{
+								var dObj = (PyObject)d;
+								if (dObj.HasAttr("probe_statuses"))
+								{
+									using var ps = dObj.GetAttr("probe_statuses");
+									using var keysMethod = ps.GetAttr("keys");
+									using var keys = keysMethod.Invoke();
+									var keyNums = keys.As<int[]>();
+									Logger.Info("probe keys = " + string.Join(", ", keyNums));
+								}
+								else if (dObj.HasAttr("probe_tasks"))
+								{
+									using var pt = dObj.GetAttr("probe_tasks");
+									using var keysMethod = pt.GetAttr("keys");
+									using var keys = keysMethod.Invoke();
+									var keyNums = keys.As<int[]>();
+									Logger.Info("probe keys = " + string.Join(", ", keyNums));
+								}
+							}
+							catch (Exception ex)
+							{
+								Logger.Warn($"probe keys introspect failed: {ex.Message}");
+							}
+						}
+						return null;
+					}, token);
+				}
+				catch (Exception ex)
+				{
+					Logger.Warn($"Introspection failed: {ex.Message}");
 				}
 
 				// 2) 轮询 probe：download_list_processing(probe_id) 直到 done
 				double lastPct = -1;
-				while (true)
+
+				// 给后端一点时间注册 probe
+				await Task.Delay(200, token);
+
 				{
-					token.ThrowIfCancellationRequested();
-					if (reqId != _getListReqId)
-						return;
-
-					var (pStatus, percent, done, pTotal, pError) = await RunPython(() =>
+					var sw = Stopwatch.StartNew();
+					int notFoundCount = 0;
+					while (true)
 					{
-						using (Logger.Time("Py:Main.download_list_processing"))
+						token.ThrowIfCancellationRequested();
+						if (reqId != _getListReqId)
+							return;
+
+						var p = await GetProbeProgressAsync(probeId, token);
+
+						string pStatus = p.Status;
+						int dn = p.Done;
+						int pTotal = p.Total;
+						double percent = p.Percent;
+						string pError = p.Error ?? "";
+
+						Logger.Info($"probe => status={pStatus}, percent={percent}, done={dn}/{pTotal}, error={(pError ?? "")}");
+
+						if (string.Equals(pStatus, "done", StringComparison.OrdinalIgnoreCase))
+							break;
+
+						if (string.Equals(pStatus, "not_found", StringComparison.OrdinalIgnoreCase))
 						{
-							dynamic prog = _pyMain!.download_list_processing(probeId);
-							string st = prog["status"]?.ToString() ?? "";
-							double pct = 0.0;
-							int dn = 0;
-							int tt = 0;
-							string? errText = null;
-							try
-							{
-								pct = Convert.ToDouble(prog["percent"] ?? 0.0);
-							}
-							catch { }
-							try
-							{
-								dn = Convert.ToInt32(prog["done"] ?? 0);
-							}
-							catch { }
-							try
-							{
-								tt = Convert.ToInt32(prog["total"] ?? 0);
-							}
-							catch { }
-							try
-							{
-								var eobj = prog["error"];
-								if (eobj != null)
-								{
-									var s = eobj.ToString();
-									if (!string.IsNullOrWhiteSpace(s) && !string.Equals(s, "None", StringComparison.OrdinalIgnoreCase))
-										errText = s;
-								}
-							}
-							catch { }
-							return (st, pct, dn, tt, errText);
+							notFoundCount++;
+							await Dispatcher.InvokeAsync(() => BtnConfirmId.Content = $"准备探测任务…（{notFoundCount}）");
+							if (sw.Elapsed.TotalSeconds > 5)
+								throw new Exception("Probe task not found after 5s (backend returned status=not_found).");
+							await Task.Delay(250, token);
+							continue;
 						}
-					}, token);
 
-					if (Math.Abs(percent - lastPct) > 0.01)
-					{
-						lastPct = percent;
-						Logger.Info($"probe => status={pStatus}, percent={percent:0.0}, done={done}/{pTotal}, error={(pError ?? "")}");
-						await Dispatcher.InvokeAsync(() =>
+						if (string.Equals(pStatus, "error", StringComparison.OrdinalIgnoreCase) || string.Equals(pStatus, "failed", StringComparison.OrdinalIgnoreCase))
 						{
-							// 不改 XAML 的前提下：用按钮文案显示进度
-							BtnConfirmId.Content = $"探测中 {percent:0}% ({done}/{pTotal})";
-						});
+							throw new Exception($"Probe failed: {pError}");
+						}
+
+						// 正常进度显示（只在变化时输出/更新UI）
+						if (Math.Abs(percent - lastPct) > 0.01)
+						{
+							lastPct = percent;
+							Logger.Info($"probe => status={pStatus}, percent={percent:0.0}, done={dn}/{pTotal}, error={(pError ?? "")}");
+							await Dispatcher.InvokeAsync(() => BtnConfirmId.Content = $"探测中 {percent:0}% ({dn}/{pTotal})");
+						}
+
+						await Task.Delay(400, token);
 					}
-
-					if (string.Equals(pStatus, "done", StringComparison.OrdinalIgnoreCase))
-						break;
-
-					await Task.Delay(400, token);
 				}
 
 				// 3) done 后：main.download_list 才是最终列表
@@ -269,7 +335,7 @@ namespace Notion_Files_Management.Views
 							double size = 0.0;
 							try
 							{
-								size = Convert.ToDouble(item["size_mb"] ?? 0.0);
+								size = PyConvert.ToDouble(item["size_mb"], 0.0);
 							}
 							catch { }
 
@@ -325,7 +391,10 @@ namespace Notion_Files_Management.Views
 				if (reqId == _getListReqId)
 				{
 					BtnConfirmId.IsEnabled = true;
-					BtnConfirmId.Content = "获取列表";
+					if (confirmBtn != null)
+						confirmBtn.Content = confirmOldContent;
+					else
+						BtnConfirmId.Content = "获取列表";
 				}
 			}
 		}
@@ -376,6 +445,15 @@ namespace Notion_Files_Management.Views
 		// =========================
 		private async void SubmitDownload_Click(object sender, RoutedEventArgs e)
 		{
+			// UI: show temporary feedback
+			var btn = sender as Button;
+			object? oldContent = null;
+			if (btn != null)
+			{
+				oldContent = btn.Content;
+				btn.Content = "稍等";
+			}
+
 			Logger.Info("SubmitDownload clicked");
 			if (!EnsureBackendReady(out string err))
 			{
@@ -429,6 +507,16 @@ namespace Notion_Files_Management.Views
 			{
 				MessageBox.Show("启动下载失败: " + ex.Message);
 				Logger.Error("Start download failed", ex);
+			}
+			finally
+			{
+				// restore button state
+				var btn2 = sender as Button;
+				if (btn2 != null)
+				{
+					btn2.Content = oldContent;
+					btn2.IsEnabled = true;
+				}
 			}
 		}
 
@@ -486,7 +574,7 @@ namespace Notion_Files_Management.Views
 
 				foreach (var s in statuses)
 				{
-					string key = s.url ?? "";
+					string key = s.url ??("");
 					if (string.IsNullOrWhiteSpace(key))
 						continue;
 
@@ -676,6 +764,39 @@ namespace Notion_Files_Management.Views
 				return s;
 			}
 			catch { return null; }
+		}
+
+		private Task<ProbeProgress> GetProbeProgressAsync(int probeId, CancellationToken token)
+		{
+			return RunPython(() =>
+			{
+				using (Logger.Time("Py:Main.download_list_processing"))
+				{
+					dynamic prog = _pyMain!.download_list_processing(probeId);
+					string st = prog["status"]?.ToString() ?? "";
+					double pct = 0.0;
+					int dn = 0;
+					int tt = 0;
+					string errText = "";
+					try { pct = PyConvert.ToDouble(prog["percent"], 0.0); } catch { }
+					try { dn = PyConvert.ToInt(prog["done"], 0); } catch { }
+					try { tt = PyConvert.ToInt(prog["total"], 0); } catch { }
+					try
+					{
+						var eobj = prog["error"];
+						if (eobj != null)
+						{
+							var s = eobj.ToString();
+							if (!string.IsNullOrWhiteSpace(s) && !string.Equals(s, "None", StringComparison.OrdinalIgnoreCase))
+								errText = s;
+						}
+					}
+					catch { }
+					string raw = "";
+					try { raw = ((Python.Runtime.PyObject)prog).Repr().ToString(); } catch { }
+					return new ProbeProgress(st, pct, dn, tt, errText ?? "", raw);
+				}
+			}, token);
 		}
 	}
 
