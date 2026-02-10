@@ -486,7 +486,8 @@ namespace Notion_Files_Management.Views
 							pyListToDownload.Append(s.raw_dict);
 
 						var r = _pyMain!.download_notion_files(pyListToDownload, _saveDirectory);
-						return r?.ToString() ?? "";
+						//return r?.ToString() ?? "";
+						return "";
 					}
 				}, CancellationToken.None);
 

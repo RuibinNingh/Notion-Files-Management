@@ -21,27 +21,30 @@
 				              Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 			</StackPanel>
 
-			<!-- 中间卡片：占据剩余空间 -->
-			<ui:Card Grid.Row="1" Padding="20" VerticalAlignment="Stretch">
-				<Grid>
-					<Grid.RowDefinitions>
-						<RowDefinition Height="Auto"/>
-						<RowDefinition Height="*"/>
-					</Grid.RowDefinitions>
-
-					<!-- 按钮行 -->
-					<StackPanel Grid.Row="0">
-						<ui:Button x:Name="BtnOpenDownloadDialog" 
+			<!-- 中间卡片：参照上传页的布局，确保无任务时也有固定高度且内容顶部对齐 -->
+			<ui:Card Grid.Row="1" Padding="20">
+				<StackPanel>
+					<ui:Button x:Name="BtnOpenDownloadDialog" 
 							   Content="下载新文件" 
 							   Icon="{ui:SymbolIcon Symbol=Add24}"
 							   Appearance="Primary"
 							   Click="BtnOpenDownloadDialog_Click"/>
-						<ui:TextBlock Text="活动下载任务" Appearance="Tertiary" Margin="0,12,0,8"/>
-					</StackPanel>
 
-					<!-- 列表：吃满剩余空间 -->
-					<Border Grid.Row="1" BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="1" CornerRadius="8">
-						<ListView x:Name="DownloadTaskListView" Background="Transparent" Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Stretch" HorizontalContentAlignment="Stretch" ScrollViewer.VerticalScrollBarVisibility="Auto">
+					<ui:TextBlock Text="活动下载任务"
+							  Appearance="Tertiary"
+							  Margin="0,20,0,8"/>
+
+					<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+							BorderThickness="1"
+							CornerRadius="8">
+						<ListView x:Name="DownloadTaskListView"
+									 ItemsSource="{Binding DisplayTasks}"
+									 MinHeight="200"
+									 MaxHeight="450"
+									 Background="Transparent"
+									 Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+									 HorizontalContentAlignment="Stretch"
+									 ScrollViewer.VerticalScrollBarVisibility="Auto">
 							<ListView.ItemTemplate>
 								<DataTemplate>
 									<Grid Margin="0,8">
@@ -101,7 +104,7 @@
 							</ListView.ItemTemplate>
 						</ListView>
 					</Border>
-				</Grid>
+				</StackPanel>
 			</ui:Card>
 
 			<!-- 底部占位行（当前为空，但保留以便未来增加汇总/按钮） -->
