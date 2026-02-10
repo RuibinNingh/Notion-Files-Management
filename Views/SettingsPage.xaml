@@ -4,12 +4,17 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="设置">
 	<Grid Margin="30">
-		<StackPanel MaxWidth="600" HorizontalAlignment="Left" Width="618">
+		<Grid.ColumnDefinitions>
+			<ColumnDefinition Width="300*"/>
+			<ColumnDefinition Width="300*"/>
+			<ColumnDefinition Width="13*"/>
+		</Grid.ColumnDefinitions>
+		<StackPanel MaxWidth="600" HorizontalAlignment="Left" Width="618" Grid.ColumnSpan="3">
 
 			<ui:TextBlock Text="Notion 服务配置" FontTypography="Subtitle" Margin="0,0,0,15"/>
 
 			<ui:Card Padding="15" Width="617">
-				<Grid>
+				<Grid Margin="0,0,15,0">
 					<Grid.ColumnDefinitions>
 						<ColumnDefinition Width="*" />
 						<ColumnDefinition Width="Auto" />

@@ -3,16 +3,162 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="工具箱">
+
 	<Grid>
-		<!--StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-			<ui:SymbolIcon Symbol="Toolbox24" FontSize="64" Margin="0,0,0,20"/>
-			<ui:TextBlock Text="工具箱 Tools" FontTypography="Title" HorizontalAlignment="Center"/>
-		</StackPanel-->
-		<ui:Button
-    Content="测试 Python 连接"
-    Appearance="Primary"
-    Click="btn_Click"
-    Icon="{ui:SymbolIcon Symbol=Play24}"
-    Margin="10" />
+		<Grid Margin="30">
+			<Grid.RowDefinitions>
+				<RowDefinition Height="Auto"/>
+				<RowDefinition Height="*"/>
+			</Grid.RowDefinitions>
+
+			<!-- 顶部标题 -->
+			<StackPanel Grid.Row="0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Left"
+                        Margin="0,0,0,12">
+				<ui:SymbolIcon Symbol="Toolbox24" FontSize="32" Margin="0,0,15,0"/>
+				<ui:TextBlock Text="工具箱 Tools"
+							  Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                              FontTypography="Title"
+                              VerticalAlignment="Center"/>
+			</StackPanel>
+
+			<!-- 主体 -->
+			<ui:Card Grid.Row="1" Padding="20">
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+					</Grid.RowDefinitions>
+
+					<!-- 简介 -->
+					<StackPanel Grid.Row="0" Margin="0,0,0,14">
+						<ui:TextBlock Text="这里放一些辅助功能与诊断工具。"
+                                      Appearance="Tertiary"/>
+						<ui:TextBlock Text="目前未接入任何工具"
+                                      Appearance="Tertiary"
+                                      Margin="0,4,0,0"/>
+					</StackPanel>
+
+					<!-- 工具列表 -->
+					<Border Grid.Row="1"
+                            BorderThickness="1"
+                            BorderBrush="#33000000"
+                            CornerRadius="8"
+                            Padding="12">
+						<StackPanel>
+
+							<!-- 分组：Python / 调试 -->
+							<ui:TextBlock Text="Notion 相关"
+                                          FontTypography="Subtitle"
+                                          Margin="2,2,2,10"/>
+
+							<!-- 工具项：Python连通测试（绑定你现有 btn_Click） -->
+							<Border BorderThickness="1"
+                                    BorderBrush="#22000000"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Margin="0,0,0,10">
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="Auto"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="Auto"/>
+									</Grid.ColumnDefinitions>
+
+									<ui:SymbolIcon Symbol="Code24"
+                                                   FontSize="22"
+                                                   Margin="0,2,14,0"/>
+
+									<StackPanel Grid.Column="1">
+										<ui:TextBlock Text="Notion 页面信息"
+                                                      FontWeight="SemiBold"/>
+										<ui:TextBlock Text="让您知道您的某个 Notion 页面已有文件、文件大小等信息 "
+                                                      Appearance="Tertiary"
+                                                      TextWrapping="Wrap"
+                                                      Margin="0,4,0,0"/>
+									</StackPanel>
+
+									<ui:Button Grid.Column="2"
+                                               Content="运行"
+                                               Appearance="Primary"
+                                               MinWidth="96"
+                                               Click="notion_Info"/>
+								</Grid>
+							</Border>
+
+							<!-- 分组：占位（不绑定事件，避免报错） -->
+							<ui:TextBlock Text="其他工具（占位）"
+                                          FontTypography="Subtitle"
+                                          Margin="2,14,2,10"/>
+
+							<Border BorderThickness="1"
+                                    BorderBrush="#22000000"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Margin="0,0,0,10"
+                                    Opacity="0.75">
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="Auto"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="Auto"/>
+									</Grid.ColumnDefinitions>
+
+									<ui:SymbolIcon Symbol="Broom24"
+                                                   FontSize="22"
+                                                   Margin="0,2,14,0"/>
+
+									<StackPanel Grid.Column="1">
+										<ui:TextBlock Text="清理缓存（待接入）"
+                                                      FontWeight="SemiBold"/>
+										<ui:TextBlock Text="用于清理临时文件/缓存。"
+                                                      Appearance="Tertiary"
+                                                      Margin="0,4,0,0"/>
+									</StackPanel>
+
+									<ui:Button Grid.Column="2"
+                                               Content="未实现"
+                                               MinWidth="96"
+                                               IsEnabled="False"/>
+								</Grid>
+							</Border>
+
+							<Border BorderThickness="1"
+                                    BorderBrush="#22000000"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Opacity="0.75">
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="Auto"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="Auto"/>
+									</Grid.ColumnDefinitions>
+
+									<ui:SymbolIcon Symbol="Bug24"
+                                                   FontSize="22"
+                                                   Margin="0,2,14,0"/>
+
+									<StackPanel Grid.Column="1">
+										<ui:TextBlock Text="导出诊断信息（待接入）"
+                                                      FontWeight="SemiBold"/>
+										<ui:TextBlock Text="将日志/配置打包导出，便于排查问题。"
+                                                      Appearance="Tertiary"
+                                                      Margin="0,4,0,0"/>
+									</StackPanel>
+
+									<ui:Button Grid.Column="2"
+                                               Content="未实现"
+                                               MinWidth="96"
+                                               IsEnabled="False"/>
+								</Grid>
+							</Border>
+
+						</StackPanel>
+					</Border>
+				</Grid>
+			</ui:Card>
+		</Grid>
 	</Grid>
 </Page>
