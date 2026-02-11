@@ -14,39 +14,75 @@
 			<ui:TextBlock Text="Notion 服务配置" FontTypography="Subtitle" Margin="0,0,0,15"/>
 
 			<ui:Card Padding="15" Width="617">
-				<Grid Margin="0,0,15,0">
-					<Grid.ColumnDefinitions>
-						<ColumnDefinition Width="*" />
-						<ColumnDefinition Width="Auto" />
-					</Grid.ColumnDefinitions>
+				<StackPanel>
+					<ui:TextBlock Text="Integration Token" Margin="0,0,0,8" Appearance="Tertiary"/>
 
-					<StackPanel Grid.Column="0">
-						<ui:TextBlock Text="Integration Token" Margin="0,0,0,8" Appearance="Tertiary"/>
+					<ui:PasswordBox 
+						x:Name="TokenInput"
+						PlaceholderText="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+						RevealButtonEnabled="True"
+						Icon="{ui:SymbolIcon Symbol=Key24}"/>
+				</StackPanel>
+			</ui:Card>
 
-						<ui:PasswordBox 
-                            x:Name="TokenInput"
-                            PlaceholderText="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                            RevealButtonEnabled="True"
-                            Icon="{ui:SymbolIcon Symbol=Key24}"/>
+			<ui:TextBlock Text="任务并发设置" FontTypography="Subtitle" Margin="0,20,0,15"/>
+
+			<ui:Card Padding="15" Width="617">
+				<StackPanel>
+					<ui:TextBlock Text="Notion 地址" Appearance="Tertiary" Margin="0,0,0,6"/>
+					<ui:TextBox 
+						x:Name="NotionUrlInput"
+						PlaceholderText="https://api.notion.com/v1"
+						Margin="0,0,0,14"
+						Icon="{ui:SymbolIcon Symbol=Globe24}"/>
+					<ui:TextBlock Text="默认：https://api.notion.com/v1" 
+						   Appearance="Tertiary" 
+						   FontSize="12" 
+						   Margin="0,0,0,14"/>
+
+					<ui:TextBlock Text="下载并发数" Appearance="Tertiary" Margin="0,0,0,6"/>
+					<ComboBox x:Name="DownloadWorkersCombo" SelectedIndex="1" Margin="0,0,0,14">
+						<ComboBoxItem Content="1"/>
+						<ComboBoxItem Content="3"/>
+						<ComboBoxItem Content="5"/>
+						<ComboBoxItem Content="8"/>
+					</ComboBox>
+
+					<ui:TextBlock Text="上传并发数" Appearance="Tertiary" Margin="0,0,0,6"/>
+					<ComboBox x:Name="UploadWorkersCombo" SelectedIndex="1" Margin="0,0,0,6">
+						<ComboBoxItem Content="1"/>
+						<ComboBoxItem Content="3"/>
+						<ComboBoxItem Content="5"/>
+						<ComboBoxItem Content="8"/>
+					</ComboBox>
+
+					<ui:TextBlock Text="说明：并发数由设置页统一管理，下载/上传页不再单独配置。" Appearance="Tertiary" FontSize="12" Margin="0,8,0,0"/>
+
+					<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+						<ui:Button x:Name="BtnApplyWorkersReset"
+							Content="应用并重置任务"
+							Appearance="Primary"
+							Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
+							Click="OnApplyWorkersResetClick"/>
 					</StackPanel>
-
-					<ui:Button 
-                        x:Name="BtnSave"
-                        Grid.Column="1"
-                        Content="保存配置"
-                        Appearance="Primary"
-                        Icon="{ui:SymbolIcon Symbol=Save24}"
-                        Click="OnSaveClick"
-                        Margin="15,25,0,0"
-                        VerticalAlignment="Bottom"/>
-				</Grid>
+				</StackPanel>
 			</ui:Card>
 
 			<ui:TextBlock 
-                Text="数据将存储在: AppData\Roaming\NotionFilesManagement\config.json" 
-                Appearance="Tertiary" 
-                FontSize="12"
-                Margin="0,15,0,0"/>
+				Text="数据将存储在: AppData\Roaming\NotionFilesManagement\config.json" 
+				Appearance="Tertiary" 
+				FontSize="12"
+				Margin="0,15,0,0"/>
+
+			<!-- Actions (moved to bottom) -->
+			<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+				<ui:Button 
+					x:Name="BtnSave"
+					Content="保存配置"
+					Appearance="Primary"
+					Icon="{ui:SymbolIcon Symbol=Save24}"
+					Click="OnSaveClick"/>
+			</StackPanel>
 		</StackPanel>
 	</Grid>
 </Page>

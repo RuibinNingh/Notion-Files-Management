@@ -3,12 +3,21 @@ from notion import Notion
 from upload import Upload
 
 class Main:
-    def __init__(self, notion_token: str, max_workers: int = 3):
-        self.notion = Notion(notion_token)
-        self.downloader = Download(max_workers=max_workers)
+    def __init__(self, notion_token: str, max_download_workers: int = 3,max_upload_workers: int = 3,url="https://api.notion.com/v1" ):
+        url = url.rstrip('/')  # 确保 URL 没有尾部斜杠
+        self.notion = Notion(notion_token, url=url)
+        self.downloader = Download(max_workers=max_download_workers)
         self._probe_id = None
         self.download_list = []
-        self.Uploader = None  # type: Upload | None
+        self.Uploader = Upload(
+            notion_token=self.notion.token,
+            max_workers=max_upload_workers,
+            rps=3.0,
+            burst=4,
+            part_size_bytes=15 * 1024 * 1024,
+            debug=True,
+            url=url,
+        )
         self._probe_size_map = {}
     # -------------------------
     # Download
@@ -132,19 +141,11 @@ class Main:
     # -------------------------
     # Upload
     # -------------------------
-    def upload_notion_files(self, page_id: str, files_list: list[str], max_workers: int = 3):
+    def upload_notion_files(self, page_id: str, files_list: list[str]):
         """
         启动上传任务（批量）
         """
-        # 懒初始化 uploader（你也可以挪到 __init__）
-        self.Uploader = Upload(
-            notion_token=self.notion.token,
-            max_workers=max_workers,
-            rps=3.0,
-            burst=4,
-            part_size_bytes=15 * 1024 * 1024,
-            debug=True,
-        )
+        
 
         ok, fail = 0, 0
         for file_path in files_list:

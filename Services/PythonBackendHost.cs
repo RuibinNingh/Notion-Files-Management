@@ -16,6 +16,9 @@ namespace Notion_Files_Management.Services
 
 		private dynamic? _pyMain;
 		private string _currentToken = "";
+		private int _currentDownloadWorkers = -1;
+		private int _currentUploadWorkers = -1;
+		private string _currentUrl = "";
 		private readonly SemaphoreSlim _pyLock = new(1, 1);
 		private bool _isInitialized = false;
 
@@ -71,18 +74,21 @@ namespace Notion_Files_Management.Services
 			}
 		}
 
-		public async Task EnsureBackendReady(string notionToken)
+		public async Task EnsureBackendReady(string notionToken, int maxDownloadWorkers, int maxUploadWorkers, string notionBaseUrl = "https://api.notion.com/v1")
 		{
 			await _pyLock.WaitAsync();
 			try
 			{
-				if (_pyMain != null && _currentToken == notionToken)
+				if (_pyMain != null && _currentToken == notionToken
+					&& _currentDownloadWorkers == maxDownloadWorkers
+					&& _currentUploadWorkers == maxUploadWorkers
+					&& _currentUrl == notionBaseUrl)
 				{
 					Logger.Info("Python backend already initialized (token unchanged)");
 					return;
 				}
 
-				Logger.Info("BEGIN Init Python Main(token)");
+				Logger.Info("BEGIN Init Python Main(token, workers, url)");
 				if (!_isInitialized)
 				{
 					PythonEngine.Initialize();
@@ -98,9 +104,80 @@ namespace Notion_Files_Management.Services
 					sys.path.append(scriptsPath);
 
 					dynamic mainMod = Py.Import("main");
-					_pyMain = mainMod.Main(notionToken, 3);
+					_pyMain = mainMod.Main(notionToken, maxDownloadWorkers, maxUploadWorkers, notionBaseUrl);
 					_currentToken = notionToken;
-					Logger.Info("END Init Python Main(token)");
+					_currentDownloadWorkers = maxDownloadWorkers;
+					_currentUploadWorkers = maxUploadWorkers;
+					_currentUrl = notionBaseUrl;
+					Logger.Info($"END Init Python Main(token, dl={maxDownloadWorkers}, ul={maxUploadWorkers}, url={notionBaseUrl})");
+				}
+			}
+			finally
+			{
+				_pyLock.Release();
+			}
+		}
+
+
+		/// <summary>
+		/// Cancel all current download/upload tasks (if backend supports it) and recreate Main instance.
+		/// This is used when changing concurrency settings and user chooses to reset running tasks.
+		/// </summary>
+		public async Task ResetTasksAndReinitialize(string notionToken, int maxDownloadWorkers, int maxUploadWorkers, string notionBaseUrl = "https://api.notion.com/v1")
+		{
+			await _pyLock.WaitAsync();
+			try
+			{
+				if (_pyMain != null)
+				{
+					Logger.Info("BEGIN ResetTasks: cancel all + shutdown python Main");
+					try
+					{
+						using (Py.GIL())
+						{
+							// Best-effort cancel
+							try { _pyMain.cancel_all_downloads(); } catch { }
+							try { _pyMain.cancel_all_uploads(); } catch { }
+							try { _pyMain.shutdown(); } catch { }
+						}
+					}
+					catch (Exception ex)
+					{
+						Logger.Error("ResetTasks: python cancel/shutdown failed", ex);
+					}
+					finally
+					{
+						_pyMain = null;
+						_currentToken = "";
+						_currentDownloadWorkers = -1;
+						_currentUploadWorkers = -1;
+						_currentUrl = "";
+					}
+					Logger.Info("END ResetTasks");
+				}
+
+				// Ensure Python engine is up, then re-init
+				if (!_isInitialized)
+				{
+					PythonEngine.Initialize();
+					_isInitialized = true;
+				}
+
+				using (Py.GIL())
+				{
+					InjectDotenvStubIfMissing();
+
+					dynamic sys = Py.Import("sys");
+					string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
+					sys.path.append(scriptsPath);
+
+					dynamic mainMod = Py.Import("main");
+					_pyMain = mainMod.Main(notionToken, maxDownloadWorkers, maxUploadWorkers, notionBaseUrl);
+					_currentToken = notionToken;
+					_currentDownloadWorkers = maxDownloadWorkers;
+					_currentUploadWorkers = maxUploadWorkers;
+					_currentUrl = notionBaseUrl;
+					Logger.Info($"ResetTasks: Reinitialized Main(dl={maxDownloadWorkers}, ul={maxUploadWorkers}, url={notionBaseUrl})");
 				}
 			}
 			finally

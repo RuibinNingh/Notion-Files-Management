@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 
@@ -7,6 +7,10 @@ namespace Notion_Files_Management
 	public class ConfigData
 	{
 		public string NotionToken { get; set; } = "";
+		public string NotionBaseUrl { get; set; } = "https://api.notion.com/v1";
+		// Download/Upload concurrency configured in Settings page
+		public int MaxDownloadWorkers { get; set; } = 3;
+		public int MaxUploadWorkers { get; set; } = 3;
 	}
 
 	public static class ConfigManager
@@ -26,11 +30,14 @@ namespace Notion_Files_Management
 			if (!File.Exists(FilePath))
 				return;
 			try
-			{
-				string json = File.ReadAllText(FilePath);
-				Current = JsonSerializer.Deserialize<ConfigData>(json) ?? new ConfigData();
-			}
-			catch { }
+		{
+			string json = File.ReadAllText(FilePath);
+			Current = JsonSerializer.Deserialize<ConfigData>(json) ?? new ConfigData();
+			// 兼容处理：如果 NotionBaseUrl 为空，设置默认值
+			if (string.IsNullOrWhiteSpace(Current.NotionBaseUrl))
+				Current.NotionBaseUrl = "https://api.notion.com/v1";
+		}
+		catch { }
 		}
 
 		public static void Save()

@@ -173,18 +173,11 @@
 						</ListView>
 					</Border>
 
-					<!-- 并发 -->
-					<ui:TextBlock Text="上传并发数（1 / 3 / 5，默认 3）"
-                                  Appearance="Tertiary"
-                                  Margin="0,0,0,6"/>
-
-					<ComboBox x:Name="UploadConcurrencyCombo"
-                              SelectedIndex="1"
-                              Margin="0,0,0,14">
-						<ComboBoxItem Content="1"/>
-						<ComboBoxItem Content="3"/>
-						<ComboBoxItem Content="5"/>
-					</ComboBox>
+					<!-- 并发已移动到设置页 -->
+					<ui:TextBlock Text="上传并发数由【设置】页统一管理"
+								  Appearance="Tertiary"
+								  FontSize="12"
+								  Margin="0,0,0,14"/>
 
 					<!-- PageId -->
 					<ui:TextBlock Text="Notion Page ID"

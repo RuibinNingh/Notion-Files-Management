@@ -1,4 +1,4 @@
-﻿using Python.Runtime;
+using Python.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -22,6 +22,8 @@ namespace Notion_Files_Management.Views
         // ===== Python =====
         private dynamic? _pyMain;
         private string _currentNotionToken = "";
+		private int _currentDownloadWorkers = -1;
+		private int _currentUploadWorkers = -1;
         private static readonly SemaphoreSlim _pyLock = new(1, 1);
 
         // ===== 查询取消支持 =====
@@ -146,7 +148,7 @@ namespace Notion_Files_Management.Views
                     var p = await GetProbeProgressAsync(probeId, token);
 
                     // 更新 UI（确保进度条一定渲染）
-                    await Dispatcher.InvokeAsync(() =>
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         ProbeProgressBar.Value = p.Percent;
                         if (string.Equals(p.Status, "not_found", StringComparison.OrdinalIgnoreCase))
@@ -206,7 +208,7 @@ namespace Notion_Files_Management.Views
                 if (reqId != _reqId) return;
 
                 // 4) 渲染列表 + 统计
-                await Dispatcher.InvokeAsync(() =>
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     PageInfoItems.Clear();
                     foreach (var x in items.OrderByDescending(x => x.SizeGb))
@@ -221,7 +223,7 @@ namespace Notion_Files_Management.Views
             }
             catch (OperationCanceledException)
             {
-                await Dispatcher.InvokeAsync(() =>
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     ProbeStatusText.Text = "已取消。";
                 });
@@ -234,7 +236,7 @@ namespace Notion_Files_Management.Views
             }
             finally
             {
-                await Dispatcher.InvokeAsync(() => BtnStartQuery.IsEnabled = true);
+                await Application.Current.Dispatcher.InvokeAsync(() => BtnStartQuery.IsEnabled = true);
             }
         }
 
@@ -247,13 +249,18 @@ namespace Notion_Files_Management.Views
             {
                 ConfigManager.Load();
                 string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
+                string url = ConfigManager.Current?.NotionBaseUrl ?? "https://api.notion.com/v1";
+                int dl = ConfigManager.Current?.MaxDownloadWorkers ?? 3;
+                int ul = ConfigManager.Current?.MaxUploadWorkers ?? 3;
                 if (string.IsNullOrEmpty(token))
                 {
                     error = "未检测到 Notion Token，请先到【设置】页保存 Token。";
                     return false;
                 }
 
-                if (_pyMain != null && token == _currentNotionToken)
+                if (_pyMain != null && token == _currentNotionToken
+                    && dl == _currentDownloadWorkers
+                    && ul == _currentUploadWorkers)
                     return true;
 
                 using (Py.GIL())
@@ -265,8 +272,10 @@ namespace Notion_Files_Management.Views
                     sys.path.append(scriptsPath);
 
                     dynamic mainMod = Py.Import("main");
-                    _pyMain = mainMod.Main(token, 3);
+                    _pyMain = mainMod.Main(token, dl, ul, url);
                     _currentNotionToken = token;
+                    _currentDownloadWorkers = dl;
+                    _currentUploadWorkers = ul;
                 }
 
                 return true;

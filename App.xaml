@@ -1,4 +1,4 @@
-﻿<Application x:Class="Notion_Files_Management.App"
+<Application x:Class="Notion_Files_Management.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -16,6 +16,16 @@
 			</Style>
 			<Style TargetType="{x:Type ui:FontIcon}">
 				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+			</Style>
+
+			<!-- 让原生 TextBlock 也跟随 WpfUI 主题色 -->
+			<Style TargetType="{x:Type TextBlock}">
+				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+			</Style>
+
+			<!-- 让 Label 也统一使用主题色 -->
+			<Style TargetType="{x:Type Label}">
+				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
 			</Style>
 		</ResourceDictionary>
 	</Application.Resources>

@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using Python.Runtime;
 using System;
 using System.Collections.Generic;
@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Notion_Files_Management.Services;
 
 namespace Notion_Files_Management.Views
 {
@@ -24,6 +25,8 @@ namespace Notion_Files_Management.Views
 		// ====== Python 相关 ======
 		private dynamic? _pyMain;
 		private string _currentNotionToken = "";
+		private int _currentDownloadWorkers = -1;
+		private int _currentUploadWorkers = -1;
 		private static readonly SemaphoreSlim _pyLock = new(1, 1);
 
 		// ====== 轮询 & EMA ======
@@ -38,6 +41,10 @@ namespace Notion_Files_Management.Views
 
 			_statusTimer.Interval = TimeSpan.FromSeconds(1);
 			_statusTimer.Tick += UploadStatusTick;
+
+			TaskResetNotifier.TasksReset += OnTasksReset;
+
+			Unloaded += (_, __) => { TaskResetNotifier.TasksReset -= OnTasksReset; };
 		}
 
 		// ========== UI：打开/关闭模态 ==========
@@ -99,8 +106,6 @@ namespace Notion_Files_Management.Views
 				return;
 			}
 
-			int concurrency = GetSelectedConcurrency();
-
 			if (!EnsureBackendReady(out string err))
 			{
 				MessageBox.Show(err);
@@ -112,7 +117,7 @@ namespace Notion_Files_Management.Views
 
 			try
 			{
-				// 1) 调用后端：upload_notion_files(page_id, files_list, max_workers)
+				// 1) 调用后端：upload_notion_files(page_id, files_list)
 				string ret = await RunPython(() =>
 				{
 					// 注意：RunPython 已经持有 GIL，这里不再重复 using (Py.GIL())
@@ -120,7 +125,7 @@ namespace Notion_Files_Management.Views
 					foreach (var path in SelectedUploadFiles)
 						pyFiles.Append(path.ToPython());
 
-					var r = _pyMain!.upload_notion_files(pageId, pyFiles, concurrency);
+					var r = _pyMain!.upload_notion_files(pageId, pyFiles);
 					return r?.ToString() ?? "";
 				});
 
@@ -286,6 +291,9 @@ namespace Notion_Files_Management.Views
 			{
 				ConfigManager.Load();
 				string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
+				string url = ConfigManager.Current?.NotionBaseUrl ?? "https://api.notion.com/v1";
+				int dl = ConfigManager.Current?.MaxDownloadWorkers ?? 3;
+				int ul = ConfigManager.Current?.MaxUploadWorkers ?? 3;
 
 				if (string.IsNullOrEmpty(token))
 				{
@@ -293,7 +301,10 @@ namespace Notion_Files_Management.Views
 					return false;
 				}
 
-				if (_pyMain != null && token == _currentNotionToken)
+				// If token/workers unchanged, reuse existing backend
+				if (_pyMain != null && token == _currentNotionToken
+					&& dl == _currentDownloadWorkers
+					&& ul == _currentUploadWorkers)
 					return true;
 
 				using (Py.GIL())
@@ -305,8 +316,10 @@ namespace Notion_Files_Management.Views
 					sys.path.append(scriptsPath);
 
 					dynamic mainMod = Py.Import("main");
-					_pyMain = mainMod.Main(token, 3);
+					_pyMain = mainMod.Main(token, dl, ul, url);
 					_currentNotionToken = token;
+					_currentDownloadWorkers = dl;
+					_currentUploadWorkers = ul;
 				}
 
 				return true;
@@ -376,15 +389,6 @@ namespace Notion_Files_Management.Views
 		}
 
 		// ====== 小工具 ======
-		private int GetSelectedConcurrency()
-		{
-			if (UploadConcurrencyCombo.SelectedItem is ComboBoxItem item &&
-				int.TryParse(item.Content?.ToString(), out int v))
-				return v;
-
-			return 3;
-		}
-
 		private static double GuessSizeMB(string filePath)
 		{
 			try
@@ -412,6 +416,28 @@ namespace Notion_Files_Management.Views
 				return 0.0;
 			}
 		}
+
+		private void OnTasksReset()
+		{
+			try
+			{
+				if (_statusTimer.IsEnabled)
+					_statusTimer.Stop();
+
+				Application.Current?.Dispatcher?.Invoke(() =>
+				{
+					try
+					{
+						DisplayUploads.Clear();
+						SelectedUploadFiles.Clear();
+						ModalHint.Text = "";
+					}
+					catch { }
+				});
+			}
+			catch { }
+		}
+
 	}
 
 	internal sealed class UploadStatusDto
@@ -585,5 +611,6 @@ namespace Notion_Files_Management.Views
 		public event PropertyChangedEventHandler? PropertyChanged;
 		private void OnPropertyChanged([CallerMemberName] string? name = null)
 			=> PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
 	}
 }

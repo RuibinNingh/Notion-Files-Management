@@ -128,6 +128,8 @@ namespace Notion_Files_Management.Views
 			DataContext = this;
 			Logger.Info("DownloadPage initialized");
 
+			Services.TaskResetNotifier.TasksReset += OnTasksReset;
+
 			// 如果 XAML 没有绑 ItemsSource，也能跑
 			try
 			{
@@ -163,6 +165,7 @@ namespace Notion_Files_Management.Views
 
 			Unloaded += (_, __) =>
 			{
+				Services.TaskResetNotifier.TasksReset -= OnTasksReset;
 				if (_downloadStatusTimer.IsEnabled)
 					_downloadStatusTimer.Stop();
 			};
@@ -351,7 +354,7 @@ namespace Notion_Files_Management.Views
 								Logger.Warn($"probe keys introspect failed: {ex.Message}");
 							}
 						}
-						return null;
+						return 0;
 					}, token);
 				}
 				catch (Exception ex)
@@ -390,7 +393,7 @@ namespace Notion_Files_Management.Views
 						if (string.Equals(pStatus, "not_found", StringComparison.OrdinalIgnoreCase))
 						{
 							notFoundCount++;
-							await Dispatcher.InvokeAsync(() => BtnConfirmId.Content = $"准备探测任务…（{notFoundCount}）");
+							await Application.Current.Dispatcher.InvokeAsync(() => BtnConfirmId.Content = $"准备探测任务…（{notFoundCount}）");
 							if (sw.Elapsed.TotalSeconds > 5)
 								throw new Exception("Probe task not found after 5s (backend returned status=not_found).");
 							await Task.Delay(250, token);
@@ -407,7 +410,7 @@ namespace Notion_Files_Management.Views
 						{
 							lastPct = percent;
 							Logger.Info($"probe => status={pStatus}, percent={percent:0.0}, done={dn}/{pTotal}, error={(pError ?? "")}");
-							await Dispatcher.InvokeAsync(() => BtnConfirmId.Content = $"探测中 {percent:0}% ({dn}/{pTotal})");
+							await Application.Current.Dispatcher.InvokeAsync(() => BtnConfirmId.Content = $"探测中 {percent:0}% ({dn}/{pTotal})");
 						}
 
 						await Task.Delay(400, token);
@@ -745,12 +748,15 @@ namespace Notion_Files_Management.Views
 				Logger.Debug("EnsureBackendReady called");
 				ConfigManager.Load();
 				string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
+				string url = ConfigManager.Current?.NotionBaseUrl ?? "https://api.notion.com/v1";
+				int dl = ConfigManager.Current?.MaxDownloadWorkers ?? 3;
+				int ul = ConfigManager.Current?.MaxUploadWorkers ?? 3;
 				if (string.IsNullOrEmpty(token))
 				{
 					return (false, "未检测到 Notion Token，请先到【设置】页保存 Token。");
 				}
 
-				await _backend.EnsureBackendReady(token);
+				await _backend.EnsureBackendReady(token, dl, ul, url);
 				return (true, "");
 			}
 			catch (Exception ex)
@@ -881,6 +887,29 @@ namespace Notion_Files_Management.Views
 				}
 			}, token);
 		}
+		private void OnTasksReset()
+		{
+			try
+			{
+				// Stop polling and clear UI
+				if (_downloadStatusTimer.IsEnabled)
+					_downloadStatusTimer.Stop();
+
+				_session.HasActiveDownloads = false;
+
+				Application.Current.Dispatcher.Invoke(() =>
+				{
+					try
+					{
+						DisplayTasks.Clear();
+						FileSelectionList.Clear();
+					}
+					catch { }
+				});
+			}
+			catch { }
+		}
+
 	}
 
 	// =========================
