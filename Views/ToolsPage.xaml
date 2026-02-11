@@ -76,9 +76,42 @@
 
                                     <ui:Button Grid.Column="2"
                                                Content="运行"
-                                               Appearance="Primary"
+                                               Style="{StaticResource BluePrimaryUiButton}"
                                                MinWidth="96"
                                                Click="OpenPageInfoModal_Click"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- 图标着色实验页入口 -->
+                            <Border BorderThickness="1"
+                                    BorderBrush="#22000000"
+                                    CornerRadius="8"
+                                    Padding="12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <ui:SymbolIcon Symbol="Color24"
+                                                   FontSize="22"
+                                                   Margin="0,2,14,0"/>
+
+                                    <StackPanel Grid.Column="1">
+                                        <ui:TextBlock Text="图标与主题实验室"
+                                                      FontWeight="SemiBold"/>
+                                        <ui:TextBlock Text="对比不同按钮图标写法在当前主题下的实际着色效果，并显示主题刷子值。"
+                                                      Appearance="Tertiary"
+                                                      TextWrapping="Wrap"
+                                                      Margin="0,4,0,0"/>
+                                    </StackPanel>
+
+                                    <ui:Button Grid.Column="2"
+                                               Content="打开"
+                                               Appearance="Secondary"
+                                               MinWidth="96"
+                                               Click="OpenIconThemeLab_Click"/>
                                 </Grid>
                             </Border>
 
@@ -107,7 +140,7 @@
                         <ui:Button x:Name="BtnStartQuery"
                                    Grid.Column="1"
                                    Content="开始获取"
-                                   Appearance="Primary"
+                                   Style="{StaticResource BluePrimaryUiButton}"
                                    Margin="10,0,0,0"
                                    Click="StartQuery_Click"/>
                     </Grid>

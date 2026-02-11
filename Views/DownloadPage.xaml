@@ -24,15 +24,11 @@
 			<!-- 中间卡片：参照上传页的布局，确保无任务时也有固定高度且内容顶部对齐 -->
 			<ui:Card Grid.Row="1" Padding="20">
 				<StackPanel>
-					<ui:Button x:Name="BtnOpenDownloadDialog" 
-															Content="下载新文件" 
-															Appearance="Primary"
-															Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
-															Click="BtnOpenDownloadDialog_Click">
-															<ui:Button.Icon>
-																<ui:SymbolIcon Symbol="Add24" Style="{StaticResource ButtonIconStyle}"/>
-															</ui:Button.Icon>
-														</ui:Button>
+					<ui:Button x:Name="BtnOpenDownloadDialog"
+							   Style="{StaticResource BluePrimaryUiButton}"
+							   Content="下载新文件"
+							   Icon="{ui:SymbolIcon Symbol=Add24}"
+							   Click="BtnOpenDownloadDialog_Click" />
 
 					<ui:TextBlock Text="活动下载任务"
 							  Appearance="Tertiary"
@@ -130,7 +126,7 @@
 						<ui:Button x:Name="BtnConfirmId" 
            Grid.Column="1" 
            Content="获取列表" 
-           Appearance="Primary" 
+           Style="{StaticResource BluePrimaryUiButton}" 
            Margin="10,0,0,0" 
            Click="ConfirmId_Click"/>
 					</Grid>
@@ -178,7 +174,7 @@
 						</StackPanel>
 						<StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
 							<ui:Button Content="返回" Margin="0,0,8,0" Click="BackToStep1_Click"/>
-							<ui:Button Content="开始下载任务" Appearance="Primary" Click="SubmitDownload_Click"/>
+							<ui:Button Content="开始下载任务" Style="{StaticResource BluePrimaryUiButton}" Click="SubmitDownload_Click"/>
 						</StackPanel>
 					</Grid>
 				</StackPanel>

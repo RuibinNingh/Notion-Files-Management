@@ -2,49 +2,71 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:Primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
              StartupUri="MainWindow.xaml">
 	<Application.Resources>
 		<ResourceDictionary>
-			<ResourceDictionary.MergedDictionaries>
-				<ui:ThemesDictionary Theme="Dark" />
-				<ui:ControlsDictionary />
-			</ResourceDictionary.MergedDictionaries>
+		<ResourceDictionary.MergedDictionaries>
+			<ui:ThemesDictionary Theme="Dark" />
+			<ui:ControlsDictionary />
+		</ResourceDictionary.MergedDictionaries>
 
-			<!-- 自定义蓝色主题（改为 #1E90FF） -->
-			<Color x:Key="SystemAccentColor">#1E90FF</Color>
-			<Color x:Key="SystemAccentColorLight2">#55AAFF</Color>
-			<Color x:Key="SystemAccentColorDark2">#1878D6</Color>
-			<SolidColorBrush x:Key="PrimaryAccentColorBrush" Color="#1E90FF" />
+		<!-- 定义完整的 Accent 颜色系列，避免 WpfUI 自动生成变体导致色值偏差 -->
+		<Color x:Key="SystemAccentColor">#1E90FF</Color>
+		<Color x:Key="SystemAccentColorLight1">#4BA3FF</Color>
+		<Color x:Key="SystemAccentColorLight2">#6DB3FF</Color>
+		<Color x:Key="SystemAccentColorLight3">#8FC4FF</Color>
+		<Color x:Key="SystemAccentColorDark1">#1A7FE8</Color>
+		<Color x:Key="SystemAccentColorDark2">#156FD1</Color>
+		<Color x:Key="SystemAccentColorDark3">#105FBA</Color>
+
+
+
+
+
 
 			<!-- Global styles to ensure icons and font-based controls use theme primary text color -->
 			<Style TargetType="{x:Type ui:SymbolIcon}">
-				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+				<Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorPrimaryBrush}"/>
 			</Style>
 			<Style TargetType="{x:Type ui:FontIcon}">
-				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+				<Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorPrimaryBrush}"/>
 			</Style>
 
-			<!-- 为按钮内的图标添加样式，使其继承按钮的 Foreground -->
-			<Style TargetType="{x:Type ui:SymbolIcon}" x:Key="ButtonIconStyle">
-				<Setter Property="Foreground" Value="{Binding Path=Foreground, RelativeSource={RelativeSource AncestorType=ui:Button}}"/>
-			</Style>
-			<Style TargetType="{x:Type ui:FontIcon}" x:Key="ButtonFontIconStyle">
-				<Setter Property="Foreground" Value="{Binding Path=Foreground, RelativeSource={RelativeSource AncestorType=ui:Button}}"/>
+		<!-- 输入框图标专用样式（TextBox.Icon / PasswordBox.Icon） -->
+		<Style TargetType="{x:Type ui:SymbolIcon}" x:Key="InputIconStyle">
+			<Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorPrimaryBrush}"/>
+		</Style>
+		<Style TargetType="{x:Type ui:FontIcon}" x:Key="InputFontIconStyle">
+			<Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorPrimaryBrush}"/>
+		</Style>
+
+		<!-- 按钮内联内容图标样式（只用于 Button Content 里） -->
+		<Style TargetType="{x:Type ui:SymbolIcon}" x:Key="ButtonInlineIconStyle">
+			<Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Primitives:ButtonBase}}}"/>
+		</Style>
+		<Style TargetType="{x:Type ui:FontIcon}" x:Key="ButtonInlineFontIconStyle">
+			<Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type Primitives:ButtonBase}}}"/>
+		</Style>
+
+			<!-- 主按钮样式：在 WpfUI 默认 ui:Button 模板基础上叠加 Primary + 前景色 -->
+			<Style x:Key="BluePrimaryUiButton"
+				   TargetType="{x:Type ui:Button}"
+				   BasedOn="{StaticResource {x:Type ui:Button}}">
+				<Setter Property="Appearance" Value="Primary"/>
+				<Setter Property="Foreground" Value="{ui:ThemeResource TextOnAccentFillColorPrimaryBrush}"/>
 			</Style>
 
-            <!-- Make button text black by default -->
-            <Style TargetType="{x:Type Button}">
-                <Setter Property="Foreground" Value="#FF000000" />
-            </Style>
+
 
 			<!-- 让原生 TextBlock 也跟随 WpfUI 主题色 -->
 			<Style TargetType="{x:Type TextBlock}">
-				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+				<Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorPrimaryBrush}" />
 			</Style>
 
 			<!-- 让 Label 也统一使用主题色 -->
 			<Style TargetType="{x:Type Label}">
-				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+				<Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorPrimaryBrush}" />
 			</Style>
 		</ResourceDictionary>
 	</Application.Resources>

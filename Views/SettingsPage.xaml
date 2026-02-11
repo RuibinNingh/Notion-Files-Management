@@ -22,7 +22,7 @@
 												PlaceholderText="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 												RevealButtonEnabled="True">
 												<ui:PasswordBox.Icon>
-													<ui:SymbolIcon Symbol="Key24" Style="{StaticResource ButtonIconStyle}"/>
+													<ui:SymbolIcon Symbol="Key24" Style="{StaticResource InputIconStyle}"/>
 												</ui:PasswordBox.Icon>
 											</ui:PasswordBox>
 				</StackPanel>
@@ -38,7 +38,7 @@
 												PlaceholderText="https://api.notion.com/v1"
 												Margin="0,0,0,14">
 												<ui:TextBox.Icon>
-													<ui:SymbolIcon Symbol="Globe24" Style="{StaticResource ButtonIconStyle}"/>
+													<ui:SymbolIcon Symbol="Globe24" Style="{StaticResource InputIconStyle}"/>
 												</ui:TextBox.Icon>
 											</ui:TextBox>
 					<ui:TextBlock Text="默认：https://api.notion.com/v1" 
@@ -65,15 +65,11 @@
 					<ui:TextBlock Text="说明：并发数由设置页统一管理，下载/上传页不再单独配置。" Appearance="Tertiary" FontSize="12" Margin="0,8,0,0"/>
 
 					<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-						<ui:Button x:Name="BtnApplyWorkersReset"
-												Content="应用并重置任务"
-												Appearance="Primary"
-												Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
-												Click="OnApplyWorkersResetClick">
-												<ui:Button.Icon>
-													<ui:SymbolIcon Symbol="ArrowClockwise24" Style="{StaticResource ButtonIconStyle}"/>
-												</ui:Button.Icon>
-											</ui:Button>
+							<ui:Button x:Name="BtnApplyWorkersReset"
+									   Style="{StaticResource BluePrimaryUiButton}"
+									   Content="应用并重置任务"
+									   Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
+									   Click="OnApplyWorkersResetClick" />
 					</StackPanel>
 				</StackPanel>
 			</ui:Card>
@@ -86,16 +82,11 @@
 
 			<!-- Actions (moved to bottom) -->
 			<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-				<ui:Button 
-												x:Name="BtnSave"
-												Content="保存配置"
-												Appearance="Primary"
-												Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
-												Click="OnSaveClick">
-												<ui:Button.Icon>
-													<ui:SymbolIcon Symbol="Save24" Style="{StaticResource ButtonIconStyle}"/>
-												</ui:Button.Icon>
-											</ui:Button>
+				<ui:Button x:Name="BtnSave"
+						   Style="{StaticResource BluePrimaryUiButton}"
+						   Content="保存配置"
+						   Icon="{ui:SymbolIcon Symbol=Save24}"
+						   Click="OnSaveClick" />
 			</StackPanel>
 		</StackPanel>
 	</Grid>

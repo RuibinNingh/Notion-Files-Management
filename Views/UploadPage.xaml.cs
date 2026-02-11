@@ -7,12 +7,13 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Notion_Files_Management.Services;
+using Notion_Files_Management.Utils;
+using static Notion_Files_Management.Utils.PythonHelpers;
 
 namespace Notion_Files_Management.Views
 {
@@ -22,12 +23,7 @@ namespace Notion_Files_Management.Views
 		public ObservableCollection<string> SelectedUploadFiles { get; } = new();
 		public ObservableCollection<UploadTaskStatus> DisplayUploads { get; } = new();
 
-		// ====== Python 相关 ======
-		private dynamic? _pyMain;
-		private string _currentNotionToken = "";
-		private int _currentDownloadWorkers = -1;
-		private int _currentUploadWorkers = -1;
-		private static readonly SemaphoreSlim _pyLock = new(1, 1);
+		private readonly PythonBackendHost _backend = PythonBackendHost.Instance;
 
 		// ====== 轮询 & EMA ======
 		private readonly DispatcherTimer _statusTimer = new DispatcherTimer();
@@ -43,7 +39,6 @@ namespace Notion_Files_Management.Views
 			_statusTimer.Tick += UploadStatusTick;
 
 			TaskResetNotifier.TasksReset += OnTasksReset;
-
 			Unloaded += (_, __) => { TaskResetNotifier.TasksReset -= OnTasksReset; };
 		}
 
@@ -106,7 +101,8 @@ namespace Notion_Files_Management.Views
 				return;
 			}
 
-			if (!EnsureBackendReady(out string err))
+			var (ok, err) = await EnsureBackendAsync();
+			if (!ok)
 			{
 				MessageBox.Show(err);
 				return;
@@ -117,24 +113,26 @@ namespace Notion_Files_Management.Views
 
 			try
 			{
-				// 1) 调用后端：upload_notion_files(page_id, files_list)
-				string ret = await RunPython(() =>
+				// 快照文件列表（避免 ObservableCollection 在后台线程枚举）
+				var filePaths = SelectedUploadFiles.ToList();
+
+				string ret = await _backend.RunPython(py =>
 				{
-					// 注意：RunPython 已经持有 GIL，这里不再重复 using (Py.GIL())
+					dynamic pyMain = py;
 					var pyFiles = new PyList();
-					foreach (var path in SelectedUploadFiles)
+					foreach (var path in filePaths)
 						pyFiles.Append(path.ToPython());
 
-					var r = _pyMain!.upload_notion_files(pageId, pyFiles);
+					var r = pyMain.upload_notion_files(pageId, pyFiles);
 					return r?.ToString() ?? "";
 				});
 
-				// 2) 关闭模态
+				// 关闭模态
 				ModalOverlay.Visibility = Visibility.Collapsed;
 				ModalStep1.Visibility = Visibility.Collapsed;
 
-				// 3) 先把任务放进列表（立即可见），EMA 初始化
-				foreach (var path in SelectedUploadFiles)
+				// 先把任务放进列表（立即可见），EMA 初始化
+				foreach (var path in filePaths)
 				{
 					if (DisplayUploads.Any(x => string.Equals(x.FilePath, path, StringComparison.OrdinalIgnoreCase)))
 						continue;
@@ -156,11 +154,10 @@ namespace Notion_Files_Management.Views
 					_speedEma[path] = 0.0;
 				}
 
-				// 4) 启动轮询
+				// 启动轮询
 				if (!_statusTimer.IsEnabled)
 					_statusTimer.Start();
 
-				// 5) 可选：提示 Success / Success x Failed y
 				if (!string.IsNullOrWhiteSpace(ret))
 					MessageBox.Show(ret);
 			}
@@ -178,42 +175,30 @@ namespace Notion_Files_Management.Views
 		// ========== 轮询：get_upload_statuses + EMA 平滑 + completed 移除 ==========
 		private async void UploadStatusTick(object? sender, EventArgs e)
 		{
-			if (_pyMain == null)
+			if (!_backend.IsReady)
 				return;
 
 			try
 			{
-				var statuses = await RunPython(() =>
+				var statuses = await _backend.RunPython(py =>
 				{
-					dynamic pyStatuses = _pyMain!.get_upload_statuses();
+					dynamic pyMain = py;
+					dynamic pyStatuses = pyMain.get_upload_statuses();
 
 					var list = new List<UploadStatusDto>();
 					foreach (var s in pyStatuses)
 					{
-						string filePath = s["file_path"]?.ToString() ?? "";
-
-						string status = s["status"]?.ToString() ?? "";
-						string stage = s["stage"]?.ToString() ?? "";
-
-						double progress = ToDoubleSafe(s, "progress");
-						double uploaded = ToDoubleSafe(s, "uploaded_mb");
-						double total = ToDoubleSafe(s, "total_mb");
-						double speed = ToDoubleSafe(s, "speed_mb_s");
-						int eta = (int)ToDoubleSafe(s, "ETA");
-
-						string? errStr = NormalizePythonNone(s);
-
 						list.Add(new UploadStatusDto
 						{
-							FilePath = filePath,
-							Status = status,
-							Stage = stage,
-							Progress = progress,
-							UploadedMB = uploaded,
-							TotalMB = total,
-							Speed = speed,
-							ETA = eta,
-							Error = errStr
+							FilePath = s["file_path"]?.ToString() ?? "",
+							Status = s["status"]?.ToString() ?? "",
+							Stage = s["stage"]?.ToString() ?? "",
+							Progress = ToDoubleSafe(s, "progress"),
+							UploadedMB = ToDoubleSafe(s, "uploaded_mb"),
+							TotalMB = ToDoubleSafe(s, "total_mb"),
+							Speed = ToDoubleSafe(s, "speed_mb_s"),
+							ETA = ToIntSafe(s, "ETA"),
+							Error = NormalizePythonNone(s, "error")
 						});
 					}
 
@@ -228,7 +213,7 @@ namespace Notion_Files_Management.Views
 					if (string.IsNullOrWhiteSpace(s.FilePath))
 						continue;
 
-					// ✅ completed：立刻移除
+					// completed：立刻移除
 					if (string.Equals(s.Status, "completed", StringComparison.OrdinalIgnoreCase))
 					{
 						var toRemove = DisplayUploads.FirstOrDefault(x =>
@@ -241,7 +226,6 @@ namespace Notion_Files_Management.Views
 						continue;
 					}
 
-					// 不存在则新增（容错：后端可能返回了新任务）
 					if (!map.TryGetValue(s.FilePath, out var item))
 					{
 						item = new UploadTaskStatus
@@ -260,16 +244,13 @@ namespace Notion_Files_Management.Views
 					item.UploadedMB = s.UploadedMB;
 					item.TotalMB = s.TotalMB;
 					item.ETASeconds = s.ETA;
-
-					// ✅ 防止 "None" 显示成错误
 					item.Error = string.IsNullOrWhiteSpace(s.Error) ? null : s.Error;
 
-					// ✅ EMA 平滑速度
+					// EMA 平滑速度
 					double raw = Math.Max(0.0, s.Speed);
 					double prev = _speedEma.TryGetValue(s.FilePath, out var old) ? old : 0.0;
 					double ema = (SpeedEmaAlpha * raw) + ((1.0 - SpeedEmaAlpha) * prev);
 					_speedEma[s.FilePath] = ema;
-
 					item.SmoothedSpeedMBps = ema;
 				}
 
@@ -282,11 +263,9 @@ namespace Notion_Files_Management.Views
 			}
 		}
 
-		// ========== 后端初始化（同下载页：ConfigManager 读 Token + dotenv stub） ==========
-		private bool EnsureBackendReady(out string error)
+		// ========== 后端初始化 ==========
+		private async Task<(bool ok, string error)> EnsureBackendAsync()
 		{
-			error = "";
-
 			try
 			{
 				ConfigManager.Load();
@@ -296,95 +275,14 @@ namespace Notion_Files_Management.Views
 				int ul = ConfigManager.Current?.MaxUploadWorkers ?? 3;
 
 				if (string.IsNullOrEmpty(token))
-				{
-					error = "未检测到 Notion Token，请先到【设置】页保存 Token。";
-					return false;
-				}
+					return (false, "未检测到 Notion Token，请先到【设置】页保存 Token。");
 
-				// If token/workers unchanged, reuse existing backend
-				if (_pyMain != null && token == _currentNotionToken
-					&& dl == _currentDownloadWorkers
-					&& ul == _currentUploadWorkers)
-					return true;
-
-				using (Py.GIL())
-				{
-					InjectDotenvStubIfMissing();
-
-					dynamic sys = Py.Import("sys");
-					string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
-					sys.path.append(scriptsPath);
-
-					dynamic mainMod = Py.Import("main");
-					_pyMain = mainMod.Main(token, dl, ul, url);
-					_currentNotionToken = token;
-					_currentDownloadWorkers = dl;
-					_currentUploadWorkers = ul;
-				}
-
-				return true;
+				await _backend.EnsureBackendReady(token, dl, ul, url);
+				return (true, "");
 			}
 			catch (Exception ex)
 			{
-				error = "初始化失败: " + ex.Message;
-				return false;
-			}
-		}
-
-		private async Task<T> RunPython<T>(Func<T> func)
-		{
-			await _pyLock.WaitAsync();
-			try
-			{
-				return await Task.Run(() =>
-				{
-					using (Py.GIL())
-						return func();
-				});
-			}
-			finally
-			{
-				_pyLock.Release();
-			}
-		}
-
-		// ====== dotenv stub：避免 no module named dotenv ======
-		private static void InjectDotenvStubIfMissing()
-		{
-			try
-			{
-				Py.Import("dotenv");
-			}
-			catch
-			{
-				dynamic types = Py.Import("types");
-				dynamic sys = Py.Import("sys");
-
-				dynamic mod = types.ModuleType("dotenv");
-				mod.__dict__["load_dotenv"] = new Action(() => { });
-
-				sys.modules["dotenv"] = mod;
-			}
-		}
-
-		// ====== 把 Python 的 None 归一化成 null（避免 "None" 出现在 UI） ======
-		private static string? NormalizePythonNone(dynamic s)
-		{
-			try
-			{
-				var errObj = s["error"];
-				if (errObj == null)
-					return null;
-
-				string? txt = errObj.ToString();
-				if (string.IsNullOrWhiteSpace(txt) || string.Equals(txt, "None", StringComparison.OrdinalIgnoreCase))
-					return null;
-
-				return txt;
-			}
-			catch
-			{
-				return null;
+				return (false, "初始化失败: " + ex.Message);
 			}
 		}
 
@@ -395,21 +293,6 @@ namespace Notion_Files_Management.Views
 			{
 				var fi = new FileInfo(filePath);
 				return Math.Max(0.1, fi.Length / 1024.0 / 1024.0);
-			}
-			catch
-			{
-				return 0.0;
-			}
-		}
-
-		private static double ToDoubleSafe(dynamic dict, string key)
-		{
-			try
-			{
-				var v = dict[key];
-				if (v == null)
-					return 0.0;
-				return Convert.ToDouble(v);
 			}
 			catch
 			{
@@ -437,7 +320,6 @@ namespace Notion_Files_Management.Views
 			}
 			catch { }
 		}
-
 	}
 
 	internal sealed class UploadStatusDto
@@ -445,30 +327,12 @@ namespace Notion_Files_Management.Views
 		public string FilePath { get; set; } = "";
 		public string Status { get; set; } = "";
 		public string Stage { get; set; } = "";
-		public double Progress
-		{
-			get; set;
-		}
-		public double UploadedMB
-		{
-			get; set;
-		}
-		public double TotalMB
-		{
-			get; set;
-		}
-		public double Speed
-		{
-			get; set;
-		}
-		public int ETA
-		{
-			get; set;
-		}
-		public string? Error
-		{
-			get; set;
-		}
+		public double Progress { get; set; }
+		public double UploadedMB { get; set; }
+		public double TotalMB { get; set; }
+		public double Speed { get; set; }
+		public int ETA { get; set; }
+		public string? Error { get; set; }
 	}
 
 	public class UploadTaskStatus : INotifyPropertyChanged
@@ -486,7 +350,8 @@ namespace Notion_Files_Management.Views
 
 		public string? FilePath
 		{
-			get => _filePath; set
+			get => _filePath;
+			set
 			{
 				_filePath = value;
 				OnPropertyChanged();
@@ -495,7 +360,8 @@ namespace Notion_Files_Management.Views
 		}
 		public string? FileName
 		{
-			get => _fileName; set
+			get => _fileName;
+			set
 			{
 				_fileName = value;
 				OnPropertyChanged();
@@ -504,7 +370,8 @@ namespace Notion_Files_Management.Views
 
 		public string? Status
 		{
-			get => _status; set
+			get => _status;
+			set
 			{
 				_status = value;
 				OnPropertyChanged();
@@ -513,7 +380,8 @@ namespace Notion_Files_Management.Views
 		}
 		public string? Stage
 		{
-			get => _stage; set
+			get => _stage;
+			set
 			{
 				_stage = value;
 				OnPropertyChanged();
@@ -523,7 +391,8 @@ namespace Notion_Files_Management.Views
 
 		public double Progress
 		{
-			get => _progress; set
+			get => _progress;
+			set
 			{
 				_progress = value;
 				OnPropertyChanged();
@@ -531,7 +400,8 @@ namespace Notion_Files_Management.Views
 		}
 		public double UploadedMB
 		{
-			get => _uploadedMB; set
+			get => _uploadedMB;
+			set
 			{
 				_uploadedMB = value;
 				OnPropertyChanged();
@@ -539,7 +409,8 @@ namespace Notion_Files_Management.Views
 		}
 		public double TotalMB
 		{
-			get => _totalMB; set
+			get => _totalMB;
+			set
 			{
 				_totalMB = value;
 				OnPropertyChanged();
@@ -548,7 +419,8 @@ namespace Notion_Files_Management.Views
 
 		public double SmoothedSpeedMBps
 		{
-			get => _smoothedSpeed; set
+			get => _smoothedSpeed;
+			set
 			{
 				_smoothedSpeed = value;
 				OnPropertyChanged();
@@ -557,15 +429,18 @@ namespace Notion_Files_Management.Views
 
 		public int ETASeconds
 		{
-			get => _etaSeconds; set
+			get => _etaSeconds;
+			set
 			{
 				_etaSeconds = value;
 				OnPropertyChanged();
 			}
 		}
+
 		public string? Error
 		{
-			get => _error; set
+			get => _error;
+			set
 			{
 				_error = value;
 				OnPropertyChanged();
@@ -580,37 +455,23 @@ namespace Notion_Files_Management.Views
 				var s = Status ?? "";
 				var st = Stage ?? "";
 
-				// 1) 错误优先显示（排除 None）
 				if (!string.IsNullOrWhiteSpace(Error) &&
 					!string.Equals(Error, "None", StringComparison.OrdinalIgnoreCase))
-				{
 					return $"状态: {s} / 阶段: {st} / 错误: {Error}";
-				}
 
-				// 2) 连接/准备阶段提示：
-				// 常见：status=uploading 但 stage=creating/backoff_wait/attaching 等，且 progress/速度都还为 0
-				bool looksLikeConnecting =
+				bool connecting =
 					string.Equals(s, "uploading", StringComparison.OrdinalIgnoreCase) &&
 					!string.Equals(st, "uploading", StringComparison.OrdinalIgnoreCase) &&
-					Progress <= 0.1 &&
-					UploadedMB <= 0.01 &&
-					SmoothedSpeedMBps <= 0.05;
+					Progress <= 0.1 && UploadedMB <= 0.01 && SmoothedSpeedMBps <= 0.05;
 
-				if (looksLikeConnecting)
-				{
-					// 你想要的文案
-					return "正在连接 Notion 服务器…（准备上传）";
-				}
-
-				// 3) 正常显示
-				return $"状态: {s} / 阶段: {st}";
+				return connecting
+					? "正在连接 Notion 服务器…（准备上传）"
+					: $"状态: {s} / 阶段: {st}";
 			}
 		}
-
 
 		public event PropertyChangedEventHandler? PropertyChanged;
 		private void OnPropertyChanged([CallerMemberName] string? name = null)
 			=> PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
 	}
 }

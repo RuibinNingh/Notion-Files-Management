@@ -2,13 +2,14 @@ using Python.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
+using Notion_Files_Management.Views.Tools;
 
 namespace Notion_Files_Management.Views
 {
@@ -16,19 +17,12 @@ namespace Notion_Files_Management.Views
     {
         private sealed record ProbeProgress(string Status, double Percent, int Done, int Total, string Error);
 
-        // ===== UI 数据（绑定给 ListView）=====
         public ObservableCollection<PageInfoItem> PageInfoItems { get; } = new();
 
-        // ===== Python =====
-        private dynamic? _pyMain;
-        private string _currentNotionToken = "";
-		private int _currentDownloadWorkers = -1;
-		private int _currentUploadWorkers = -1;
-        private static readonly SemaphoreSlim _pyLock = new(1, 1);
+        private readonly PythonBackendHost _backend = PythonBackendHost.Instance;
 
-        // ===== 查询取消支持 =====
         private CancellationTokenSource? _cts;
-        private int _reqId = 0;
+        private int _reqId;
 
         public ToolsPage()
         {
@@ -37,22 +31,22 @@ namespace Notion_Files_Management.Views
 
             try { PageInfoListView.ItemsSource = PageInfoItems; } catch { }
 
-            // 预热（不阻塞 UI）
-            _ = Task.Run(() => EnsureBackendReady(out _));
+            // Warm up backend (no UI blocking)
+            _ = Task.Run(async () =>
+            {
+                try { await EnsureBackendAsync(); } catch { }
+            });
         }
 
-        // 打开“提示框”而不是 Window
-        private void OpenPageInfoModal_Click(object sender, RoutedEventArgs e)
-        {
-            OpenStep1();
-        }
+        // ===== Modal controls =====
+
+        private void OpenPageInfoModal_Click(object sender, RoutedEventArgs e) => OpenStep1();
 
         private void OpenStep1()
         {
             ModalOverlay.Visibility = Visibility.Visible;
             ModalStep1.Visibility = Visibility.Visible;
             ModalStep2.Visibility = Visibility.Collapsed;
-
             PageIdInput.Text = "";
             BtnStartQuery.IsEnabled = true;
         }
@@ -62,11 +56,8 @@ namespace Notion_Files_Management.Views
             ModalOverlay.Visibility = Visibility.Visible;
             ModalStep1.Visibility = Visibility.Collapsed;
             ModalStep2.Visibility = Visibility.Visible;
-
             ProbeProgressBar.Value = 0;
             ProbeStatusText.Text = "准备开始…";
-
-            // 清空旧结果
             PageInfoItems.Clear();
             StatFileCount.Text = "0";
             StatTotalGb.Text = "0";
@@ -87,11 +78,13 @@ namespace Notion_Files_Management.Views
             ModalStep1.Visibility = Visibility.Visible;
         }
 
+        // ===== Core =====
+
         private async void StartQuery_Click(object sender, RoutedEventArgs e)
         {
-            if (!EnsureBackendReady(out string err))
+            if (!await EnsureBackendAsync())
             {
-                MessageBox.Show(err);
+                MessageBox.Show("未检测到 Notion Token，请先到【设置】页保存。");
                 return;
             }
 
@@ -102,30 +95,27 @@ namespace Notion_Files_Management.Views
                 return;
             }
 
-            // 新请求：取消旧请求
             _cts?.Cancel();
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
             int reqId = ++_reqId;
 
             BtnStartQuery.IsEnabled = false;
-
             OpenStep2();
 
             try
             {
-                // 1) 触发 get_download_list（启动探测）
-                var (probeId, total, msg, status) = await RunPython(() =>
+                // 1) Trigger probe via get_download_list
+                var (probeId, total, msg, status) = await _backend.RunPython(py =>
                 {
-                    dynamic ret = _pyMain!.get_download_list(pageId);
-
-                    int pid = 0, tot = 0;
-                    string m = "", st = "";
-                    try { pid = PyConvert.ToInt(ret["probe_id"], 0); } catch { }
-                    try { tot = PyConvert.ToInt(ret["total"], 0); } catch { }
-                    try { m = ret["msg"]?.ToString() ?? ""; } catch { }
-                    try { st = ret["status"]?.ToString() ?? ""; } catch { }
-                    return (pid, tot, m, st);
+                    dynamic pyMain = py;
+                    dynamic ret = pyMain.get_download_list(pageId);
+                    return (
+                        PyConvert.ToInt(ret["probe_id"], 0),
+                        PyConvert.ToInt(ret["total"], 0),
+                        ret["msg"]?.ToString() ?? "",
+                        ret["status"]?.ToString() ?? ""
+                    );
                 }, token);
 
                 token.ThrowIfCancellationRequested();
@@ -138,7 +128,7 @@ namespace Notion_Files_Management.Views
                     return;
                 }
 
-                // 2) 轮询 download_list_processing(probeId)
+                // 2) Poll probe progress
                 int notFoundCount = 0;
                 while (true)
                 {
@@ -147,18 +137,12 @@ namespace Notion_Files_Management.Views
 
                     var p = await GetProbeProgressAsync(probeId, token);
 
-                    // 更新 UI（确保进度条一定渲染）
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         ProbeProgressBar.Value = p.Percent;
-                        if (string.Equals(p.Status, "not_found", StringComparison.OrdinalIgnoreCase))
-                        {
-                            ProbeStatusText.Text = $"准备探测任务…（{++notFoundCount}）";
-                        }
-                        else
-                        {
-                            ProbeStatusText.Text = $"探测中 {p.Percent:0}%（{p.Done}/{Math.Max(1, p.Total)}）";
-                        }
+                        ProbeStatusText.Text = string.Equals(p.Status, "not_found", StringComparison.OrdinalIgnoreCase)
+                            ? $"准备探测任务…（{++notFoundCount}）"
+                            : $"探测中 {p.Percent:0}%（{p.Done}/{Math.Max(1, p.Total)}）";
                     });
 
                     if (string.Equals(p.Status, "done", StringComparison.OrdinalIgnoreCase))
@@ -171,43 +155,26 @@ namespace Notion_Files_Management.Views
                     await Task.Delay(350, token);
                 }
 
-                // 3) 探测完成，读取 main.download_list（注意文件名用 real_name）
-                var items = await RunPython(() =>
+                // 3) Read final list from main.download_list
+                var items = await _backend.RunPython(py =>
                 {
+                    dynamic pyMain = py;
                     var list = new List<PageInfoItem>();
-                    dynamic pyList = _pyMain!.download_list;
-
-                    foreach (var it in pyList)
+                    foreach (var it in pyMain.download_list)
                     {
-                        string realName = "";
-                        string url = "";
-                        double sizeMb = 0;
-
-                        try { realName = it["real_name"]?.ToString() ?? ""; } catch { }
-                        try { url = it["url"]?.ToString() ?? ""; } catch { }
-                        try { sizeMb = PyConvert.ToDouble(it["size_mb"], 0.0); } catch { }
-
-                        if (string.IsNullOrWhiteSpace(realName))
-                            realName = "(未命名文件)";
-
-                        // UI 要 GB
-                        double sizeGb = sizeMb / 1024.0;
-
-                        list.Add(new PageInfoItem
-                        {
-                            RealName = realName,
-                            Url = url,
-                            SizeGb = sizeGb
-                        });
+                        string realName = it["real_name"]?.ToString() ?? "(未命名文件)";
+                        string url = it["url"]?.ToString() ?? "";
+                        double sizeMb = PyConvert.ToDouble(it["size_mb"], 0.0);
+                        if (string.IsNullOrWhiteSpace(realName)) realName = "(未命名文件)";
+                        list.Add(new PageInfoItem { RealName = realName, Url = url, SizeGb = sizeMb / 1024.0 });
                     }
-
                     return list;
                 }, token);
 
                 token.ThrowIfCancellationRequested();
                 if (reqId != _reqId) return;
 
-                // 4) 渲染列表 + 统计
+                // 4) Render
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     PageInfoItems.Clear();
@@ -216,17 +183,13 @@ namespace Notion_Files_Management.Views
 
                     StatFileCount.Text = PageInfoItems.Count.ToString();
                     StatTotalGb.Text = Math.Round(PageInfoItems.Sum(x => x.SizeGb), 3).ToString("0.###");
-
                     ProbeProgressBar.Value = 100;
                     ProbeStatusText.Text = "探测完成。";
                 });
             }
             catch (OperationCanceledException)
             {
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    ProbeStatusText.Text = "已取消。";
-                });
+                await Application.Current.Dispatcher.InvokeAsync(() => ProbeStatusText.Text = "已取消。");
             }
             catch (Exception ex)
             {
@@ -240,86 +203,39 @@ namespace Notion_Files_Management.Views
             }
         }
 
-        // ======== Python 封装（复用 DownloadPage） ========
-
-        private bool EnsureBackendReady(out string error)
+        private async Task<bool> EnsureBackendAsync()
         {
-            error = "";
             try
             {
                 ConfigManager.Load();
-                string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
+                string tk = ConfigManager.Current?.NotionToken?.Trim() ?? "";
+                if (string.IsNullOrEmpty(tk)) return false;
+
                 string url = ConfigManager.Current?.NotionBaseUrl ?? "https://api.notion.com/v1";
                 int dl = ConfigManager.Current?.MaxDownloadWorkers ?? 3;
                 int ul = ConfigManager.Current?.MaxUploadWorkers ?? 3;
-                if (string.IsNullOrEmpty(token))
-                {
-                    error = "未检测到 Notion Token，请先到【设置】页保存 Token。";
-                    return false;
-                }
 
-                if (_pyMain != null && token == _currentNotionToken
-                    && dl == _currentDownloadWorkers
-                    && ul == _currentUploadWorkers)
-                    return true;
-
-                using (Py.GIL())
-                {
-                    InjectDotenvStubIfMissing();
-
-                    dynamic sys = Py.Import("sys");
-                    string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
-                    sys.path.append(scriptsPath);
-
-                    dynamic mainMod = Py.Import("main");
-                    _pyMain = mainMod.Main(token, dl, ul, url);
-                    _currentNotionToken = token;
-                    _currentDownloadWorkers = dl;
-                    _currentUploadWorkers = ul;
-                }
-
+                await _backend.EnsureBackendReady(tk, dl, ul, url);
                 return true;
             }
-            catch (Exception ex)
+            catch
             {
-                error = "初始化失败: " + ex.Message;
                 return false;
-            }
-        }
-
-        private async Task<T> RunPython<T>(Func<T> func, CancellationToken token)
-        {
-            await _pyLock.WaitAsync(token);
-            try
-            {
-                return await Task.Run(() =>
-                {
-                    token.ThrowIfCancellationRequested();
-                    using (Py.GIL())
-                        return func();
-                }, token);
-            }
-            finally
-            {
-                _pyLock.Release();
             }
         }
 
         private Task<ProbeProgress> GetProbeProgressAsync(int probeId, CancellationToken token)
         {
-            return RunPython(() =>
+            return _backend.RunPython(py =>
             {
-                dynamic prog = _pyMain!.download_list_processing(probeId);
-
+                dynamic pyMain = py;
+                dynamic prog = pyMain.download_list_processing(probeId);
                 string st = prog["status"]?.ToString() ?? "";
-                double pct = 0.0;
-                int dn = 0, tt = 0;
+                double pct = PyConvert.ToDouble(prog["percent"], 0.0);
+                int dn = PyConvert.ToInt(prog["done"], 0);
+                int tt = PyConvert.ToInt(prog["total"], 0);
+
                 string err = "";
-
-                try { pct = PyConvert.ToDouble(prog["percent"], 0.0); } catch { }
-                try { dn = PyConvert.ToInt(prog["done"], 0); } catch { }
-                try { tt = PyConvert.ToInt(prog["total"], 0); } catch { }
-
                 try
                 {
                     var eobj = prog["error"];
@@ -336,27 +252,36 @@ namespace Notion_Files_Management.Views
             }, token);
         }
 
-        private static void InjectDotenvStubIfMissing()
+        private void OpenIconThemeLab_Click(object sender, RoutedEventArgs e)
         {
-            try { Py.Import("dotenv"); }
+            try
+            {
+                // 优先通过名为 RootFrame 的 Frame 导航（与主框架约定）
+                var rootFrame = Window.GetWindow(this)?.FindName("RootFrame") as Frame;
+                if (rootFrame != null)
+                {
+                    rootFrame.Navigate(new IconThemeLabPage());
+                    return;
+                }
+
+                // 如果没有 Frame，就尝试直接在当前窗口内容中展示
+                if (Window.GetWindow(this) is Window win && win.Content is Frame currentFrame)
+                {
+                    currentFrame.Navigate(new IconThemeLabPage());
+                }
+            }
             catch
             {
-                dynamic types = Py.Import("types");
-                dynamic sys = Py.Import("sys");
-                dynamic mod = types.ModuleType("dotenv");
-                mod.__dict__["load_dotenv"] = new Action(() => { });
-                sys.modules["dotenv"] = mod;
+                // 忽略实验页导航失败，避免影响其他工具
             }
         }
     }
 
-    // ===== ListView 绑定项（GB 文本）=====
     public sealed class PageInfoItem
     {
         public string RealName { get; set; } = "";
         public string Url { get; set; } = "";
         public double SizeGb { get; set; }
-
         public string SizeGbText => Math.Round(SizeGb, 3).ToString("0.###");
     }
 }

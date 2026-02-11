@@ -91,7 +91,15 @@ namespace Notion_Files_Management.Services
 				Logger.Info("BEGIN Init Python Main(token, workers, url)");
 				if (!_isInitialized)
 				{
-					PythonEngine.Initialize();
+					try
+					{
+						PythonEngine.Initialize();
+					}
+					catch (Exception ex)
+					{
+						// App.xaml.cs may initialize PythonEngine already. Treat as idempotent.
+						Logger.Warn($"PythonEngine.Initialize skipped/failed: {ex.Message}");
+					}
 					_isInitialized = true;
 				}
 
@@ -159,7 +167,15 @@ namespace Notion_Files_Management.Services
 				// Ensure Python engine is up, then re-init
 				if (!_isInitialized)
 				{
-					PythonEngine.Initialize();
+					try
+					{
+						PythonEngine.Initialize();
+					}
+					catch (Exception ex)
+					{
+						// App.xaml.cs may initialize PythonEngine already. Treat as idempotent.
+						Logger.Warn($"PythonEngine.Initialize skipped/failed: {ex.Message}");
+					}
 					_isInitialized = true;
 				}
 

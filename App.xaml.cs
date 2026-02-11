@@ -1,16 +1,10 @@
-using System.Configuration;
-using System.Data;
-using System.Windows;
-using Python.Runtime;
-using Notion_Files_Management.Views;
-using Wpf.Ui.Controls;
-using System.Windows.Controls;
-using System.IO;
 using System;
-using System.Runtime;
+using System.IO;
+using System.Windows;
+using System.Windows.Media;
+using Python.Runtime;
 using Notion_Files_Management.Utils;
 using Wpf.Ui.Appearance;
-using System.Windows.Media;
 
 namespace Notion_Files_Management
 {
@@ -20,29 +14,41 @@ namespace Notion_Files_Management
 		{
 			base.OnStartup(e);
 
-			// è®¾ç½®æ›´è“çš„ä¸»é¢˜è‰²
-			ApplicationAccentColorManager.Apply(
-				Color.FromArgb(0xFF, 0x00, 0x66, 0xCC),
-				ApplicationTheme.Dark
-			);
+			// ÏÈÈ·±£Ó¦ÓÃÖ÷ÌâÒÑÕıÈ·Ó¦ÓÃ£¨±ÜÃâ×ÊÔ´Ë¢×ÓÓëÊÓ¾õ²»Ò»ÖÂ£©
+			ApplicationThemeManager.Apply(ApplicationTheme.Dark);
+			
+			// Ö±½ÓĞŞ¸ÄÓ¦ÓÃ×ÊÔ´ÖĞµÄ Accent ÑÕÉ«£¬ÈÆ¹ı WpfUI µÄÄÚ²¿×ª»»
+			try
+			{
+				var accentColor = Color.FromArgb(0xFF, 0x1E, 0x90, 0xFF); // #1E90FF
+				if (this.Resources.Contains("SystemAccentColor"))
+				{
+					this.Resources["SystemAccentColor"] = accentColor;
+				}
+				System.Diagnostics.Debug.WriteLine($"[App.OnStartup] Accent color set to #1E90FF (RGB: {accentColor.R}, {accentColor.G}, {accentColor.B})");
+			}
+			catch (Exception ex)
+			{
+				System.Diagnostics.Debug.WriteLine($"[App.OnStartup] Failed to set accent color: {ex.Message}");
+			}
 
-			// Init file logging first
-			Logger.InitFileLogging();
+            // Init file logging first
+            Logger.InitFileLogging();
 
 			string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-			// ä¿®æ­£ DLL åç§°å’Œè·¯å¾„æ‹¼æ¥
+			// ĞŞÕı DLL Ãû³ÆºÍÂ·¾¶Æ´½Ó
 			Runtime.PythonDLL = Path.Combine(baseDir, "PythonEnv", "python311.dll");
 
 			PythonEngine.Initialize();
 			PythonEngine.BeginAllowThreads();
 
-			// é‡è¦ï¼šæŠŠ Scripts ç›®å½•å‘Šè¯‰ Python
+			// ÖØÒª£º°Ñ Scripts Ä¿Â¼¸æËß Python
 			using (Py.GIL())
 			{
 				dynamic sys = Py.Import("sys");
 				string scriptsPath = Path.Combine(baseDir, "Scripts");
 				sys.path.append(scriptsPath);
-				// ä¸‹é¢å¯ä»¥åœ¨è¿™ä¸ªusingé‡Œè°ƒç”¨Pythonå‡½æ•°äº†
+				// ÏÂÃæ¿ÉÒÔÔÚÕâ¸öusingÀïµ÷ÓÃPythonº¯ÊıÁË
 
 			}
 
@@ -50,7 +56,7 @@ namespace Notion_Files_Management
 		}
 		protected override void OnExit(ExitEventArgs e)
 		{
-			PythonEngine.Shutdown(); // å½»åº•é‡Šæ”¾å†…å­˜ï¼Œå…³é—­ Python å¼•æ“
+			PythonEngine.Shutdown(); // ³¹µ×ÊÍ·ÅÄÚ´æ£¬¹Ø±Õ Python ÒıÇæ
 			// Shutdown file logging
 			Logger.ShutdownFileLogging();
 			base.OnExit(e);

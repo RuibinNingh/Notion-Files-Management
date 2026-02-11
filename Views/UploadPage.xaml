@@ -19,16 +19,12 @@
 				<ui:Card Padding="20">
 					<StackPanel>
 						<ui:Button x:Name="BtnOpenUploadDialog"
-                                   Content="上传新文件"
-                                   Appearance="Primary"
-                                   Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
-                                   Click="BtnOpenUploadDialog_Click">
-                                    <ui:Button.Icon>
-                                        <ui:SymbolIcon Symbol="Add24" Style="{StaticResource ButtonIconStyle}"/>
-                                    </ui:Button.Icon>
-                                </ui:Button>
+								   Style="{StaticResource BluePrimaryUiButton}"
+								   Content="上传新文件"
+								   Icon="{ui:SymbolIcon Symbol=Add24}"
+								   Click="BtnOpenUploadDialog_Click" />
 
-						<ui:TextBlock Text="活动上传任务"
+					<ui:TextBlock Text="活动上传任务"
                                       Appearance="Tertiary"
                                       Margin="0,20,0,8"/>
 						<ui:TextBlock Text="提示：对于每个上传任务，每上传一个分片（15MB）才会更新一次上传进度"
@@ -145,7 +141,7 @@
                                              VerticalAlignment="Center"/>
 
 							<ui:Button Content="选择文件"
-                                       Appearance="Primary"
+                                       Style="{StaticResource BluePrimaryUiButton}"
                                        Margin="0,0,8,0"
                                        Click="SelectUploadFiles_Click"/>
 
@@ -206,7 +202,7 @@
 
 							<ui:Button x:Name="BtnConfirmStart"
                                        Content="确认并开始上传"
-                                       Appearance="Primary"
+                                       Style="{StaticResource BluePrimaryUiButton}"
                                        Click="ConfirmStart_Click"/>
 						</StackPanel>
 					</Grid>

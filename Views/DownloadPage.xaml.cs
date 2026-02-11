@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -13,7 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Notion_Files_Management.Utils;
-using System.Diagnostics;
+using static Notion_Files_Management.Utils.PythonHelpers;
 
 namespace Notion_Files_Management.Views
 {
@@ -302,66 +303,6 @@ namespace Notion_Files_Management.Views
 					return;
 				}
 
-				// Python-side introspection: log object ids and downloader contents to help debug probe registration
-				try
-				{
-					await _backend.RunPython<object>(py =>
-					{
-						dynamic pyMain = py;
-						using (Logger.Time("Py:Introspect downloader"))
-						{
-							dynamic builtins = Py.Import("builtins");
-							dynamic idFn = builtins.id;
-							try { Logger.Info($"id(_pyMain)={idFn(pyMain)}"); } catch { }
-							try { Logger.Info($"id(_pyMain.downloader)={idFn(pyMain.downloader)}"); } catch { }
-
-							dynamic d = pyMain.downloader;
-							try
-							{
-								var dObj = (PyObject)d;
-								using var dirList = dObj.Dir(); // list[str]
-								var names = dirList.As<string[]>();
-								Logger.Info("downloader dir contains: " + string.Join(", ", names));
-							}
-							catch (Exception ex)
-							{
-								Logger.Warn($"downloader dir introspect failed: {ex.Message}");
-							}
-
-							// 尝试输出 probe keys（常见字段名 probe_statuses / probe_tasks）
-							try
-							{
-								var dObj = (PyObject)d;
-								if (dObj.HasAttr("probe_statuses"))
-								{
-									using var ps = dObj.GetAttr("probe_statuses");
-									using var keysMethod = ps.GetAttr("keys");
-									using var keys = keysMethod.Invoke();
-									var keyNums = keys.As<int[]>();
-									Logger.Info("probe keys = " + string.Join(", ", keyNums));
-								}
-								else if (dObj.HasAttr("probe_tasks"))
-								{
-									using var pt = dObj.GetAttr("probe_tasks");
-									using var keysMethod = pt.GetAttr("keys");
-									using var keys = keysMethod.Invoke();
-									var keyNums = keys.As<int[]>();
-									Logger.Info("probe keys = " + string.Join(", ", keyNums));
-								}
-							}
-							catch (Exception ex)
-							{
-								Logger.Warn($"probe keys introspect failed: {ex.Message}");
-							}
-						}
-						return 0;
-					}, token);
-				}
-				catch (Exception ex)
-				{
-					Logger.Warn($"Introspection failed: {ex.Message}");
-				}
-
 				// 2) 轮询 probe：download_list_processing(probe_id) 直到 done
 				double lastPct = -1;
 
@@ -647,84 +588,9 @@ namespace Notion_Files_Management.Views
 			if (!_backend.IsReady)
 				return;
 
-			Logger.Debug($"Polling download statuses. currentDisplayed={DisplayTasks.Count}");
-
 			try
 			{
-				var statuses = await _backend.RunPython(py =>
-				{
-					dynamic pyMain = py;
-					using (Logger.Time("Py:Main.get_download_statuses"))
-					{
-						dynamic pyStatuses = pyMain.get_download_statuses();
-						var result = new List<DownloadTaskStatus>();
-
-						foreach (var s in pyStatuses)
-						{
-							string status = s["status"]?.ToString() ?? "";
-
-							// 完成：不展示（你要"完成就从列表删"）
-							if (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
-								continue;
-
-							result.Add(new DownloadTaskStatus
-							{
-								url = s["url"]?.ToString(),
-								name = s["name"]?.ToString(),
-								real_name = s["real_name"]?.ToString(),
-								status = status,
-								progress = ToDoubleSafe(s, "progress"),
-								downloaded_mb = ToDoubleSafe(s, "downloaded_mb"),
-								total_mb = ToDoubleSafe(s, "total_mb"),
-								speed_mb_s = ToDoubleSafe(s, "speed_mb_s"),
-								ETA = ToIntSafe(s, "ETA"),
-								error = NormalizePythonNone(s, "error")
-							});
-						}
-
-						return result;
-					}
-				}, CancellationToken.None);
-
-				Logger.Debug($"Statuses polled. count={statuses.Count}");
-
-				// 增量更新（按 url）
-				var map = DisplayTasks.ToDictionary(x => x.url ?? "", x => x, StringComparer.OrdinalIgnoreCase);
-
-				foreach (var s in statuses)
-				{
-					string key = s.url ??("");
-					if (string.IsNullOrWhiteSpace(key))
-						continue;
-
-					if (!map.TryGetValue(key, out var item))
-					{
-						DisplayTasks.Add(s);
-						map[key] = s;
-					}
-					else
-					{
-						item.name = s.name;
-						item.real_name = s.real_name;
-						item.status = s.status;
-						item.progress = s.progress;
-						item.downloaded_mb = s.downloaded_mb;
-						item.total_mb = s.total_mb;
-						item.speed_mb_s = s.speed_mb_s;
-						item.ETA = s.ETA;
-						item.error = s.error;
-					}
-				}
-
-				// 删除差集（后端不再返回的任务 or 已完成）
-				var alive = new HashSet<string>(statuses.Select(x => x.url ?? ""), StringComparer.OrdinalIgnoreCase);
-				for (int i = DisplayTasks.Count - 1; i >= 0; i--)
-				{
-					var u = DisplayTasks[i].url ?? "";
-					if (!alive.Contains(u))
-						DisplayTasks.RemoveAt(i);
-				}
-
+				await RefreshStatusesAsync(CancellationToken.None);
 				if (DisplayTasks.Count == 0 && _downloadStatusTimer.IsEnabled)
 				{
 					_downloadStatusTimer.Stop();
@@ -733,7 +599,6 @@ namespace Notion_Files_Management.Views
 			}
 			catch (Exception ex)
 			{
-				// ignore UI 弹窗，但保留日志
 				Logger.Error("Polling download statuses failed", ex);
 			}
 		}
@@ -772,86 +637,6 @@ namespace Notion_Files_Management.Views
 			var (success, err) = task.Result;
 			error = err;
 			return success;
-		}
-
-		private async Task<T> RunPython<T>(Func<T> func, CancellationToken token)
-		{
-			return await _backend.RunPython(func, token);
-		}
-
-		private static void InjectDotenvStubIfMissing()
-		{
-			try
-			{
-				Py.Import("dotenv");
-			}
-			catch
-			{
-				dynamic types = Py.Import("types");
-				dynamic sys = Py.Import("sys");
-				dynamic mod = types.ModuleType("dotenv");
-				mod.__dict__["load_dotenv"] = new Action(() => { });
-				sys.modules["dotenv"] = mod;
-			}
-		}
-
-		private static bool IsPyMapping(dynamic obj)
-		{
-			try
-			{
-				// 用 Python 的 collections.abc.Mapping 判断
-				dynamic collections = Py.Import("collections.abc");
-				dynamic mapping = collections.Mapping;
-				return mapping.__instancecheck__(obj);
-			}
-			catch
-			{
-				// 保底：常见 dict 类型
-				try
-				{
-					return obj is PyDict;
-				}
-				catch { return false; }
-			}
-		}
-
-		private static double ToDoubleSafe(dynamic dict, string key)
-		{
-			try
-			{
-				var v = dict[key];
-				if (v == null)
-					return 0.0;
-				return Convert.ToDouble(v);
-			}
-			catch { return 0.0; }
-		}
-
-		private static int ToIntSafe(dynamic dict, string key)
-		{
-			try
-			{
-				var v = dict[key];
-				if (v == null)
-					return 0;
-				return Convert.ToInt32(v);
-			}
-			catch { return 0; }
-		}
-
-		private static string? NormalizePythonNone(dynamic dict, string key)
-		{
-			try
-			{
-				var v = dict[key];
-				if (v == null)
-					return null;
-				var s = v.ToString();
-				if (string.IsNullOrWhiteSpace(s) || string.Equals(s, "None", StringComparison.OrdinalIgnoreCase))
-					return null;
-				return s;
-			}
-			catch { return null; }
 		}
 
 		private Task<ProbeProgress> GetProbeProgressAsync(int probeId, CancellationToken token)
