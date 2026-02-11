@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window x:Class="Notion_Files_Management.Views.Dialogs.PageInfoResultWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Notion Page File Info" Width="760" Height="520"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Background="#0D000000" CornerRadius="8" Padding="10" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="File count:" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding FileCount}" Margin="6,0,18,0"/>
+                <TextBlock Text="Total size (MB):" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding TotalSizeMb}" Margin="6,0,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Items}" AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="File name (real_name)" Binding="{Binding RealName}" Width="*"/>
+                <DataGridTextColumn Header="Size (MB)" Binding="{Binding SizeMb}" Width="140"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>

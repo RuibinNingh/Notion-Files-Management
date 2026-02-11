@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using Python.Runtime;
 using System;
 using System.Collections.Generic;
@@ -19,18 +19,101 @@ namespace Notion_Files_Management.Views
 {
 	public partial class DownloadPage : Page
 	{
-        private sealed record ProbeProgress(string Status, double Percent, int Done, int Total, string Error, string RawRepr);
+        internal sealed record ProbeProgress(string Status, double Percent, int Done, int Total, string Error, string RawRepr);
 
-		// ===== UI 数据 =====
-		public ObservableCollection<FileSelectItem> FileSelectionList { get; } = new();
-		public ObservableCollection<DownloadTaskStatus> DisplayTasks { get; } = new();
+        // ===== UI 数据 (moved to session) =====
+        private readonly Services.DownloadSession _session = Services.DownloadSession.Instance;
 
-		private string _saveDirectory = "";
+        public ObservableCollection<FileSelectItem> FileSelectionList => _session.FileSelectionList;
+        public ObservableCollection<DownloadTaskStatus> DisplayTasks => _session.DisplayTasks;
+
+        private string _saveDirectory
+        {
+            get => _session.SaveDirectory;
+            set => _session.SaveDirectory = value;
+        }
+
+		private async Task RefreshStatusesAsync(CancellationToken token)
+		{
+			if (!_backend.IsReady)
+				return;
+
+			var statuses = await _backend.RunPython(py =>
+			{
+				dynamic pyMain = py;
+				using (Logger.Time("Py:Main.get_download_statuses"))
+				{
+					dynamic pyStatuses = pyMain.get_download_statuses();
+					var result = new List<DownloadTaskStatus>();
+
+					foreach (var s in pyStatuses)
+					{
+						string status = s["status"]?.ToString() ?? "";
+
+						if (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+							continue;
+
+						result.Add(new DownloadTaskStatus
+						{
+							url = s["url"]?.ToString(),
+							name = s["name"]?.ToString(),
+							real_name = s["real_name"]?.ToString(),
+							status = status,
+							progress = ToDoubleSafe(s, "progress"),
+							downloaded_mb = ToDoubleSafe(s, "downloaded_mb"),
+							total_mb = ToDoubleSafe(s, "total_mb"),
+							speed_mb_s = ToDoubleSafe(s, "speed_mb_s"),
+							ETA = ToIntSafe(s, "ETA"),
+							error = NormalizePythonNone(s, "error")
+						});
+					}
+
+					return result;
+				}
+			}, token);
+
+			// 更新 Session.DisplayTasks（尽量复用已有对象）
+			var map = _session.DisplayTasks.ToDictionary(x => x.url ?? "", x => x, StringComparer.OrdinalIgnoreCase);
+
+			foreach (var s in statuses)
+			{
+				string key = s.url ?? "";
+				if (string.IsNullOrWhiteSpace(key))
+					continue;
+
+				if (!map.TryGetValue(key, out var item))
+				{
+					_session.DisplayTasks.Add(s);
+					map[key] = s;
+				}
+				else
+				{
+					item.name = s.name;
+					item.real_name = s.real_name;
+					item.status = s.status;
+					item.progress = s.progress;
+					item.downloaded_mb = s.downloaded_mb;
+					item.total_mb = s.total_mb;
+					item.speed_mb_s = s.speed_mb_s;
+					item.ETA = s.ETA;
+					item.error = s.error;
+				}
+			}
+
+			var alive = new HashSet<string>(statuses.Select(x => x.url ?? ""), StringComparer.OrdinalIgnoreCase);
+			for (int i = _session.DisplayTasks.Count - 1; i >= 0; i--)
+			{
+				var u = _session.DisplayTasks[i].url ?? "";
+				if (!alive.Contains(u))
+					_session.DisplayTasks.RemoveAt(i);
+			}
+
+			// 更新 HasActiveDownloads 标记
+			_session.HasActiveDownloads = _session.DisplayTasks.Count > 0;
+		}
 
 		// ===== Python =====
-		private dynamic? _pyMain;
-		private string _currentNotionToken = "";
-		private static readonly SemaphoreSlim _pyLock = new(1, 1);
+		private readonly Services.PythonBackendHost _backend = Services.PythonBackendHost.Instance;
 
 		// ===== 获取列表：取消支持 =====
 		private CancellationTokenSource? _getListCts;
@@ -59,6 +142,30 @@ namespace Notion_Files_Management.Views
 
 			_downloadStatusTimer.Interval = TimeSpan.FromSeconds(1);
 			_downloadStatusTimer.Tick += UpdateDownloadStatusesTick;
+
+			Loaded += async (_, __) =>
+			{
+				// 页面恢复时，如果会话有活跃下载，尝试先刷新一次并恢复轮询
+				try
+				{
+					if (_session.HasActiveDownloads)
+					{
+						await RefreshStatusesAsync(CancellationToken.None);
+						if (!_downloadStatusTimer.IsEnabled)
+							_downloadStatusTimer.Start();
+					}
+				}
+				catch (Exception ex)
+				{
+					Logger.Warn($"Restore polling failed: {ex.Message}");
+				}
+			};
+
+			Unloaded += (_, __) =>
+			{
+				if (_downloadStatusTimer.IsEnabled)
+					_downloadStatusTimer.Stop();
+			};
 
 			// 预热 Python（不阻塞 UI）
 			_ = Task.Run(() => EnsureBackendReady(out _));
@@ -145,11 +252,12 @@ namespace Notion_Files_Management.Views
 			try
 			{
 				// 1) get_download_list：触发后端查询并返回 probe_id
-				var (probeId, total, msg, status) = await RunPython(() =>
+				var (probeId, total, msg, status) = await _backend.RunPython(py =>
 				{
+					dynamic pyMain = py;
 					using (Logger.Time("Py:Main.get_download_list"))
 					{
-						dynamic ret = _pyMain!.get_download_list(pageId);
+						dynamic ret = pyMain.get_download_list(pageId);
 						int pid = 0;
 						int tot = 0;
 						string m = "";
@@ -194,16 +302,17 @@ namespace Notion_Files_Management.Views
 				// Python-side introspection: log object ids and downloader contents to help debug probe registration
 				try
 				{
-					await RunPython<object>(() =>
+					await _backend.RunPython<object>(py =>
 					{
+						dynamic pyMain = py;
 						using (Logger.Time("Py:Introspect downloader"))
 						{
 							dynamic builtins = Py.Import("builtins");
 							dynamic idFn = builtins.id;
-							try { Logger.Info($"id(_pyMain)={idFn(_pyMain!)}"); } catch { }
-							try { Logger.Info($"id(_pyMain.downloader)={idFn(_pyMain!.downloader)}"); } catch { }
+							try { Logger.Info($"id(_pyMain)={idFn(pyMain)}"); } catch { }
+							try { Logger.Info($"id(_pyMain.downloader)={idFn(pyMain.downloader)}"); } catch { }
 
-							dynamic d = _pyMain!.downloader;
+							dynamic d = pyMain.downloader;
 							try
 							{
 								var dObj = (PyObject)d;
@@ -306,12 +415,13 @@ namespace Notion_Files_Management.Views
 				}
 
 				// 3) done 后：main.download_list 才是最终列表
-				var list = await RunPython(() =>
+				var list = await _backend.RunPython(py =>
 				{
+					dynamic pyMain = py;
 					using (Logger.Time("Py:Read main.download_list"))
 					{
 						var result = new List<FileSelectItem>();
-						dynamic pyList = _pyMain!.download_list;
+						dynamic pyList = pyMain.download_list;
 						foreach (var item in pyList)
 						{
 							if (!IsPyMapping(item))
@@ -341,7 +451,7 @@ namespace Notion_Files_Management.Views
 
 							result.Add(new FileSelectItem
 							{
-								//url = url,
+								url = url,
 								real_name = realName,
 								size_mb = size,
 								raw_dict = item,
@@ -356,13 +466,13 @@ namespace Notion_Files_Management.Views
 				if (reqId != _getListReqId)
 					return;
 
-				// UI：更新列表（保留勾选状态）
-				var selected = FileSelectionList.ToDictionary(x => x.real_name ?? "", x => x.IsSelected, StringComparer.OrdinalIgnoreCase);
+				// UI：更新列表（保留勾选状态） - 使用 url 作为唯一 key
+				var selected = FileSelectionList.ToDictionary(x => x.url ?? "", x => x.IsSelected, StringComparer.OrdinalIgnoreCase);
 
 				FileSelectionList.Clear();
 				foreach (var x in list)
 				{
-					if (!string.IsNullOrWhiteSpace(x.real_name) && selected.TryGetValue(x.real_name, out bool sel))
+					if (!string.IsNullOrWhiteSpace(x.url) && selected.TryGetValue(x.url, out bool sel))
 						x.IsSelected = sel;
 
 					FileSelectionList.Add(x);
@@ -477,15 +587,16 @@ namespace Notion_Files_Management.Views
 			try
 			{
 				Logger.Info($"Starting download. selected={selected.Count}, saveDir={_saveDirectory}");
-				string ret = await RunPython(() =>
+				string ret = await _backend.RunPython(py =>
 				{
+					dynamic pyMain = py;
 					using (Logger.Time("Py:Main.download_notion_files"))
 					{
 						using var pyListToDownload = new PyList();
 						foreach (var s in selected)
 							pyListToDownload.Append(s.raw_dict);
 
-						var r = _pyMain!.download_notion_files(pyListToDownload, _saveDirectory);
+						var r = pyMain.download_notion_files(pyListToDownload, _saveDirectory);
 						//return r?.ToString() ?? "";
 						return "";
 					}
@@ -503,6 +614,9 @@ namespace Notion_Files_Management.Views
 				// 启动状态轮询
 				if (!_downloadStatusTimer.IsEnabled)
 					_downloadStatusTimer.Start();
+
+				// 标记会话有活跃下载
+				_session.HasActiveDownloads = true;
 			}
 			catch (Exception ex)
 			{
@@ -527,25 +641,26 @@ namespace Notion_Files_Management.Views
 		// =========================
 		private async void UpdateDownloadStatusesTick(object? sender, EventArgs e)
 		{
-			if (_pyMain == null)
+			if (!_backend.IsReady)
 				return;
 
 			Logger.Debug($"Polling download statuses. currentDisplayed={DisplayTasks.Count}");
 
 			try
 			{
-				var statuses = await RunPython(() =>
+				var statuses = await _backend.RunPython(py =>
 				{
+					dynamic pyMain = py;
 					using (Logger.Time("Py:Main.get_download_statuses"))
 					{
-						dynamic pyStatuses = _pyMain!.get_download_statuses();
+						dynamic pyStatuses = pyMain.get_download_statuses();
 						var result = new List<DownloadTaskStatus>();
 
 						foreach (var s in pyStatuses)
 						{
 							string status = s["status"]?.ToString() ?? "";
 
-							// 完成：不展示（你要“完成就从列表删”）
+							// 完成：不展示（你要"完成就从列表删"）
 							if (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
 								continue;
 
@@ -608,7 +723,10 @@ namespace Notion_Files_Management.Views
 				}
 
 				if (DisplayTasks.Count == 0 && _downloadStatusTimer.IsEnabled)
+				{
 					_downloadStatusTimer.Stop();
+					_session.HasActiveDownloads = false;
+				}
 			}
 			catch (Exception ex)
 			{
@@ -620,9 +738,8 @@ namespace Notion_Files_Management.Views
 		// =========================
 		// Python 初始化 & 工具
 		// =========================
-		private bool EnsureBackendReady(out string error)
+		private async Task<(bool success, string error)> EnsureBackendReadyAsync()
 		{
-			error = "";
 			try
 			{
 				Logger.Debug("EnsureBackendReady called");
@@ -630,66 +747,30 @@ namespace Notion_Files_Management.Views
 				string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
 				if (string.IsNullOrEmpty(token))
 				{
-					error = "未检测到 Notion Token，请先到【设置】页保存 Token。";
-					return false;
+					return (false, "未检测到 Notion Token，请先到【设置】页保存 Token。");
 				}
 
-				if (_pyMain != null && token == _currentNotionToken)
-				{
-					Logger.Debug("Python backend already initialized (token unchanged)");
-					return true;
-				}
-
-				using (Logger.Time("Init Python Main(token)"))
-				using (Py.GIL())
-				{
-					InjectDotenvStubIfMissing();
-
-					dynamic sys = Py.Import("sys");
-					string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
-					sys.path.append(scriptsPath);
-
-					dynamic mainMod = Py.Import("main");
-					_pyMain = mainMod.Main(token, 3);
-					_currentNotionToken = token;
-					Logger.Info("Python Main initialized");
-				}
-
-				return true;
+				await _backend.EnsureBackendReady(token);
+				return (true, "");
 			}
 			catch (Exception ex)
 			{
-				error = "初始化失败: " + ex.Message;
-				return false;
+				return (false, "初始化失败: " + ex.Message);
 			}
+		}
+
+		private bool EnsureBackendReady(out string error)
+		{
+			var task = EnsureBackendReadyAsync();
+			task.Wait();
+			var (success, err) = task.Result;
+			error = err;
+			return success;
 		}
 
 		private async Task<T> RunPython<T>(Func<T> func, CancellationToken token)
 		{
-			Logger.Debug("RunPython: waiting for _pyLock...");
-			await _pyLock.WaitAsync(token);
-			try
-			{
-				return await Task.Run(() =>
-				{
-					token.ThrowIfCancellationRequested();
-					using (Logger.Time("Py:GIL scope"))
-					using (Py.GIL())
-					{
-						return func();
-					}
-				}, token);
-			}
-			catch (Exception ex)
-			{
-				Logger.Error("RunPython failed", ex);
-				throw;
-			}
-			finally
-			{
-				_pyLock.Release();
-				Logger.Debug("RunPython: _pyLock released");
-			}
+			return await _backend.RunPython(func, token);
 		}
 
 		private static void InjectDotenvStubIfMissing()
@@ -769,11 +850,12 @@ namespace Notion_Files_Management.Views
 
 		private Task<ProbeProgress> GetProbeProgressAsync(int probeId, CancellationToken token)
 		{
-			return RunPython(() =>
+			return _backend.RunPython(py =>
 			{
+				dynamic pyMain = py;
 				using (Logger.Time("Py:Main.download_list_processing"))
 				{
-					dynamic prog = _pyMain!.download_list_processing(probeId);
+					dynamic prog = pyMain.download_list_processing(probeId);
 					string st = prog["status"]?.ToString() ?? "";
 					double pct = 0.0;
 					int dn = 0;
@@ -817,6 +899,7 @@ namespace Notion_Files_Management.Views
 			}
 		}
 
+		public string? url { get; set; }
 		public string? real_name
 		{
 			get; set;

@@ -4,161 +4,203 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="工具箱">
 
-	<Grid>
-		<Grid Margin="30">
-			<Grid.RowDefinitions>
-				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="*"/>
-			</Grid.RowDefinitions>
+    <Grid>
+        <Grid Margin="30">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-			<!-- 顶部标题 -->
-			<StackPanel Grid.Row="0"
+            <!-- 顶部标题 -->
+            <StackPanel Grid.Row="0"
                         Orientation="Horizontal"
                         HorizontalAlignment="Left"
                         Margin="0,0,0,12">
-				<ui:SymbolIcon Symbol="Toolbox24" FontSize="32" Margin="0,0,15,0"/>
-				<ui:TextBlock Text="工具箱 Tools"
-							  Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                <ui:SymbolIcon Symbol="Toolbox24" FontSize="32" Margin="0,0,15,0"/>
+                <ui:TextBlock Text="工具箱"
+                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                               FontTypography="Title"
                               VerticalAlignment="Center"/>
-			</StackPanel>
+            </StackPanel>
 
-			<!-- 主体 -->
-			<ui:Card Grid.Row="1" Padding="20">
-				<Grid>
-					<Grid.RowDefinitions>
-						<RowDefinition Height="Auto"/>
-						<RowDefinition Height="*"/>
-					</Grid.RowDefinitions>
+            <!-- 主体 -->
+            <ui:Card Grid.Row="1" Padding="20">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
-					<!-- 简介 -->
-					<StackPanel Grid.Row="0" Margin="0,0,0,14">
-						<ui:TextBlock Text="这里放一些辅助功能与诊断工具。"
+                    <!-- 简介 -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                        <ui:TextBlock Text="这里放一些辅助功能与诊断工具。"
                                       Appearance="Tertiary"/>
-						<ui:TextBlock Text="目前未接入任何工具"
-                                      Appearance="Tertiary"
-                                      Margin="0,4,0,0"/>
-					</StackPanel>
+                    </StackPanel>
 
-					<!-- 工具列表 -->
-					<Border Grid.Row="1"
+                    <!-- 工具列表 -->
+                    <Border Grid.Row="1"
                             BorderThickness="1"
                             BorderBrush="#33000000"
                             CornerRadius="8"
                             Padding="12">
-						<StackPanel>
+                        <StackPanel>
 
-							<!-- 分组：Python / 调试 -->
-							<ui:TextBlock Text="Notion 相关"
+                            <ui:TextBlock Text="Notion 相关"
                                           FontTypography="Subtitle"
                                           Margin="2,2,2,10"/>
 
-							<!-- 工具项：Python连通测试（绑定你现有 btn_Click） -->
-							<Border BorderThickness="1"
+                            <Border BorderThickness="1"
                                     BorderBrush="#22000000"
                                     CornerRadius="8"
                                     Padding="12"
                                     Margin="0,0,0,10">
-								<Grid>
-									<Grid.ColumnDefinitions>
-										<ColumnDefinition Width="Auto"/>
-										<ColumnDefinition Width="*"/>
-										<ColumnDefinition Width="Auto"/>
-									</Grid.ColumnDefinitions>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
 
-									<ui:SymbolIcon Symbol="Code24"
+                                    <ui:SymbolIcon Symbol="DocumentSearch24"
                                                    FontSize="22"
                                                    Margin="0,2,14,0"/>
 
-									<StackPanel Grid.Column="1">
-										<ui:TextBlock Text="Notion 页面信息"
+                                    <StackPanel Grid.Column="1">
+                                        <ui:TextBlock Text="Notion 页面信息"
                                                       FontWeight="SemiBold"/>
-										<ui:TextBlock Text="让您知道您的某个 Notion 页面已有文件、文件大小等信息 "
+                                        <ui:TextBlock Text="获取页面内文件列表，并探测文件大小（显示文件数、总大小）。"
                                                       Appearance="Tertiary"
                                                       TextWrapping="Wrap"
                                                       Margin="0,4,0,0"/>
-									</StackPanel>
+                                    </StackPanel>
 
-									<ui:Button Grid.Column="2"
+                                    <ui:Button Grid.Column="2"
                                                Content="运行"
                                                Appearance="Primary"
                                                MinWidth="96"
-                                               Click="notion_Info"/>
-								</Grid>
-							</Border>
+                                               Click="OpenPageInfoModal_Click"/>
+                                </Grid>
+                            </Border>
 
-							<!-- 分组：占位（不绑定事件，避免报错） -->
-							<ui:TextBlock Text="其他工具（占位）"
-                                          FontTypography="Subtitle"
-                                          Margin="2,14,2,10"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </ui:Card>
+        </Grid>
 
-							<Border BorderThickness="1"
-                                    BorderBrush="#22000000"
-                                    CornerRadius="8"
-                                    Padding="12"
-                                    Margin="0,0,0,10"
-                                    Opacity="0.75">
-								<Grid>
-									<Grid.ColumnDefinitions>
-										<ColumnDefinition Width="Auto"/>
-										<ColumnDefinition Width="*"/>
-										<ColumnDefinition Width="Auto"/>
-									</Grid.ColumnDefinitions>
+        <!-- ============ ModalOverlay（参考 DownloadPage） ============ -->
+        <Grid x:Name="ModalOverlay" Background="#99000000" Visibility="Collapsed">
 
-									<ui:SymbolIcon Symbol="Broom24"
-                                                   FontSize="22"
-                                                   Margin="0,2,14,0"/>
+            <!-- Step1：输入 Page ID -->
+            <ui:Card x:Name="ModalStep1" Background="#ff222329" Width="460" VerticalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Margin="10">
+                    <ui:TextBlock Text="获取 Notion 页面信息" FontTypography="Subtitle" Margin="0,0,0,15"/>
+                    <ui:TextBlock Text="请输入目标页面 ID" Appearance="Tertiary" Margin="0,0,0,8"/>
 
-									<StackPanel Grid.Column="1">
-										<ui:TextBlock Text="清理缓存（待接入）"
-                                                      FontWeight="SemiBold"/>
-										<ui:TextBlock Text="用于清理临时文件/缓存。"
-                                                      Appearance="Tertiary"
-                                                      Margin="0,4,0,0"/>
-									</StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-									<ui:Button Grid.Column="2"
-                                               Content="未实现"
-                                               MinWidth="96"
-                                               IsEnabled="False"/>
-								</Grid>
-							</Border>
+                        <ui:TextBox x:Name="PageIdInput" PlaceholderText="粘贴 Notion 页面 ID"/>
+                        <ui:Button x:Name="BtnStartQuery"
+                                   Grid.Column="1"
+                                   Content="开始获取"
+                                   Appearance="Primary"
+                                   Margin="10,0,0,0"
+                                   Click="StartQuery_Click"/>
+                    </Grid>
 
-							<Border BorderThickness="1"
-                                    BorderBrush="#22000000"
-                                    CornerRadius="8"
-                                    Padding="12"
-                                    Opacity="0.75">
-								<Grid>
-									<Grid.ColumnDefinitions>
-										<ColumnDefinition Width="Auto"/>
-										<ColumnDefinition Width="*"/>
-										<ColumnDefinition Width="Auto"/>
-									</Grid.ColumnDefinitions>
+                    <ui:Button Content="取消" HorizontalAlignment="Right" Margin="0,20,0,0" Click="CloseModal_Click"/>
+                </StackPanel>
+            </ui:Card>
 
-									<ui:SymbolIcon Symbol="Bug24"
-                                                   FontSize="22"
-                                                   Margin="0,2,14,0"/>
+            <!-- Step2：进度 + 结果列表 -->
+            <ui:Card x:Name="ModalStep2" Background="#ff222329" Width="760" VerticalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Margin="10">
 
-									<StackPanel Grid.Column="1">
-										<ui:TextBlock Text="导出诊断信息（待接入）"
-                                                      FontWeight="SemiBold"/>
-										<ui:TextBlock Text="将日志/配置打包导出，便于排查问题。"
-                                                      Appearance="Tertiary"
-                                                      Margin="0,4,0,0"/>
-									</StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-									<ui:Button Grid.Column="2"
-                                               Content="未实现"
-                                               MinWidth="96"
-                                               IsEnabled="False"/>
-								</Grid>
-							</Border>
+                        <StackPanel>
+                            <ui:TextBlock Text="正在探测文件大小" FontTypography="Subtitle" Margin="0,0,0,6"/>
+                            <ui:TextBlock x:Name="ProbeStatusText" Text="准备开始…" Appearance="Tertiary"/>
+                        </StackPanel>
 
-						</StackPanel>
-					</Border>
-				</Grid>
-			</ui:Card>
-		</Grid>
-	</Grid>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                            <ui:Button Content="返回" Margin="0,0,8,0" Click="BackToStep1_Click"/>
+                            <ui:Button Content="关闭" Click="CloseModal_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 进度条（下载页同款高度） -->
+                    <ProgressBar x:Name="ProbeProgressBar"
+                                 Minimum="0" Maximum="100"
+                                 Height="6" Margin="0,0,0,14"/>
+
+                    <!-- 统计 -->
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="10"
+                            Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:TextBlock Text="文件数：" FontWeight="SemiBold"/>
+                            <ui:TextBlock x:Name="StatFileCount" Text="0" Margin="6,0,18,0"/>
+                            <ui:TextBlock Text="总大小(GB)：" FontWeight="SemiBold"/>
+                            <ui:TextBlock x:Name="StatTotalGb" Text="0" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 列表（用 ListView，避免 DataGrid 看不见问题） -->
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                        <ListView x:Name="PageInfoListView"
+                                  ItemsSource="{Binding PageInfoItems}"
+                                  Height="320"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  Background="Transparent"
+                                  Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                  HorizontalContentAlignment="Stretch">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="8,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="140"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel>
+                                            <ui:TextBlock Text="{Binding RealName}"
+                                                          FontWeight="SemiBold"
+                                                          TextTrimming="CharacterEllipsis"/>
+                                            <ui:TextBlock Text="{Binding Url}"
+                                                          FontSize="11"
+                                                          Appearance="Tertiary"
+                                                          TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                            <ui:TextBlock Text="{Binding SizeGbText}" HorizontalAlignment="Right"/>
+                                            <ui:TextBlock Text="GB"
+                                                          Appearance="Tertiary"
+                                                          FontSize="11"
+                                                          HorizontalAlignment="Right"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+
+                </StackPanel>
+            </ui:Card>
+
+        </Grid>
+    </Grid>
 </Page>
