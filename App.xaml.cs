@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
@@ -8,59 +8,54 @@ using Wpf.Ui.Appearance;
 
 namespace Notion_Files_Management
 {
-    public partial class App : Application
-    {
+	public partial class App : Application
+	{
 		protected override void OnStartup(StartupEventArgs e)
 		{
 			base.OnStartup(e);
 
-			// ÏÈÈ·±£Ó¦ÓÃÖ÷ÌâÒÑÕıÈ·Ó¦ÓÃ£¨±ÜÃâ×ÊÔ´Ë¢×ÓÓëÊÓ¾õ²»Ò»ÖÂ£©
+			// 1. åº”ç”¨æ·±è‰²ä¸»é¢˜ (è¿™æ­¥ä¼šä»ç³»ç»Ÿè¯»å–é»˜è®¤é¢œè‰²)
 			ApplicationThemeManager.Apply(ApplicationTheme.Dark);
-			
-			// Ö±½ÓĞŞ¸ÄÓ¦ÓÃ×ÊÔ´ÖĞµÄ Accent ÑÕÉ«£¬ÈÆ¹ı WpfUI µÄÄÚ²¿×ª»»
-			try
-			{
-				var accentColor = Color.FromArgb(0xFF, 0x1E, 0x90, 0xFF); // #1E90FF
-				if (this.Resources.Contains("SystemAccentColor"))
-				{
-					this.Resources["SystemAccentColor"] = accentColor;
-				}
-				System.Diagnostics.Debug.WriteLine($"[App.OnStartup] Accent color set to #1E90FF (RGB: {accentColor.R}, {accentColor.G}, {accentColor.B})");
-			}
-			catch (Exception ex)
-			{
-				System.Diagnostics.Debug.WriteLine($"[App.OnStartup] Failed to set accent color: {ex.Message}");
-			}
 
-            // Init file logging first
-            Logger.InitFileLogging();
+		// 2. ã€æ–¹æ¡ˆ Aã€‘å¼ºåˆ¶è¦†ç›–æ‰€æœ‰ Accent é¢œè‰²å˜ä½“ä¸ºåŒè‰²
+			// è¿™æ ·æŒ‰é’®ã€è¿›åº¦æ¡ç­‰å¸¸ç”¨å…ƒç´ éƒ½ä¼šç”¨åˆ° #1E90FFï¼Œè€Œä¸æ˜¯è‡ªåŠ¨ç”Ÿæˆçš„æµ…åŒ–ç‰ˆæœ¬
+			var forcedAccent = System.Windows.Media.Color.FromRgb(0x1E, 0x90, 0xFF); // #1E90FF
+			ApplicationAccentColorManager.Apply(
+				systemAccent: forcedAccent,
+				primaryAccent: forcedAccent,
+				secondaryAccent: forcedAccent,
+				tertiaryAccent: forcedAccent
+			);
+
+
+
+
+			// Init file logging first
+			Logger.InitFileLogging();
 
 			string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-			// ĞŞÕı DLL Ãû³ÆºÍÂ·¾¶Æ´½Ó
+			// ä¿®æ­£ DLL åç§°å’Œè·¯å¾„æ‹¼æ¥
 			Runtime.PythonDLL = Path.Combine(baseDir, "PythonEnv", "python311.dll");
 
 			PythonEngine.Initialize();
 			PythonEngine.BeginAllowThreads();
 
-			// ÖØÒª£º°Ñ Scripts Ä¿Â¼¸æËß Python
+			// é‡è¦ï¼šæŠŠ Scripts ç›®å½•å‘Šè¯‰ Python
 			using (Py.GIL())
 			{
 				dynamic sys = Py.Import("sys");
 				string scriptsPath = Path.Combine(baseDir, "Scripts");
 				sys.path.append(scriptsPath);
-				// ÏÂÃæ¿ÉÒÔÔÚÕâ¸öusingÀïµ÷ÓÃPythonº¯ÊıÁË
-
+				// ä¸‹é¢å¯ä»¥åœ¨è¿™ä¸ªusingé‡Œè°ƒç”¨Pythonå‡½æ•°äº†
 			}
-
-
 		}
+
 		protected override void OnExit(ExitEventArgs e)
 		{
-			PythonEngine.Shutdown(); // ³¹µ×ÊÍ·ÅÄÚ´æ£¬¹Ø±Õ Python ÒıÇæ
-			// Shutdown file logging
+			PythonEngine.Shutdown(); // å½»åº•é‡Šæ”¾å†…å­˜ï¼Œå…³é—­ Python å¼•æ“
+									 // Shutdown file logging
 			Logger.ShutdownFileLogging();
 			base.OnExit(e);
 		}
 	}
-
 }
