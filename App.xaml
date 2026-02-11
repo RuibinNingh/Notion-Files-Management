@@ -10,6 +10,12 @@
 				<ui:ControlsDictionary />
 			</ResourceDictionary.MergedDictionaries>
 
+			<!-- 自定义蓝色主题（改为 #1E90FF） -->
+			<Color x:Key="SystemAccentColor">#1E90FF</Color>
+			<Color x:Key="SystemAccentColorLight2">#55AAFF</Color>
+			<Color x:Key="SystemAccentColorDark2">#1878D6</Color>
+			<SolidColorBrush x:Key="PrimaryAccentColorBrush" Color="#1E90FF" />
+
 			<!-- Global styles to ensure icons and font-based controls use theme primary text color -->
 			<Style TargetType="{x:Type ui:SymbolIcon}">
 				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
@@ -17,6 +23,19 @@
 			<Style TargetType="{x:Type ui:FontIcon}">
 				<Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
 			</Style>
+
+			<!-- 为按钮内的图标添加样式，使其继承按钮的 Foreground -->
+			<Style TargetType="{x:Type ui:SymbolIcon}" x:Key="ButtonIconStyle">
+				<Setter Property="Foreground" Value="{Binding Path=Foreground, RelativeSource={RelativeSource AncestorType=ui:Button}}"/>
+			</Style>
+			<Style TargetType="{x:Type ui:FontIcon}" x:Key="ButtonFontIconStyle">
+				<Setter Property="Foreground" Value="{Binding Path=Foreground, RelativeSource={RelativeSource AncestorType=ui:Button}}"/>
+			</Style>
+
+            <!-- Make button text black by default -->
+            <Style TargetType="{x:Type Button}">
+                <Setter Property="Foreground" Value="#FF000000" />
+            </Style>
 
 			<!-- 让原生 TextBlock 也跟随 WpfUI 主题色 -->
 			<Style TargetType="{x:Type TextBlock}">

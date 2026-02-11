@@ -1,4 +1,4 @@
-﻿using System.Configuration;
+using System.Configuration;
 using System.Data;
 using System.Windows;
 using Python.Runtime;
@@ -9,6 +9,8 @@ using System.IO;
 using System;
 using System.Runtime;
 using Notion_Files_Management.Utils;
+using Wpf.Ui.Appearance;
+using System.Windows.Media;
 
 namespace Notion_Files_Management
 {
@@ -17,6 +19,12 @@ namespace Notion_Files_Management
 		protected override void OnStartup(StartupEventArgs e)
 		{
 			base.OnStartup(e);
+
+			// 设置更蓝的主题色
+			ApplicationAccentColorManager.Apply(
+				Color.FromArgb(0xFF, 0x00, 0x66, 0xCC),
+				ApplicationTheme.Dark
+			);
 
 			// Init file logging first
 			Logger.InitFileLogging();

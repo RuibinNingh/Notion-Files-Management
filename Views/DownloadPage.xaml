@@ -25,10 +25,14 @@
 			<ui:Card Grid.Row="1" Padding="20">
 				<StackPanel>
 					<ui:Button x:Name="BtnOpenDownloadDialog" 
-							   Content="下载新文件" 
-							   Icon="{ui:SymbolIcon Symbol=Add24}"
-							   Appearance="Primary"
-							   Click="BtnOpenDownloadDialog_Click"/>
+															Content="下载新文件" 
+															Appearance="Primary"
+															Foreground="{DynamicResource TextOnAccentFillColorPrimaryBrush}"
+															Click="BtnOpenDownloadDialog_Click">
+															<ui:Button.Icon>
+																<ui:SymbolIcon Symbol="Add24" Style="{StaticResource ButtonIconStyle}"/>
+															</ui:Button.Icon>
+														</ui:Button>
 
 					<ui:TextBlock Text="活动下载任务"
 							  Appearance="Tertiary"
