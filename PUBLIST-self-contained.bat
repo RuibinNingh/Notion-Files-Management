@@ -42,7 +42,6 @@ dotnet publish -c %CONFIG% -r %RID% ^
     /p:DebugSymbols=false ^
     /p:CopyOutputSymbolsToPublishDirectory=false ^
     /p:PublishReadyToRun=true ^
-    /p:PublishTrimmed=true ^
     /p:TrimMode=partial ^
     /p:EnableCompressionInSingleFile=true ^
     /p:ApplicationIcon=icon.ico

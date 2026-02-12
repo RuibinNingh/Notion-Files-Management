@@ -88,6 +88,112 @@
 						   Icon="{ui:SymbolIcon Symbol=Save24}"
 						   Click="OnSaveClick" />
 			</StackPanel>
+
+			<!-- ========== 关于 / 版本更新 ========== -->
+			<ui:TextBlock Text="关于" FontTypography="Subtitle" Margin="0,28,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+
+			<ui:Card Padding="15" Width="617">
+				<StackPanel>
+					<Grid>
+						<Grid.ColumnDefinitions>
+							<ColumnDefinition Width="*"/>
+							<ColumnDefinition Width="Auto"/>
+						</Grid.ColumnDefinitions>
+						<StackPanel Grid.Column="0" VerticalAlignment="Center">
+							<ui:TextBlock Text="Notion Files Management" FontSize="14" FontWeight="SemiBold"/>
+							<ui:TextBlock x:Name="TxtCurrentVersion" Appearance="Tertiary" FontSize="12" Margin="0,3,0,0"/>
+						</StackPanel>
+						<ui:Button x:Name="BtnCheckUpdate"
+								   Grid.Column="1"
+								   Style="{StaticResource BluePrimaryUiButton}"
+								   Content="检查版本更新"
+								   Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
+								   Click="OnCheckUpdateClick"
+								   VerticalAlignment="Center"/>
+					</Grid>
+
+					<!-- 版本信息面板（检查后展开） -->
+					<Border x:Name="VersionInfoPanel"
+							Visibility="Collapsed"
+							Margin="0,14,0,0"
+							BorderThickness="0,1,0,0"
+							BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+							Padding="0,14,0,0">
+						<StackPanel>
+
+							<!-- 状态/错误提示 -->
+							<ui:InfoBar x:Name="UpdateInfoBar"
+										IsOpen="False"
+										IsClosable="False"
+										Margin="0,0,0,12"/>
+
+							<!-- 版本详情 -->
+							<Grid x:Name="VersionDetailGrid" Visibility="Collapsed">
+								<Grid.ColumnDefinitions>
+									<ColumnDefinition Width="Auto"/>
+									<ColumnDefinition Width="*"/>
+								</Grid.ColumnDefinitions>
+								<Grid.RowDefinitions>
+									<RowDefinition Height="Auto"/>
+									<RowDefinition Height="Auto"/>
+									<RowDefinition Height="Auto"/>
+									<RowDefinition Height="Auto"/>
+								</Grid.RowDefinitions>
+
+								<!-- 最新版本 -->
+								<ui:TextBlock Grid.Row="0" Grid.Column="0"
+											  Text="最新版本" Appearance="Tertiary" FontSize="12"
+											  Margin="0,0,16,6" VerticalAlignment="Center"/>
+								<ui:TextBlock x:Name="TxtLatestVersion"
+											  Grid.Row="0" Grid.Column="1"
+											  FontSize="13" FontWeight="SemiBold"
+											  Foreground="{StaticResource SystemAccentColorBrush}"
+											  Margin="0,0,0,6"/>
+
+								<!-- 构建日期 -->
+								<ui:TextBlock Grid.Row="1" Grid.Column="0"
+											  Text="构建日期" Appearance="Tertiary" FontSize="12"
+											  Margin="0,0,16,6" VerticalAlignment="Center"/>
+								<ui:TextBlock x:Name="TxtBuildDate"
+											  Grid.Row="1" Grid.Column="1"
+											  FontSize="12" Appearance="Secondary"
+											  Margin="0,0,0,6"/>
+
+								<!-- 分隔线 -->
+								<Border Grid.Row="2" Grid.ColumnSpan="2"
+										Height="1" Background="{DynamicResource ControlElevationBorderBrush}"
+										Margin="0,6,0,10"/>
+
+								<!-- 更新日志 -->
+								<ui:TextBlock Grid.Row="3" Grid.Column="0"
+											  Text="更新内容" Appearance="Tertiary" FontSize="12"
+											  Margin="0,0,16,0" VerticalAlignment="Top"/>
+								<StackPanel x:Name="ChangelogPanel" Grid.Row="3" Grid.Column="1"/>
+							</Grid>
+
+							<!-- 下载按钮 -->
+							<StackPanel x:Name="DownloadButtonPanel"
+										Orientation="Horizontal"
+										HorizontalAlignment="Right"
+										Margin="0,12,0,0"
+										Visibility="Collapsed">
+								<ui:Button x:Name="BtnOpenGithub"
+										   Appearance="Secondary"
+										   Content="从 Github 下载"
+										   Icon="{ui:SymbolIcon Symbol=Open24}"
+										   Margin="0,0,8,0"
+										   Click="OnOpenGithubClick"/>
+								<ui:Button x:Name="BtnGetDownloadUrl"
+										   Style="{StaticResource BluePrimaryUiButton}"
+										   Content="获取下载链接"
+										   Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+										   Click="OnGetDownloadUrlClick"/>
+							</StackPanel>
+						</StackPanel>
+					</Border>
+				</StackPanel>
+			</ui:Card>
+
 		</StackPanel>
 	</Grid>
 </Page>

@@ -1,477 +1,338 @@
 using Microsoft.Win32;
-using Python.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Notion_Files_Management.Models;
 using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
-using static Notion_Files_Management.Utils.PythonHelpers;
 
 namespace Notion_Files_Management.Views
 {
-	public partial class UploadPage : Page
-	{
-		// ====== UI 数据源 ======
-		public ObservableCollection<string> SelectedUploadFiles { get; } = new();
-		public ObservableCollection<UploadTaskStatus> DisplayUploads { get; } = new();
+    public partial class UploadPage : Page
+    {
+        // ===== UI data is kept in session to survive navigation =====
+        private readonly UploadSession _session = UploadSession.Instance;
+        private readonly NotionBackendService _svc = NotionBackendService.Instance;
 
-		private readonly PythonBackendHost _backend = PythonBackendHost.Instance;
+        public ObservableCollection<string> SelectedUploadFiles => _session.SelectedUploadFiles;
+        public ObservableCollection<UploadTaskStatus> DisplayUploads => _session.DisplayUploads;
 
-		// ====== 轮询 & EMA ======
-		private readonly DispatcherTimer _statusTimer = new DispatcherTimer();
-		private readonly Dictionary<string, double> _speedEma = new(StringComparer.OrdinalIgnoreCase);
-		private const double SpeedEmaAlpha = 0.2; // 0.1~0.3 越小越平滑
+        // ===== Polling & EMA =====
+        private readonly DispatcherTimer _statusTimer = new DispatcherTimer();
+        private const double SpeedEmaAlpha = 0.2; // 0.1~0.3 (smaller => smoother)
 
-		public UploadPage()
-		{
-			InitializeComponent();
-			DataContext = this;
+        public UploadPage()
+        {
+            InitializeComponent();
+            DataContext = this;
 
-			_statusTimer.Interval = TimeSpan.FromSeconds(1);
-			_statusTimer.Tick += UploadStatusTick;
+            Logger.Info("UploadPage initialized");
 
-			TaskResetNotifier.TasksReset += OnTasksReset;
-			Unloaded += (_, __) => { TaskResetNotifier.TasksReset -= OnTasksReset; };
-		}
+            _statusTimer.Interval = TimeSpan.FromSeconds(1);
+            _statusTimer.Tick += UploadStatusTick;
 
-		// ========== UI：打开/关闭模态 ==========
-		private void BtnOpenUploadDialog_Click(object sender, RoutedEventArgs e)
-		{
-			ModalHint.Text = "";
-			BtnConfirmStart.IsEnabled = true;
+            TaskResetNotifier.TasksReset += OnTasksReset;
 
-			ModalOverlay.Visibility = Visibility.Visible;
-			ModalStep1.Visibility = Visibility.Visible;
-		}
+            // Ensure ItemsSource binding
+            try { UploadTaskListView.ItemsSource = DisplayUploads; } catch { }
+            try { UploadFileListView.ItemsSource = SelectedUploadFiles; } catch { }
 
-		private void CloseModal_Click(object sender, RoutedEventArgs e)
-		{
-			ModalOverlay.Visibility = Visibility.Collapsed;
-			ModalStep1.Visibility = Visibility.Collapsed;
-		}
+            // Restore persisted page id (if any)
+            try { PageIdInput.Text = _session.PageId; } catch { }
 
-		// ========== UI：选择文件 ==========
-		private void SelectUploadFiles_Click(object sender, RoutedEventArgs e)
-		{
-			bool multiselect = ToggleMultiSelect.IsChecked == true;
+            Loaded += async (_, __) =>
+            {
+                try
+                {
+                    // 恢复轮询状态：如果有活跃的上传任务，重新启动轮询
+                    if (_session.HasActiveUploads)
+                    {
+                        await RefreshUploadStatusesAsync(CancellationToken.None);
+                        if (!_statusTimer.IsEnabled)
+                            _statusTimer.Start();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"Restore upload polling failed: {ex.Message}");
+                }
+            };
 
-			var dlg = new OpenFileDialog
-			{
-				Multiselect = multiselect,
-				Title = multiselect ? "选择要上传的文件（可多选）" : "选择要上传的文件（单选）"
-			};
+            Unloaded += (_, __) =>
+            {
+                TaskResetNotifier.TasksReset -= OnTasksReset;
+                // 停止计时器但不清除数据，以便下次加载时恢复
+                if (_statusTimer.IsEnabled)
+                    _statusTimer.Stop();
+            };
 
-			if (dlg.ShowDialog() == true)
-			{
-				SelectedUploadFiles.Clear();
-				foreach (var f in dlg.FileNames)
-					SelectedUploadFiles.Add(f);
+            // Warm up python backend (do not block UI)
+            _ = Task.Run(async () =>
+            {
+                try { await _svc.EnsureBackendReadyFromConfigAsync(); } catch { }
+            });
+        }
 
-				ModalHint.Text = $"已选择 {SelectedUploadFiles.Count} 个文件";
-			}
-		}
+        // ========== UI: modal open/close ==========
+        private void BtnOpenUploadDialog_Click(object sender, RoutedEventArgs e)
+        {
+            Logger.Info("Open upload dialog");
+            ModalHint.Text = "";
+            BtnConfirmStart.IsEnabled = true;
 
-		private void ClearUploadFiles_Click(object sender, RoutedEventArgs e)
-		{
-			SelectedUploadFiles.Clear();
-			ModalHint.Text = "已清空";
-		}
+            ModalOverlay.Visibility = Visibility.Visible;
+            ModalStep1.Visibility = Visibility.Visible;
+        }
 
-		// ========== 核心：确认开始上传（真实调用 Python） ==========
-		private async void ConfirmStart_Click(object sender, RoutedEventArgs e)
-		{
-			if (SelectedUploadFiles.Count == 0)
-			{
-				MessageBox.Show("请先选择至少一个文件。");
-				return;
-			}
+        private void CloseModal_Click(object sender, RoutedEventArgs e)
+        {
+            Logger.Info("Close upload dialog");
+            ModalOverlay.Visibility = Visibility.Collapsed;
+            ModalStep1.Visibility = Visibility.Collapsed;
+        }
 
-			string pageId = (PageIdInput.Text ?? "").Trim();
-			if (string.IsNullOrEmpty(pageId))
-			{
-				MessageBox.Show("请输入 Notion Page ID。");
-				return;
-			}
+        // ========== UI: select files ==========
+        private void SelectUploadFiles_Click(object sender, RoutedEventArgs e)
+        {
+            bool multiselect = ToggleMultiSelect.IsChecked == true;
 
-			var (ok, err) = await EnsureBackendAsync();
-			if (!ok)
-			{
-				MessageBox.Show(err);
-				return;
-			}
+            var dlg = new OpenFileDialog
+            {
+                Multiselect = multiselect,
+                Title = multiselect ? "选择要上传的文件（可多选）" : "选择要上传的文件（单选）"
+            };
 
-			BtnConfirmStart.IsEnabled = false;
-			ModalHint.Text = "正在创建上传任务…";
+            if (dlg.ShowDialog() == true)
+            {
+                SelectedUploadFiles.Clear();
+                foreach (var f in dlg.FileNames)
+                    SelectedUploadFiles.Add(f);
 
-			try
-			{
-				// 快照文件列表（避免 ObservableCollection 在后台线程枚举）
-				var filePaths = SelectedUploadFiles.ToList();
+                ModalHint.Text = $"已选择 {SelectedUploadFiles.Count} 个文件";
+            }
+        }
 
-				string ret = await _backend.RunPython(py =>
-				{
-					dynamic pyMain = py;
-					var pyFiles = new PyList();
-					foreach (var path in filePaths)
-						pyFiles.Append(path.ToPython());
+        private void ClearUploadFiles_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedUploadFiles.Clear();
+            ModalHint.Text = "已清空";
+        }
 
-					var r = pyMain.upload_notion_files(pageId, pyFiles);
-					return r?.ToString() ?? "";
-				});
+        // ========== Core: confirm start upload ==========
+        private async void ConfirmStart_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedUploadFiles.Count == 0)
+            {
+                MessageBox.Show("请先选择至少一个文件。");
+                return;
+            }
 
-				// 关闭模态
-				ModalOverlay.Visibility = Visibility.Collapsed;
-				ModalStep1.Visibility = Visibility.Collapsed;
+            string pageId = (PageIdInput.Text ?? "").Trim();
+            if (string.IsNullOrEmpty(pageId))
+            {
+                MessageBox.Show("请输入 Notion Page ID。");
+                return;
+            }
 
-				// 先把任务放进列表（立即可见），EMA 初始化
-				foreach (var path in filePaths)
-				{
-					if (DisplayUploads.Any(x => string.Equals(x.FilePath, path, StringComparison.OrdinalIgnoreCase)))
-						continue;
+            var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
+            if (!ok)
+            {
+                MessageBox.Show(err);
+                return;
+            }
 
-					DisplayUploads.Add(new UploadTaskStatus
-					{
-						FilePath = path,
-						FileName = Path.GetFileName(path),
-						Status = "waiting",
-						Stage = "waiting",
-						Progress = 0,
-						UploadedMB = 0,
-						TotalMB = GuessSizeMB(path),
-						SmoothedSpeedMBps = 0,
-						ETASeconds = 0,
-						Error = null
-					});
+            BtnConfirmStart.IsEnabled = false;
+            ModalHint.Text = "正在创建上传任务…";
 
-					_speedEma[path] = 0.0;
-				}
+            try
+            {
+                // Snapshot list (avoid enumerating ObservableCollection from other threads)
+                var filePaths = SelectedUploadFiles.ToList();
 
-				// 启动轮询
-				if (!_statusTimer.IsEnabled)
-					_statusTimer.Start();
+                Logger.Info($"Start upload. pageId={pageId}, files={filePaths.Count}");
 
-				if (!string.IsNullOrWhiteSpace(ret))
-					MessageBox.Show(ret);
-			}
-			catch (Exception ex)
-			{
-				MessageBox.Show("启动上传失败: " + ex.Message);
-			}
-			finally
-			{
-				BtnConfirmStart.IsEnabled = true;
-				ModalHint.Text = "";
-			}
-		}
+                // 保存PageId到session
+                _session.PageId = pageId;
 
-		// ========== 轮询：get_upload_statuses + EMA 平滑 + completed 移除 ==========
-		private async void UploadStatusTick(object? sender, EventArgs e)
-		{
-			if (!_backend.IsReady)
-				return;
+                string ret = await _svc.StartUploadAsync(pageId, filePaths, CancellationToken.None);
 
-			try
-			{
-				var statuses = await _backend.RunPython(py =>
-				{
-					dynamic pyMain = py;
-					dynamic pyStatuses = pyMain.get_upload_statuses();
+                // Close modal
+                ModalOverlay.Visibility = Visibility.Collapsed;
+                ModalStep1.Visibility = Visibility.Collapsed;
 
-					var list = new List<UploadStatusDto>();
-					foreach (var s in pyStatuses)
-					{
-						list.Add(new UploadStatusDto
-						{
-							FilePath = s["file_path"]?.ToString() ?? "",
-							Status = s["status"]?.ToString() ?? "",
-							Stage = s["stage"]?.ToString() ?? "",
-							Progress = ToDoubleSafe(s, "progress"),
-							UploadedMB = ToDoubleSafe(s, "uploaded_mb"),
-							TotalMB = ToDoubleSafe(s, "total_mb"),
-							Speed = ToDoubleSafe(s, "speed_mb_s"),
-							ETA = ToIntSafe(s, "ETA"),
-							Error = NormalizePythonNone(s, "error")
-						});
-					}
+                // Add tasks to UI immediately (EMA init)
+                foreach (var path in filePaths)
+                {
+                    if (DisplayUploads.Any(x => string.Equals(x.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+                        continue;
 
-					return list;
-				});
+                    DisplayUploads.Add(new UploadTaskStatus
+                    {
+                        FilePath = path,
+                        FileName = Path.GetFileName(path),
+                        Status = "waiting",
+                        Stage = "waiting",
+                        Progress = 0,
+                        UploadedMB = 0,
+                        TotalMB = GuessSizeMB(path),
+                        SmoothedSpeedMBps = 0,
+                        ETASeconds = 0,
+                        Error = null
+                    });
 
-				// 用 file_path 做 key 增量更新
-				var map = DisplayUploads.ToDictionary(x => x.FilePath ?? "", x => x, StringComparer.OrdinalIgnoreCase);
+                    _session.SpeedEma[path] = 0.0;
+                }
 
-				foreach (var s in statuses)
-				{
-					if (string.IsNullOrWhiteSpace(s.FilePath))
-						continue;
+                if (!_statusTimer.IsEnabled)
+                    _statusTimer.Start();
 
-					// completed：立刻移除
-					if (string.Equals(s.Status, "completed", StringComparison.OrdinalIgnoreCase))
-					{
-						var toRemove = DisplayUploads.FirstOrDefault(x =>
-							string.Equals(x.FilePath, s.FilePath, StringComparison.OrdinalIgnoreCase));
+                _session.HasActiveUploads = true;
 
-						if (toRemove != null)
-							DisplayUploads.Remove(toRemove);
+                if (!string.IsNullOrWhiteSpace(ret))
+                    // Only show message box when response indicates an unexpected error.
+                    if (!Notion_Files_Management.Utils.UiHelpers.IsSuccessResponse(ret))
+                        MessageBox.Show(ret);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("启动上传失败: " + ex.Message);
+                Logger.Error("Start upload failed", ex);
+            }
 
-						_speedEma.Remove(s.FilePath);
-						continue;
-					}
+            // response classification moved to Utils.UiHelpers
+            finally
+            {
+                BtnConfirmStart.IsEnabled = true;
+                ModalHint.Text = "";
+            }
+        }
 
-					if (!map.TryGetValue(s.FilePath, out var item))
-					{
-						item = new UploadTaskStatus
-						{
-							FilePath = s.FilePath,
-							FileName = Path.GetFileName(s.FilePath),
-						};
-						DisplayUploads.Add(item);
-						map[s.FilePath] = item;
-						_speedEma[s.FilePath] = 0.0;
-					}
+        // ========== Polling: get_upload_statuses + EMA smoothing ==========
+        private async void UploadStatusTick(object? sender, EventArgs e)
+        {
+            if (!_svc.IsReady)
+                return;
 
-					item.Status = s.Status;
-					item.Stage = s.Stage;
-					item.Progress = s.Progress;
-					item.UploadedMB = s.UploadedMB;
-					item.TotalMB = s.TotalMB;
-					item.ETASeconds = s.ETA;
-					item.Error = string.IsNullOrWhiteSpace(s.Error) ? null : s.Error;
+            try
+            {
+                await RefreshUploadStatusesAsync(CancellationToken.None);
 
-					// EMA 平滑速度
-					double raw = Math.Max(0.0, s.Speed);
-					double prev = _speedEma.TryGetValue(s.FilePath, out var old) ? old : 0.0;
-					double ema = (SpeedEmaAlpha * raw) + ((1.0 - SpeedEmaAlpha) * prev);
-					_speedEma[s.FilePath] = ema;
-					item.SmoothedSpeedMBps = ema;
-				}
+                // 如果没有上传任务了，停止轮询
+                if (DisplayUploads.Count == 0 && _statusTimer.IsEnabled)
+                {
+                    _statusTimer.Stop();
+                    _session.HasActiveUploads = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Avoid popping dialogs every second; keep logs.
+                Logger.Error("Polling upload statuses failed", ex);
+            }
+        }
 
-				if (DisplayUploads.Count == 0 && _statusTimer.IsEnabled)
-					_statusTimer.Stop();
-			}
-			catch
-			{
-				// 不弹窗：避免每秒刷屏
-			}
-		}
+        private async Task RefreshUploadStatusesAsync(CancellationToken token)
+        {
+            if (!_svc.IsReady)
+                return;
 
-		// ========== 后端初始化 ==========
-		private async Task<(bool ok, string error)> EnsureBackendAsync()
-		{
-			try
-			{
-				ConfigManager.Load();
-				string token = ConfigManager.Current?.NotionToken?.Trim() ?? "";
-				string url = ConfigManager.Current?.NotionBaseUrl ?? "https://api.notion.com/v1";
-				int dl = ConfigManager.Current?.MaxDownloadWorkers ?? 3;
-				int ul = ConfigManager.Current?.MaxUploadWorkers ?? 3;
+            var statuses = await _svc.GetUploadStatusesAsync(token);
 
-				if (string.IsNullOrEmpty(token))
-					return (false, "未检测到 Notion Token，请先到【设置】页保存 Token。");
+            // Incremental update using file_path as key
+            var map = DisplayUploads.ToDictionary(x => x.FilePath ?? "", x => x, StringComparer.OrdinalIgnoreCase);
 
-				await _backend.EnsureBackendReady(token, dl, ul, url);
-				return (true, "");
-			}
-			catch (Exception ex)
-			{
-				return (false, "初始化失败: " + ex.Message);
-			}
-		}
+            foreach (var s in statuses)
+            {
+                if (string.IsNullOrWhiteSpace(s.FilePath))
+                    continue;
 
-		// ====== 小工具 ======
-		private static double GuessSizeMB(string filePath)
-		{
-			try
-			{
-				var fi = new FileInfo(filePath);
-				return Math.Max(0.1, fi.Length / 1024.0 / 1024.0);
-			}
-			catch
-			{
-				return 0.0;
-			}
-		}
+                // completed: remove immediately
+                if (string.Equals(s.Status, "completed", StringComparison.OrdinalIgnoreCase))
+                {
+                    var toRemove = DisplayUploads.FirstOrDefault(x =>
+                        string.Equals(x.FilePath, s.FilePath, StringComparison.OrdinalIgnoreCase));
 
-		private void OnTasksReset()
-		{
-			try
-			{
-				if (_statusTimer.IsEnabled)
-					_statusTimer.Stop();
+                    if (toRemove != null)
+                        DisplayUploads.Remove(toRemove);
 
-				Application.Current?.Dispatcher?.Invoke(() =>
-				{
-					try
-					{
-						DisplayUploads.Clear();
-						SelectedUploadFiles.Clear();
-						ModalHint.Text = "";
-					}
-					catch { }
-				});
-			}
-			catch { }
-		}
-	}
+                    _session.SpeedEma.Remove(s.FilePath);
+                    continue;
+                }
 
-	internal sealed class UploadStatusDto
-	{
-		public string FilePath { get; set; } = "";
-		public string Status { get; set; } = "";
-		public string Stage { get; set; } = "";
-		public double Progress { get; set; }
-		public double UploadedMB { get; set; }
-		public double TotalMB { get; set; }
-		public double Speed { get; set; }
-		public int ETA { get; set; }
-		public string? Error { get; set; }
-	}
+                if (!map.TryGetValue(s.FilePath, out var item))
+                {
+                    item = new UploadTaskStatus
+                    {
+                        FilePath = s.FilePath,
+                        FileName = Path.GetFileName(s.FilePath),
+                    };
+                    DisplayUploads.Add(item);
+                    map[s.FilePath] = item;
+                    _session.SpeedEma[s.FilePath] = 0.0;
+                }
 
-	public class UploadTaskStatus : INotifyPropertyChanged
-	{
-		private string? _filePath;
-		private string? _fileName;
-		private string? _status;
-		private string? _stage;
-		private double _progress;
-		private double _uploadedMB;
-		private double _totalMB;
-		private double _smoothedSpeed;
-		private int _etaSeconds;
-		private string? _error;
+                item.Status = s.Status;
+                item.Stage = s.Stage;
+                item.Progress = s.Progress;
+                item.UploadedMB = s.UploadedMB;
+                item.TotalMB = s.TotalMB;
+                item.ETASeconds = s.ETA;
+                item.Error = string.IsNullOrWhiteSpace(s.Error) ? null : s.Error;
 
-		public string? FilePath
-		{
-			get => _filePath;
-			set
-			{
-				_filePath = value;
-				OnPropertyChanged();
-				OnPropertyChanged(nameof(StatusText));
-			}
-		}
-		public string? FileName
-		{
-			get => _fileName;
-			set
-			{
-				_fileName = value;
-				OnPropertyChanged();
-			}
-		}
+                // EMA smoothed speed
+                double raw = Math.Max(0.0, s.Speed);
+                double prev = _session.SpeedEma.TryGetValue(s.FilePath, out var old) ? old : 0.0;
+                double ema = (SpeedEmaAlpha * raw) + ((1.0 - SpeedEmaAlpha) * prev);
+                _session.SpeedEma[s.FilePath] = ema;
+                item.SmoothedSpeedMBps = ema;
+            }
 
-		public string? Status
-		{
-			get => _status;
-			set
-			{
-				_status = value;
-				OnPropertyChanged();
-				OnPropertyChanged(nameof(StatusText));
-			}
-		}
-		public string? Stage
-		{
-			get => _stage;
-			set
-			{
-				_stage = value;
-				OnPropertyChanged();
-				OnPropertyChanged(nameof(StatusText));
-			}
-		}
+            _session.HasActiveUploads = DisplayUploads.Count > 0;
+        }
 
-		public double Progress
-		{
-			get => _progress;
-			set
-			{
-				_progress = value;
-				OnPropertyChanged();
-			}
-		}
-		public double UploadedMB
-		{
-			get => _uploadedMB;
-			set
-			{
-				_uploadedMB = value;
-				OnPropertyChanged();
-			}
-		}
-		public double TotalMB
-		{
-			get => _totalMB;
-			set
-			{
-				_totalMB = value;
-				OnPropertyChanged();
-			}
-		}
+        // ===== Helpers =====
+        private static double GuessSizeMB(string filePath)
+        {
+            try
+            {
+                var fi = new FileInfo(filePath);
+                return Math.Max(0.1, fi.Length / 1024.0 / 1024.0);
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
 
-		public double SmoothedSpeedMBps
-		{
-			get => _smoothedSpeed;
-			set
-			{
-				_smoothedSpeed = value;
-				OnPropertyChanged();
-			}
-		}
+        private void OnTasksReset()
+        {
+            try
+            {
+                if (_statusTimer.IsEnabled)
+                    _statusTimer.Stop();
 
-		public int ETASeconds
-		{
-			get => _etaSeconds;
-			set
-			{
-				_etaSeconds = value;
-				OnPropertyChanged();
-			}
-		}
+                _session.HasActiveUploads = false;
 
-		public string? Error
-		{
-			get => _error;
-			set
-			{
-				_error = value;
-				OnPropertyChanged();
-				OnPropertyChanged(nameof(StatusText));
-			}
-		}
-
-		public string StatusText
-		{
-			get
-			{
-				var s = Status ?? "";
-				var st = Stage ?? "";
-
-				if (!string.IsNullOrWhiteSpace(Error) &&
-					!string.Equals(Error, "None", StringComparison.OrdinalIgnoreCase))
-					return $"状态: {s} / 阶段: {st} / 错误: {Error}";
-
-				bool connecting =
-					string.Equals(s, "uploading", StringComparison.OrdinalIgnoreCase) &&
-					!string.Equals(st, "uploading", StringComparison.OrdinalIgnoreCase) &&
-					Progress <= 0.1 && UploadedMB <= 0.01 && SmoothedSpeedMBps <= 0.05;
-
-				return connecting
-					? "正在连接 Notion 服务器…（准备上传）"
-					: $"状态: {s} / 阶段: {st}";
-			}
-		}
-
-		public event PropertyChangedEventHandler? PropertyChanged;
-		private void OnPropertyChanged([CallerMemberName] string? name = null)
-			=> PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-	}
+                Application.Current?.Dispatcher?.Invoke(() =>
+                {
+                    try
+                    {
+                        DisplayUploads.Clear();
+                        SelectedUploadFiles.Clear();
+                        _session.SpeedEma.Clear();
+                        ModalHint.Text = "";
+                    }
+                    catch { }
+                });
+            }
+            catch { }
+        }
+    }
 }

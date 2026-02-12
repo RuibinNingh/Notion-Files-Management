@@ -5,10 +5,10 @@
       Title="下载">
 
 	<Grid>
-		<Grid Margin="30">
+		<Grid Margin="30" VerticalAlignment="Top">
 			<Grid.RowDefinitions>
 				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="*"/>
+				<RowDefinition Height="Auto"/>
 				<RowDefinition Height="Auto"/>
 			</Grid.RowDefinitions>
 

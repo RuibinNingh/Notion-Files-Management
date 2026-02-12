@@ -3,13 +3,58 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="主页">
-	<Grid>
-		<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-			<ui:SymbolIcon Symbol="Home24" FontSize="64" Margin="0,0,0,20"/>
-			<ui:TextBlock Text="主页 Dashboard"
-			              FontTypography="Title"
-			              HorizontalAlignment="Center"
-			              Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-		</StackPanel>
-	</Grid>
+    <Grid>
+
+        <!-- 中央：大图标 + 项目名 + 操作按钮 -->
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <Image Source="pack://application:,,,/icon.png"
+                   Width="128" Height="128"
+                   HorizontalAlignment="Center"
+                   RenderOptions.BitmapScalingMode="HighQuality"
+                   Margin="0,0,0,20"/>
+
+            <ui:TextBlock Text="Notion-Files-Management"
+                          FontTypography="Title"
+                          HorizontalAlignment="Center"
+                          Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                          Margin="0,0,0,6"/>
+
+            <!-- 当前版本（从 config 动态读取） -->
+            <TextBlock x:Name="TxtVersion"
+                       HorizontalAlignment="Center"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                       Margin="0,0,0,28"/>
+
+            <!-- 操作按钮行 -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center">
+
+                <!-- 官网 -->
+                <ui:Button x:Name="BtnWebsite"
+                           Appearance="Secondary"
+                           Content="官方网站"
+                           Icon="{ui:SymbolIcon Globe24}"
+                           Margin="0,0,10,0"
+                           Click="OnWebsiteClick"/>
+
+                <!-- GitHub -->
+                <ui:Button x:Name="BtnGitHub"
+                           Appearance="Secondary"
+                           Content="GitHub 仓库"
+                           Icon="{ui:SymbolIcon Code24}"
+                           Margin="0,0,10,0"
+                           Click="OnGitHubClick"/>
+
+                <!-- 赞助（黄色） -->
+                <ui:Button x:Name="BtnSponsor"
+                           Style="{StaticResource YellowUiButton}"
+                           Content="赞助支持"
+                           Icon="{ui:SymbolIcon StarEmphasis24}"
+                           Click="OnSponsorClick"/>
+
+            </StackPanel>
+        </StackPanel>
+
+    </Grid>
 </Page>

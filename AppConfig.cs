@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Notion_Files_Management
 {
@@ -11,6 +12,14 @@ namespace Notion_Files_Management
 		// Download/Upload concurrency configured in Settings page
 		public int MaxDownloadWorkers { get; set; } = 3;
 		public int MaxUploadWorkers { get; set; } = 3;
+
+		/// <summary>
+		/// 当前应用版本，格式为 {major}.{minor}.{patch}-{State}
+		/// 状态可选：Stable / Beta
+		/// 由构建/安装程序写入；运行时只读。
+		/// </summary>
+		[JsonPropertyName("version")]
+		public string AppVersion { get; set; } = "1.0.0-Beta";
 	}
 
 	public static class ConfigManager
@@ -30,21 +39,24 @@ namespace Notion_Files_Management
 			if (!File.Exists(FilePath))
 				return;
 			try
-		{
-			string json = File.ReadAllText(FilePath);
-			Current = JsonSerializer.Deserialize<ConfigData>(json) ?? new ConfigData();
-			// 兼容处理：如果 NotionBaseUrl 为空，设置默认值
-			if (string.IsNullOrWhiteSpace(Current.NotionBaseUrl))
-				Current.NotionBaseUrl = "https://api.notion.com/v1";
-		}
-		catch { }
+			{
+				string json = File.ReadAllText(FilePath);
+				Current = JsonSerializer.Deserialize<ConfigData>(json) ?? new ConfigData();
+				// 兼容处理：如果 NotionBaseUrl 为空，设置默认值
+				if (string.IsNullOrWhiteSpace(Current.NotionBaseUrl))
+					Current.NotionBaseUrl = "https://api.notion.com/v1";
+				// 兼容处理：版本号为空则使用默认值
+				if (string.IsNullOrWhiteSpace(Current.AppVersion))
+					Current.AppVersion = "1.0.0-Beta";
+			}
+			catch { }
 		}
 
 		public static void Save()
 		{
 			if (!Directory.Exists(AppDataPath))
 				Directory.CreateDirectory(AppDataPath);
-			string json = JsonSerializer.Serialize(Current);
+			string json = JsonSerializer.Serialize(Current, new JsonSerializerOptions { WriteIndented = true });
 			File.WriteAllText(FilePath, json);
 		}
 	}

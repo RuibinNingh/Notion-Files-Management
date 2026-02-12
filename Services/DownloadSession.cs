@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Notion_Files_Management.Models;
 
 namespace Notion_Files_Management.Services
 {
@@ -6,8 +7,8 @@ namespace Notion_Files_Management.Services
     {
         public static DownloadSession Instance { get; } = new DownloadSession();
 
-        public ObservableCollection<Views.FileSelectItem> FileSelectionList { get; } = new();
-        public ObservableCollection<Views.DownloadTaskStatus> DisplayTasks { get; } = new();
+        public ObservableCollection<FileSelectItem> FileSelectionList { get; } = new();
+        public ObservableCollection<DownloadTaskStatus> DisplayTasks { get; } = new();
 
         // persisted state
         public string SaveDirectory { get; set; } = "";
