@@ -136,7 +136,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <ui:TextBox x:Name="PageIdInput" PlaceholderText="粘贴 Notion 页面 ID"/>
+                        <ui:TextBox x:Name="PageIdInput" PlaceholderText="粘贴 Notion 页面 ID" TextChanged="PageIdInput_TextChanged"/>
                         <ui:Button x:Name="BtnStartQuery"
                                    Grid.Column="1"
                                    Content="开始获取"
@@ -144,6 +144,12 @@
                                    Margin="10,0,0,0"
                                    Click="StartQuery_Click"/>
                     </Grid>
+
+                    <ui:TextBlock x:Name="PageIdErrorText"
+                                 Text=""
+                                 FontSize="12"
+                                 Margin="0,6,0,0"
+                                 Foreground="#FFEF5350"/>
 
                     <ui:Button Content="取消" HorizontalAlignment="Right" Margin="0,20,0,0" Click="CloseModal_Click"/>
                 </StackPanel>

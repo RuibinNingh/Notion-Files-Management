@@ -21,6 +21,9 @@ namespace Notion_Files_Management.Views
         private CancellationTokenSource? _cts;
         private int _reqId;
 
+        // Avoid recursive TextChanged when we programmatically set Text.
+        private bool _isFormattingPageId;
+
         public ToolsPage()
         {
             InitializeComponent();
@@ -45,6 +48,31 @@ namespace Notion_Files_Management.Views
             ModalStep2.Visibility = Visibility.Collapsed;
             PageIdInput.Text = "";
             BtnStartQuery.IsEnabled = true;
+
+            try { PageIdErrorText.Text = ""; } catch { }
+        }
+
+        private void PageIdInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isFormattingPageId)
+                return;
+
+            try
+            {
+                var (formatted, isValid, hint) = NotionPageId.AutoFormat(PageIdInput.Text);
+                PageIdErrorText.Text = hint;
+
+                if (isValid && !string.Equals(PageIdInput.Text, formatted, StringComparison.Ordinal))
+                {
+                    _isFormattingPageId = true;
+                    PageIdInput.Text = formatted;
+                    PageIdInput.CaretIndex = formatted.Length;
+                }
+            }
+            finally
+            {
+                _isFormattingPageId = false;
+            }
         }
 
         private void OpenStep2()
@@ -78,17 +106,22 @@ namespace Notion_Files_Management.Views
         // ===== Core =====
         private async void StartQuery_Click(object sender, RoutedEventArgs e)
         {
+            string rawInput = PageIdInput.Text ?? "";
+            if (!NotionPageId.TryNormalize(rawInput, out string pageId, out string pageIdErr))
+            {
+                try { PageIdErrorText.Text = pageIdErr; } catch { }
+                MessageBox.Show(pageIdErr);
+                return;
+            }
+
+            // Keep UI canonical.
+            if (!string.Equals(PageIdInput.Text, pageId, StringComparison.Ordinal))
+                PageIdInput.Text = pageId;
+
             var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
             if (!ok)
             {
                 MessageBox.Show(err);
-                return;
-            }
-
-            string pageId = (PageIdInput.Text ?? "").Trim().Replace(" ", "");
-            if (string.IsNullOrWhiteSpace(pageId))
-            {
-                MessageBox.Show("请输入目标页面 ID。");
                 return;
             }
 

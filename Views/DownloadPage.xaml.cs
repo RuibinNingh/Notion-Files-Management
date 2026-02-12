@@ -37,6 +37,9 @@ namespace Notion_Files_Management.Views
         // ===== Download polling =====
         private readonly DispatcherTimer _downloadStatusTimer = new DispatcherTimer();
 
+        // Avoid recursive TextChanged when we programmatically set Text.
+        private bool _isFormattingPageId;
+
         public DownloadPage()
         {
             InitializeComponent();
@@ -100,6 +103,32 @@ namespace Notion_Files_Management.Views
 
             try { PageIdInput.Text = _session.PageId; } catch { }
             try { SavePathDisplay.Text = _saveDirectory; } catch { }
+
+            // Clear inline error when opening.
+            try { PageIdErrorText.Text = ""; } catch { }
+        }
+
+        private void PageIdInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isFormattingPageId)
+                return;
+
+            try
+            {
+                var (formatted, isValid, hint) = NotionPageId.AutoFormat(PageIdInput.Text);
+                PageIdErrorText.Text = hint;
+
+                if (isValid && !string.Equals(PageIdInput.Text, formatted, StringComparison.Ordinal))
+                {
+                    _isFormattingPageId = true;
+                    PageIdInput.Text = formatted;
+                    PageIdInput.CaretIndex = formatted.Length;
+                }
+            }
+            finally
+            {
+                _isFormattingPageId = false;
+            }
         }
 
         private void CloseModal_Click(object sender, RoutedEventArgs e)
@@ -132,14 +161,20 @@ namespace Notion_Files_Management.Views
             if (confirmBtn != null)
                 confirmBtn.Content = "稍等";
 
-            string pageId = (PageIdInput.Text ?? "").Trim().Replace(" ", "");
-            if (string.IsNullOrWhiteSpace(pageId))
+            string rawInput = PageIdInput.Text ?? "";
+            if (!NotionPageId.TryNormalize(rawInput, out string pageId, out string pageIdErr))
             {
-                MessageBox.Show("请输入目标页面 ID。");
+                // Inline hint + modal alert.
+                try { PageIdErrorText.Text = pageIdErr; } catch { }
+                MessageBox.Show(pageIdErr);
                 if (confirmBtn != null)
                     confirmBtn.Content = oldContent;
                 return;
             }
+
+            // Keep UI canonical (e.g., user pasted without hyphens).
+            if (!string.Equals(PageIdInput.Text, pageId, StringComparison.Ordinal))
+                PageIdInput.Text = pageId;
 
             var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
             if (!ok)

@@ -28,6 +28,8 @@ namespace Notion_Files_Management.Views
         private readonly DispatcherTimer _statusTimer = new DispatcherTimer();
         private const double SpeedEmaAlpha = 0.2; // 0.1~0.3 (smaller => smoother)
 
+        private bool _isFormattingPageId;
+
         public UploadPage()
         {
             InitializeComponent();
@@ -87,8 +89,33 @@ namespace Notion_Files_Management.Views
             ModalHint.Text = "";
             BtnConfirmStart.IsEnabled = true;
 
+            try { PageIdErrorText.Text = ""; } catch { }
+
             ModalOverlay.Visibility = Visibility.Visible;
             ModalStep1.Visibility = Visibility.Visible;
+        }
+
+        private void PageIdInput_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isFormattingPageId)
+                return;
+
+            try
+            {
+                var (formatted, isValid, hint) = NotionPageId.AutoFormat(PageIdInput.Text);
+                PageIdErrorText.Text = hint;
+
+                if (isValid && !string.Equals(PageIdInput.Text, formatted, StringComparison.Ordinal))
+                {
+                    _isFormattingPageId = true;
+                    PageIdInput.Text = formatted;
+                    PageIdInput.CaretIndex = formatted.Length;
+                }
+            }
+            finally
+            {
+                _isFormattingPageId = false;
+            }
         }
 
         private void CloseModal_Click(object sender, RoutedEventArgs e)
@@ -134,12 +161,17 @@ namespace Notion_Files_Management.Views
                 return;
             }
 
-            string pageId = (PageIdInput.Text ?? "").Trim();
-            if (string.IsNullOrEmpty(pageId))
+            string rawInput = PageIdInput.Text ?? "";
+            if (!NotionPageId.TryNormalize(rawInput, out string pageId, out string pageIdErr))
             {
-                MessageBox.Show("请输入 Notion Page ID。");
+                try { PageIdErrorText.Text = pageIdErr; } catch { }
+                MessageBox.Show(pageIdErr);
                 return;
             }
+
+            // Keep UI canonical.
+            if (!string.Equals(PageIdInput.Text, pageId, StringComparison.Ordinal))
+                PageIdInput.Text = pageId;
 
             var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
             if (!ok)
@@ -158,7 +190,7 @@ namespace Notion_Files_Management.Views
 
                 Logger.Info($"Start upload. pageId={pageId}, files={filePaths.Count}");
 
-                // 保存PageId到session
+                // 保存 PageId 到 session（使用规范化后的格式）
                 _session.PageId = pageId;
 
                 string ret = await _svc.StartUploadAsync(pageId, filePaths, CancellationToken.None);
