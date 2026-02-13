@@ -58,10 +58,12 @@ namespace Notion_Files_Management.Utils
 		{
 			try
 			{
-				var baseDir = AppContext.BaseDirectory;
-				var logDir = Path.Combine(baseDir, "logs");
+				// 使用 AppData 目录（与配置文件保持一致）
+				var appDataDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+				var appFolder = Path.Combine(appDataDir, "NotionFilesManagement");
+				var logDir = Path.Combine(appFolder, "logs");
 				
-				// 确保日志目录存在（即使在打包后运行也能创建）
+				// 确保日志目录存在
 				if (!Directory.Exists(logDir))
 				{
 					Directory.CreateDirectory(logDir);
