@@ -9,6 +9,13 @@
 		<UseWPF>true</UseWPF>
 		<ApplicationIcon>icon.ico</ApplicationIcon>
 		<Platforms>AnyCPU;x64</Platforms>
+		
+		<!-- 版本信息 -->
+		<Version>1.0.0-Beta</Version>
+		<AssemblyVersion>1.0.0.0</AssemblyVersion>
+		<FileVersion>1.0.0.0</FileVersion>
+		<InformationalVersion>1.0.0-Beta</InformationalVersion>
+
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -88,6 +88,88 @@
                Icon="{ui:SymbolIcon Symbol=Save24}"
                Click="OnSaveClick" />
       </StackPanel>
+
+      <!-- 关于 / 版本检查 -->
+      <ui:TextBlock Text="关于" FontTypography="Subtitle" Margin="0,30,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+
+      <ui:Card Padding="15">
+        <StackPanel>
+          <!-- 当前版本显示 -->
+          <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <StackPanel Grid.Column="0">
+              <ui:TextBlock Text="Notion Files Management" FontTypography="BodyStrong" Margin="0,0,0,4"/>
+              <ui:TextBlock x:Name="TxtCurrentVersion" Text="当前版本：v2.4.0-Stable" Appearance="Tertiary" FontSize="13"/>
+            </StackPanel>
+
+            <ui:Button x:Name="BtnCheckUpdate"
+                       Grid.Column="1"
+                       Content="检查版本更新"
+                       Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
+                       Click="OnCheckUpdateClick"/>
+          </Grid>
+
+          <!-- 版本信息面板（默认隐藏，检查后显示） -->
+          <Border x:Name="VersionInfoPanel" 
+                  Visibility="Collapsed"
+                  BorderThickness="0"
+                  Padding="0,8,0,0">
+            <StackPanel>
+              <!-- 状态提示信息栏 -->
+              <ui:InfoBar x:Name="UpdateInfoBar" 
+                          IsOpen="True"
+                          IsClosable="False"
+                          Margin="0,0,0,12"/>
+
+              <!-- 版本详细信息 -->
+              <Grid x:Name="VersionDetailGrid" 
+                    Visibility="Collapsed"
+                    Margin="0,0,0,12">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="100"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <ui:TextBlock Grid.Row="0" Grid.Column="0" Text="最新版本：" Margin="0,0,0,6" Appearance="Tertiary"/>
+                <ui:TextBlock Grid.Row="0" Grid.Column="1" x:Name="TxtLatestVersion" Text="-" Margin="0,0,0,6" FontTypography="BodyStrong"/>
+
+                <ui:TextBlock Grid.Row="1" Grid.Column="0" Text="构建日期：" Margin="0,0,0,6" Appearance="Tertiary"/>
+                <ui:TextBlock Grid.Row="1" Grid.Column="1" x:Name="TxtBuildDate" Text="-" Margin="0,0,0,6"/>
+
+                <ui:TextBlock Grid.Row="2" Grid.Column="0" Text="更新内容：" Margin="0,0,0,6" Appearance="Tertiary" VerticalAlignment="Top"/>
+                <StackPanel Grid.Row="2" Grid.Column="1" x:Name="ChangelogPanel" Margin="0,0,0,6" HorizontalAlignment="Stretch"/>
+              </Grid>
+
+              <!-- 下载按钮面板 -->
+              <StackPanel x:Name="DownloadButtonPanel" 
+                          Orientation="Horizontal" 
+                          HorizontalAlignment="Right"
+                          Visibility="Collapsed">
+                <ui:Button x:Name="BtnOpenGithub"
+                           Content="从 GitHub 下载"
+                           Icon="{ui:SymbolIcon Symbol=Open24}"
+                           Click="OnOpenGithubClick"
+                           Margin="0,0,8,0"/>
+                <ui:Button x:Name="BtnGetDownloadUrl"
+                           Style="{StaticResource BluePrimaryUiButton}"
+                           Content="获取下载链接"
+                           Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+                           Click="OnGetDownloadUrlClick"/>
+              </StackPanel>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ui:Card>
+
     </StackPanel>
   </Grid>
 </Page>

@@ -78,6 +78,8 @@ namespace Notion_Files_Management.Utils
 		public static void Debug(string message) => Write(Level.Debug, message);
 		public static void Info(string message) => Write(Level.Info, message);
 		public static void Warn(string message) => Write(Level.Warn, message);
+		// Backwards-compatible alias used in some files
+		public static void Warning(string message) => Warn(message);
 		public static void Error(string message, Exception? ex = null) => Write(Level.Error, message, ex);
 
 		public static IDisposable Time(string scopeName)
