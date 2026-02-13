@@ -82,7 +82,7 @@
                                 </Grid>
                             </Border>
 
-                            <!-- 图标着色实验页入口 -->
+                            <!-- 查看日志文件 -->
                             <Border BorderThickness="1"
                                     BorderBrush="#22000000"
                                     CornerRadius="8"
@@ -94,14 +94,14 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <ui:SymbolIcon Symbol="Color24"
+                                    <ui:SymbolIcon Symbol="Folder24"
                                                    FontSize="22"
                                                    Margin="0,2,14,0"/>
 
                                     <StackPanel Grid.Column="1">
-                                        <ui:TextBlock Text="图标与主题实验室"
+                                        <ui:TextBlock Text="查看日志文件"
                                                       FontWeight="SemiBold"/>
-                                        <ui:TextBlock Text="对比不同按钮图标写法在当前主题下的实际着色效果，并显示主题刷子值。"
+                                        <ui:TextBlock Text="打开应用程序的日志文件夹，查看运行日志和错误记录。"
                                                       Appearance="Tertiary"
                                                       TextWrapping="Wrap"
                                                       Margin="0,4,0,0"/>
@@ -111,7 +111,7 @@
                                                Content="打开"
                                                Appearance="Secondary"
                                                MinWidth="96"
-                                               Click="OpenIconThemeLab_Click"/>
+                                               Click="OpenLogFolder_Click"/>
                                 </Grid>
                             </Border>
 

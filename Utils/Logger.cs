@@ -23,6 +23,11 @@ namespace Notion_Files_Management.Utils
 		private static StreamWriter? _file;
 		private static string? _filePath;
 
+		/// <summary>
+		/// 获取日志文件夹路径
+		/// </summary>
+		public static string? LogDirectory { get; private set; }
+
 		public static void InitConsole(bool forceAllocConsole = false)
 		{
 			try
@@ -55,7 +60,14 @@ namespace Notion_Files_Management.Utils
 			{
 				var baseDir = AppContext.BaseDirectory;
 				var logDir = Path.Combine(baseDir, "logs");
-				Directory.CreateDirectory(logDir);
+				
+				// 确保日志目录存在（即使在打包后运行也能创建）
+				if (!Directory.Exists(logDir))
+				{
+					Directory.CreateDirectory(logDir);
+				}
+				
+				LogDirectory = logDir;
 
 				var ts = DateTime.Now.ToString("yyyyMMddHHmmss"); // 20260210161308
 				_filePath = Path.Combine(logDir, $"{ts}-C#.logs");
@@ -63,9 +75,14 @@ namespace Notion_Files_Management.Utils
 
 				Info($"File logging enabled: {_filePath}");
 			}
-			catch
+			catch (Exception ex)
 			{
-				// ignore
+				// 如果无法创建日志文件，至少尝试输出到控制台
+				try
+				{
+					Console.WriteLine($"[Logger] Failed to initialize file logging: {ex.Message}");
+				}
+				catch { }
 			}
 		}
 

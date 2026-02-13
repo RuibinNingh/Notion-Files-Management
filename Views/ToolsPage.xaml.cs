@@ -8,7 +8,6 @@ using System.Windows.Controls;
 using Notion_Files_Management.Models;
 using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
-using Notion_Files_Management.Views.Tools;
 
 namespace Notion_Files_Management.Views
 {
@@ -196,27 +195,37 @@ namespace Notion_Files_Management.Views
             }
         }
 
-        private void OpenIconThemeLab_Click(object sender, RoutedEventArgs e)
+        private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                // Prefer navigating through a frame named RootFrame (app convention)
-                var rootFrame = Window.GetWindow(this)?.FindName("RootFrame") as Frame;
-                if (rootFrame != null)
+                string? logDir = Logger.LogDirectory;
+                
+                if (string.IsNullOrEmpty(logDir))
                 {
-                    rootFrame.Navigate(new IconThemeLabPage());
-                    return;
+                    // 如果日志目录未初始化，尝试获取默认位置
+                    logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
                 }
 
-                // Fallback: navigate current window content if it's a Frame
-                if (Window.GetWindow(this) is Window win && win.Content is Frame currentFrame)
+                if (!System.IO.Directory.Exists(logDir))
                 {
-                    currentFrame.Navigate(new IconThemeLabPage());
+                    System.IO.Directory.CreateDirectory(logDir);
                 }
+
+                // 使用 explorer 打开文件夹
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = logDir,
+                    UseShellExecute = true,
+                    Verb = "open"
+                });
+
+                Logger.Info($"User opened log folder: {logDir}");
             }
             catch (Exception ex)
             {
-                Logger.Warn($"OpenIconThemeLab failed: {ex.Message}");
+                MessageBox.Show($"无法打开日志文件夹：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Logger.Error("OpenLogFolder failed", ex);
             }
         }
     }

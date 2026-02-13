@@ -11,10 +11,10 @@
 		<Platforms>AnyCPU;x64</Platforms>
 		
 		<!-- 版本信息 -->
-		<Version>1.0.0-Beta</Version>
-		<AssemblyVersion>1.0.0.0</AssemblyVersion>
-		<FileVersion>1.0.0.0</FileVersion>
-		<InformationalVersion>1.0.0-Beta</InformationalVersion>
+		<Version>1.0.1-Beta</Version>
+		<AssemblyVersion>1.0.1.0</AssemblyVersion>
+		<FileVersion>1.0.1.0</FileVersion>
+		<InformationalVersion>1.0.1-Beta</InformationalVersion>
 
 	</PropertyGroup>
 
