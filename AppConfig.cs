@@ -23,6 +23,19 @@ namespace Notion_Files_Management
 		public string ThemeAccentColor { get; set; } = DefaultThemeAccentColor;
 
 		/// <summary>
+		/// 背景材质类型，可选值："Mica"（云母）或 "Acrylic"（亚克力）
+		/// 默认值："Mica"
+		/// </summary>
+		public string BackgroundMaterial { get; set; } = "Mica";
+
+		/// <summary>
+		/// 亚克力材质不透明度，范围 0.0-1.0
+		/// 仅在 BackgroundMaterial 为 "Acrylic" 时生效
+		/// 默认值：0.8
+		/// </summary>
+		public double AcrylicOpacity { get; set; } = 0.8;
+
+		/// <summary>
 		/// 当前应用版本，格式为 {major}.{minor}.{patch}-{State}
 		/// 状态可选：Stable / Beta
 		/// 由构建/安装程序写入；运行时只读。

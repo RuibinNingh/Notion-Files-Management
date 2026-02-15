@@ -51,6 +51,15 @@ namespace Notion_Files_Management.Views
                 
                 // 加载主题色配置
                 LoadThemeColor();
+                
+                // 加载背景材质配置
+                LoadBackgroundMaterial();
+            }
+            
+            // 监听背景材质选择变化（仅更新UI，不保存）
+            if (BackgroundMaterialCombo != null)
+            {
+                BackgroundMaterialCombo.SelectionChanged += OnBackgroundMaterialChanged;
             }
 
             // 显示当前版本号
@@ -87,11 +96,8 @@ namespace Notion_Files_Management.Views
                 ConfigManager.Current.MaxDownloadWorkers = dl;
                 ConfigManager.Current.MaxUploadWorkers   = ul;
                 
-                // 保存主题色（从嵌入式颜色选择器读取）
-                if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
-                {
-                    ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
-                }
+                // 注意：外观设置（主题色、背景材质）需要通过外观块的保存按钮单独保存
+                // 这里不保存外观设置，避免覆盖用户未保存的外观设置
                 
                 ConfigManager.Save();
             }
@@ -447,7 +453,7 @@ namespace Notion_Files_Management.Views
         }
 
         /// <summary>
-        /// 颜色选择器颜色变化事件处理
+        /// 颜色选择器颜色变化事件处理（仅更新UI，不保存）
         /// </summary>
         private void OnColorPickerColorChanged(object? sender, EventArgs e)
         {
@@ -459,23 +465,217 @@ namespace Notion_Files_Management.Views
                 if (string.IsNullOrWhiteSpace(selectedColor))
                     return;
 
-                // 立即保存到配置
-                ConfigManager.Load();
-                ConfigManager.Current.ThemeAccentColor = selectedColor;
-                ConfigManager.Save();
-                
-                Logger.Info($"[SettingsPage] Theme color changed to: {selectedColor}");
+                Logger.Info($"[SettingsPage] Theme color UI changed to: {selectedColor} (not saved yet)");
             }
             catch (Exception ex)
             {
-                Logger.Error("[SettingsPage] Save theme color failed", ex);
+                Logger.Error("[SettingsPage] Theme color change failed", ex);
+            }
+        }
+
+        // ── 背景材质相关方法 ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// 加载背景材质配置到UI
+        /// </summary>
+        private void LoadBackgroundMaterial()
+        {
+            try
+            {
+                string material = ConfigManager.Current?.BackgroundMaterial ?? "Mica";
+                if (string.IsNullOrWhiteSpace(material) || (material != "Mica" && material != "Acrylic"))
+                    material = "Mica";
+
+                // 设置下拉框选择
+                if (BackgroundMaterialCombo != null)
+                {
+                    foreach (ComboBoxItem item in BackgroundMaterialCombo.Items)
+                    {
+                        if (item.Tag?.ToString() == material)
+                        {
+                            BackgroundMaterialCombo.SelectedItem = item;
+                            break;
+                        }
+                    }
+                }
+
+                // 加载不透明度
+                double opacity = ConfigManager.Current?.AcrylicOpacity ?? 0.8;
+                if (opacity < 0.0 || opacity > 1.0)
+                    opacity = 0.8;
+
+                if (AcrylicOpacitySlider != null)
+                {
+                    AcrylicOpacitySlider.Value = opacity;
+                    UpdateAcrylicOpacityDisplay(opacity);
+                }
+
+                // 根据选择的材质显示/隐藏不透明度面板
+                UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Load background material failed", ex);
             }
         }
 
         /// <summary>
-        /// 点击"重启应用"按钮
+        /// 保存背景材质配置
         /// </summary>
-        private void OnRestartAppClick(object sender, RoutedEventArgs e)
+        private void SaveBackgroundMaterial()
+        {
+            try
+            {
+                // 保存材质类型
+                if (BackgroundMaterialCombo?.SelectedItem is ComboBoxItem selectedItem)
+                {
+                    string material = selectedItem.Tag?.ToString() ?? "Mica";
+                    if (material != "Mica" && material != "Acrylic")
+                        material = "Mica";
+                    ConfigManager.Current.BackgroundMaterial = material;
+                }
+
+                // 保存不透明度
+                if (AcrylicOpacitySlider != null)
+                {
+                    double opacity = AcrylicOpacitySlider.Value;
+                    if (opacity < 0.0) opacity = 0.0;
+                    if (opacity > 1.0) opacity = 1.0;
+                    ConfigManager.Current.AcrylicOpacity = opacity;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Save background material failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 背景材质选择变化事件处理（仅更新UI，不保存）
+        /// </summary>
+        private void OnBackgroundMaterialChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                if (BackgroundMaterialCombo?.SelectedItem is ComboBoxItem selectedItem)
+                {
+                    string material = selectedItem.Tag?.ToString() ?? "Mica";
+                    UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
+                    
+                    Logger.Info($"[SettingsPage] Background material UI changed to: {material} (not saved yet)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Background material change failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 更新亚克力不透明度面板的可见性
+        /// </summary>
+        private void UpdateAcrylicOpacityPanelVisibility(bool isVisible)
+        {
+            if (AcrylicOpacityPanel != null)
+            {
+                AcrylicOpacityPanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        /// <summary>
+        /// 亚克力不透明度滑动条值变化事件处理（仅更新UI显示，不保存）
+        /// </summary>
+        private void OnAcrylicOpacityChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            try
+            {
+                UpdateAcrylicOpacityDisplay(e.NewValue);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Acrylic opacity change failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 更新不透明度显示文本
+        /// </summary>
+        private void UpdateAcrylicOpacityDisplay(double opacity)
+        {
+            if (AcrylicOpacityValue != null)
+            {
+                int percentage = (int)(opacity * 100);
+                AcrylicOpacityValue.Text = $"{percentage}%";
+            }
+        }
+
+        /// <summary>
+        /// 点击"保存"按钮（仅保存外观设置，不重启）
+        /// </summary>
+        private void OnSaveAppearanceClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                ConfigManager.Load();
+
+                // 保存主题色（从嵌入式颜色选择器读取）
+                if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
+                {
+                    ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
+                }
+
+                // 保存背景材质配置
+                SaveBackgroundMaterial();
+
+                ConfigManager.Save();
+
+                Logger.Info("[SettingsPage] Appearance settings saved");
+                System.Windows.MessageBox.Show("外观设置已保存。部分设置需要重启应用才能完全生效。", "保存成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Save appearance settings failed", ex);
+                System.Windows.MessageBox.Show($"保存外观设置失败：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 点击"保存并重启应用"按钮
+        /// </summary>
+        private void OnSaveAndRestartClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 先保存设置
+                ConfigManager.Load();
+
+                // 保存主题色（从嵌入式颜色选择器读取）
+                if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
+                {
+                    ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
+                }
+
+                // 保存背景材质配置
+                SaveBackgroundMaterial();
+
+                ConfigManager.Save();
+
+                Logger.Info("[SettingsPage] Appearance settings saved, restarting application");
+
+                // 然后重启应用
+                RestartApplication();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Save and restart failed", ex);
+                System.Windows.MessageBox.Show($"保存并重启失败：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 重启应用程序
+        /// </summary>
+        private void RestartApplication()
         {
             try
             {

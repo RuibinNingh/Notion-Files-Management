@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -213,7 +214,7 @@ namespace Notion_Files_Management.Views
                 }
 
                 // 使用 explorer 打开文件夹
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                Process.Start(new ProcessStartInfo
                 {
                     FileName = logDir,
                     UseShellExecute = true,
@@ -226,6 +227,21 @@ namespace Notion_Files_Management.Views
             {
                 MessageBox.Show($"无法打开日志文件夹：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 Logger.Error("OpenLogFolder failed", ex);
+            }
+        }
+
+        private void ReportError_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                const string issuesUrl = "https://github.com/RuibinNingh/Notion-Files-Management/issues";
+                Process.Start(new ProcessStartInfo(issuesUrl) { UseShellExecute = true });
+                Logger.Info($"User opened GitHub Issues page: {issuesUrl}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"无法打开浏览器：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Logger.Error("ReportError failed", ex);
             }
         }
     }

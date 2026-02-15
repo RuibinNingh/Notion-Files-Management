@@ -38,85 +38,131 @@
                     </StackPanel>
 
                     <!-- 工具列表 -->
-                    <Border Grid.Row="1"
-                            BorderThickness="1"
-                            BorderBrush="#33000000"
-                            CornerRadius="8"
-                            Padding="12">
-                        <StackPanel>
+                    <StackPanel Grid.Row="1">
+                        <!-- Notion 相关 -->
+                        <Border BorderThickness="1"
+                                BorderBrush="#33000000"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <ui:TextBlock Text="Notion 相关"
+                                              FontTypography="Subtitle"
+                                              Margin="2,2,2,10"/>
 
-                            <ui:TextBlock Text="Notion 相关"
-                                          FontTypography="Subtitle"
-                                          Margin="2,2,2,10"/>
+                                <Border BorderThickness="1"
+                                        BorderBrush="#22000000"
+                                        CornerRadius="8"
+                                        Padding="12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
 
-                            <Border BorderThickness="1"
-                                    BorderBrush="#22000000"
-                                    CornerRadius="8"
-                                    Padding="12"
-                                    Margin="0,0,0,10">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
+                                        <ui:SymbolIcon Symbol="DocumentSearch24"
+                                                       FontSize="22"
+                                                       Margin="0,2,14,0"/>
 
-                                    <ui:SymbolIcon Symbol="DocumentSearch24"
-                                                   FontSize="22"
-                                                   Margin="0,2,14,0"/>
+                                        <StackPanel Grid.Column="1">
+                                            <ui:TextBlock Text="Notion 页面信息"
+                                                          FontWeight="SemiBold"/>
+                                            <ui:TextBlock Text="获取页面内文件列表，并探测文件大小（显示文件数、总大小）。"
+                                                          Appearance="Tertiary"
+                                                          TextWrapping="Wrap"
+                                                          Margin="0,4,0,0"/>
+                                        </StackPanel>
 
-                                    <StackPanel Grid.Column="1">
-                                        <ui:TextBlock Text="Notion 页面信息"
-                                                      FontWeight="SemiBold"/>
-                                        <ui:TextBlock Text="获取页面内文件列表，并探测文件大小（显示文件数、总大小）。"
-                                                      Appearance="Tertiary"
-                                                      TextWrapping="Wrap"
-                                                      Margin="0,4,0,0"/>
-                                    </StackPanel>
+                                        <ui:Button Grid.Column="2"
+                                                   Content="运行"
+                                                   Style="{StaticResource BluePrimaryUiButton}"
+                                                   MinWidth="96"
+                                                   Click="OpenPageInfoModal_Click"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
 
-                                    <ui:Button Grid.Column="2"
-                                               Content="运行"
-                                               Style="{StaticResource BluePrimaryUiButton}"
-                                               MinWidth="96"
-                                               Click="OpenPageInfoModal_Click"/>
-                                </Grid>
-                            </Border>
+                        <!-- 软件工具 -->
+                        <Border BorderThickness="1"
+                                BorderBrush="#33000000"
+                                CornerRadius="8"
+                                Padding="12">
+                            <StackPanel>
+                                <ui:TextBlock Text="软件工具"
+                                              FontTypography="Subtitle"
+                                              Margin="2,2,2,10"/>
 
-                            <!-- 查看日志文件 -->
-                            <Border BorderThickness="1"
-                                    BorderBrush="#22000000"
-                                    CornerRadius="8"
-                                    Padding="12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
+                                <!-- 查看日志文件 -->
+                                <Border BorderThickness="1"
+                                        BorderBrush="#22000000"
+                                        CornerRadius="8"
+                                        Padding="12"
+                                        Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
 
-                                    <ui:SymbolIcon Symbol="Folder24"
-                                                   FontSize="22"
-                                                   Margin="0,2,14,0"/>
+                                        <ui:SymbolIcon Symbol="Folder24"
+                                                       FontSize="22"
+                                                       Margin="0,2,14,0"/>
 
-                                    <StackPanel Grid.Column="1">
-                                        <ui:TextBlock Text="查看日志文件"
-                                                      FontWeight="SemiBold"/>
-                                        <ui:TextBlock Text="打开应用程序的日志文件夹，查看运行日志和错误记录。"
-                                                      Appearance="Tertiary"
-                                                      TextWrapping="Wrap"
-                                                      Margin="0,4,0,0"/>
-                                    </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <ui:TextBlock Text="查看日志文件"
+                                                          FontWeight="SemiBold"/>
+                                            <ui:TextBlock Text="打开应用程序的日志文件夹，查看运行日志和错误记录。"
+                                                          Appearance="Tertiary"
+                                                          TextWrapping="Wrap"
+                                                          Margin="0,4,0,0"/>
+                                        </StackPanel>
 
-                                    <ui:Button Grid.Column="2"
-                                               Content="打开"
-                                               Appearance="Secondary"
-                                               MinWidth="96"
-                                               Click="OpenLogFolder_Click"/>
-                                </Grid>
-                            </Border>
+                                        <ui:Button Grid.Column="2"
+                                                   Content="打开"
+                                                   Appearance="Secondary"
+                                                   MinWidth="96"
+                                                   Click="OpenLogFolder_Click"/>
+                                    </Grid>
+                                </Border>
 
-                        </StackPanel>
-                    </Border>
+                                <!-- 报告错误 -->
+                                <Border BorderThickness="1"
+                                        BorderBrush="#22000000"
+                                        CornerRadius="8"
+                                        Padding="12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <ui:SymbolIcon Symbol="Bug24"
+                                                       FontSize="22"
+                                                       Margin="0,2,14,0"/>
+
+                                        <StackPanel Grid.Column="1">
+                                            <ui:TextBlock Text="报告错误"
+                                                          FontWeight="SemiBold"/>
+                                            <ui:TextBlock Text="遇到错误了?向我们报告,我们可能会解决它"
+                                                          Appearance="Tertiary"
+                                                          TextWrapping="Wrap"
+                                                          Margin="0,4,0,0"/>
+                                        </StackPanel>
+
+                                        <ui:Button Grid.Column="2"
+                                                   Content="报告"
+                                                   Appearance="Secondary"
+                                                   MinWidth="96"
+                                                   Click="ReportError_Click"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </Grid>
             </ui:Card>
         </Grid>

@@ -101,17 +101,63 @@
           <controls:InlineColorPicker x:Name="ColorPicker"
                                        Margin="0,0,0,8"/>
           
-          <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-            <ui:TextBlock Text="说明：主题色将应用于按钮、进度条等界面元素。修改后需要重启应用才能完全生效。" 
+          <ui:TextBlock Text="说明：主题色将应用于按钮、进度条等界面元素。修改后需要保存并重启应用才能完全生效。" 
+               Appearance="Tertiary" 
+               FontSize="12" 
+               Margin="0,8,0,15"/>
+
+          <ui:TextBlock Text="背景材质" Margin="0,0,0,8" Appearance="Tertiary"/>
+          
+          <ComboBox x:Name="BackgroundMaterialCombo" 
+                    SelectionChanged="OnBackgroundMaterialChanged"
+                    Margin="0,0,0,8">
+            <ComboBoxItem Content="云母材质" Tag="Mica"/>
+            <ComboBoxItem Content="亚克力材质" Tag="Acrylic"/>
+          </ComboBox>
+
+          <!-- 亚克力材质不透明度设置（仅在选择亚克力时显示） -->
+          <StackPanel x:Name="AcrylicOpacityPanel" Visibility="Collapsed">
+            <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
+            <Grid Margin="0,0,0,8">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <Slider x:Name="AcrylicOpacitySlider"
+                      Grid.Column="0"
+                      Minimum="0.0"
+                      Maximum="1.0"
+                      TickFrequency="0.1"
+                      IsSnapToTickEnabled="True"
+                      ValueChanged="OnAcrylicOpacityChanged"
+                      Margin="0,0,12,0"/>
+              <ui:TextBlock x:Name="AcrylicOpacityValue"
+                           Grid.Column="1"
+                           Text="80%"
+                           VerticalAlignment="Center"
+                           MinWidth="40"
+                           TextAlignment="Right"/>
+            </Grid>
+            <ui:TextBlock Text="为了节省性能，系统会在软件未聚焦时显示为背景色，这是系统笔刷的特性，我们这边是无法改变的。" 
                  Appearance="Tertiary" 
                  FontSize="12" 
-                 VerticalAlignment="Center"
-                 Margin="0,0,12,0"/>
-            <ui:Button x:Name="BtnRestartApp"
-                       Content="重启应用"
-                       Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
-                       Click="OnRestartAppClick"
-                       Style="{StaticResource BluePrimaryUiButton}"/>
+                 TextWrapping="Wrap"
+                 Margin="0,0,0,15"/>
+          </StackPanel>
+
+          <!-- 保存按钮（在外观块最下面） -->
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <ui:Button x:Name="BtnSaveAppearance"
+                   Style="{StaticResource BluePrimaryUiButton}"
+                   Content="保存"
+                   Icon="{ui:SymbolIcon Symbol=Save24}"
+                   Click="OnSaveAppearanceClick"
+                   Margin="0,0,8,0"/>
+            <ui:Button x:Name="BtnSaveAndRestart"
+                   Style="{StaticResource BluePrimaryUiButton}"
+                   Content="保存并重启应用"
+                   Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
+                   Click="OnSaveAndRestartClick"/>
           </StackPanel>
         </StackPanel>
       </ui:Card>

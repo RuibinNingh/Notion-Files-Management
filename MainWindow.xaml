@@ -5,7 +5,6 @@
         xmlns:views="clr-namespace:Notion_Files_Management.Views"
         Title="Notion-Files-Management" Height="600" Width="1000"
         ExtendsContentIntoTitleBar="True"
-        WindowBackdropType="Mica" 
         WindowStartupLocation="CenterScreen"
         Icon="icon.ico">
 	<!-- 这里仍然要设置窗口图标 -->
@@ -22,31 +21,35 @@
                       Background="Transparent" 
                       Height="32">
 
-			<!-- 在 TitleBar 的 Header 中添加图标 -->
-			<ui:TitleBar.Header>
-				<Grid>
-					<Grid.ColumnDefinitions>
-						<ColumnDefinition Width="Auto" />
-						<ColumnDefinition Width="Auto" />
-					</Grid.ColumnDefinitions>
+		<!-- 在 TitleBar 的 Header 中添加图标 -->
+		<ui:TitleBar.Header>
+			<Grid HorizontalAlignment="Left"
+			      VerticalAlignment="Center"
+			      Margin="-16,0,0,0">
+				<Grid.ColumnDefinitions>
+					<ColumnDefinition Width="Auto" />
+					<ColumnDefinition Width="Auto" />
+				</Grid.ColumnDefinitions>
 
-					<!-- 图标 -->
-					<Image Grid.Column="0"
+				<!-- 图标 -->
+				<Image Grid.Column="0"
                            Source="icon.ico"
-                           Width="32"
-                           Height="32"
-                           Margin="10,0,8,0"
-                           VerticalAlignment="Center" />
+                           Width="24"
+                           Height="24"
+                           Margin="0,0,8,0"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Left" />
 
-					<!-- 标题文本 -->
-					<TextBlock Grid.Column="1"
+				<!-- 标题文本 -->
+				<TextBlock Grid.Column="1"
 				               Text="Notion-Files-Management"
 				               VerticalAlignment="Center"
+				               HorizontalAlignment="Left"
 				               FontSize="14"
 				               FontWeight="SemiBold"
 				               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-				</Grid>
-			</ui:TitleBar.Header>
+			</Grid>
+		</ui:TitleBar.Header>
 
 		</ui:TitleBar>
 
