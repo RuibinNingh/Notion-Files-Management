@@ -19,7 +19,7 @@ namespace Notion_Files_Management
 		/// 由构建/安装程序写入；运行时只读。
 		/// </summary>
 		[JsonPropertyName("version")]
-		public string AppVersion { get; set; } = "1.0.0-Beta";
+		public string AppVersion { get; set; } = "1.0.2-Beta";
 	}
 
 	public static class ConfigManager
