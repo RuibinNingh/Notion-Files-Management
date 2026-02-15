@@ -75,7 +75,88 @@ namespace Notion_Files_Management.Views
                         typeof(Views.Controls.InlineColorPicker));
                     dpd?.AddValueChanged(ColorPicker, OnColorPickerColorChanged);
                 }
+                
+                // 初始化响应式布局
+                InitializeResponsiveLayout();
             };
+            
+            // 监听窗口大小变化
+            SizeChanged += OnPageSizeChanged;
+        }
+        
+        /// <summary>
+        /// 初始化响应式布局
+        /// </summary>
+        private void InitializeResponsiveLayout()
+        {
+            // 获取窗口引用
+            var window = Window.GetWindow(this);
+            if (window != null)
+            {
+                // 初始布局调整
+                UpdateLayoutForWindowSize(window.ActualWidth);
+            }
+        }
+        
+        /// <summary>
+        /// 页面大小变化事件处理
+        /// </summary>
+        private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            // 获取窗口引用
+            var window = Window.GetWindow(this);
+            if (window != null)
+            {
+                UpdateLayoutForWindowSize(window.ActualWidth);
+            }
+        }
+        
+        /// <summary>
+        /// 根据窗口宽度更新布局
+        /// 当窗口宽度小于 1200px 时，切换为单列布局
+        /// 当窗口宽度大于等于 1200px 时，使用两列布局
+        /// </summary>
+        private void UpdateLayoutForWindowSize(double windowWidth)
+        {
+            if (MainGrid == null || LeftPanel == null || RightPanel == null)
+                return;
+            
+            const double breakpoint = 1200.0; // 断点：1200px
+            
+            if (windowWidth < breakpoint)
+            {
+                // 单列布局：将右侧列的内容移到左侧列下方
+                if (RightPanel.Parent == MainGrid && Grid.GetColumn(RightPanel) == 1)
+                {
+                    // 将右侧面板移到左侧列
+                    Grid.SetColumn(RightPanel, 0);
+                    Grid.SetRow(RightPanel, 1);
+                    
+                    // 调整边距
+                    RightPanel.Margin = new Thickness(0, 30, 0, 0);
+                    LeftPanel.Margin = new Thickness(0, 0, 0, 0);
+                    
+                    // 添加行定义（如果还没有）
+                    if (MainGrid.RowDefinitions.Count < 2)
+                    {
+                        MainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    }
+                }
+            }
+            else
+            {
+                // 两列布局：恢复为两列
+                if (RightPanel.Parent == MainGrid && Grid.GetRow(RightPanel) == 1)
+                {
+                    // 将右侧面板移回右侧列
+                    Grid.SetColumn(RightPanel, 1);
+                    Grid.SetRow(RightPanel, 0);
+                    
+                    // 调整边距
+                    RightPanel.Margin = new Thickness(15, 0, 0, 0);
+                    LeftPanel.Margin = new Thickness(0, 0, 15, 0);
+                }
+            }
         }
 
         private void OnSaveClick(object sender, RoutedEventArgs e)

@@ -4,13 +4,17 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:controls="clr-namespace:Notion_Files_Management.Views.Controls"
       Title="设置">
-  <Grid Margin="30">
+  <Grid x:Name="MainGrid" Margin="30">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="300*"/>
-      <ColumnDefinition Width="300*"/>
-      <ColumnDefinition Width="13*"/>
+      <ColumnDefinition x:Name="LeftColumn" Width="*"/>
+      <ColumnDefinition x:Name="RightColumn" Width="*"/>
     </Grid.ColumnDefinitions>
-    <StackPanel MaxWidth="600" HorizontalAlignment="Left" Width="618" Grid.ColumnSpan="3">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    
+    <!-- 左侧列：Notion 服务配置和任务并发设置 -->
+    <StackPanel x:Name="LeftPanel" Grid.Column="0" Margin="0,0,15,0" MaxWidth="600">
 
       <ui:TextBlock Text="Notion 服务配置" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
@@ -90,8 +94,12 @@
                Click="OnSaveClick" />
       </StackPanel>
 
+    </StackPanel>
+    
+    <!-- 右侧列：外观设置和关于 -->
+    <StackPanel x:Name="RightPanel" Grid.Column="1" Margin="15,0,0,0" MaxWidth="600">
       <!-- 外观设置 -->
-      <ui:TextBlock Text="外观" FontTypography="Subtitle" Margin="0,30,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+      <ui:TextBlock Text="外观" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
       <ui:Card Padding="15">
         <StackPanel>
@@ -242,7 +250,6 @@
           </Border>
         </StackPanel>
       </ui:Card>
-
     </StackPanel>
   </Grid>
 </Page>
