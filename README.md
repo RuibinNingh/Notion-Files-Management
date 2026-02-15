@@ -112,4 +112,9 @@
 ---
 
 ## License
-暂无
+
+MIT License
+
+Copyright (c) 2026 Ruibin_Ningh (GitHub: RuibinNingh) and Zyx_2012 (GitHub: Zyx-2012)
+
+See [LICENSE](LICENSE) file for details.
