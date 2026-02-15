@@ -4,6 +4,7 @@ import os
 import time
 import random
 from concurrent.futures import ThreadPoolExecutor
+from logger import PythonLogger
 
 
 class Download:
@@ -23,7 +24,7 @@ class Download:
     # -------------------------
     def _dbg(self, method: str, msg: str) -> None:
         if self.debug:
-            print(f"[{self.__class__.__name__}-{method}] {msg}")
+            PythonLogger.debug(f"[{self.__class__.__name__}-{method}] {msg}")
 
     # =========================
     # Probe: async sizes with progress + retry

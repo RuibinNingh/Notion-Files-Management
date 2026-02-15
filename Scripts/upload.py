@@ -13,6 +13,7 @@ import os
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from logger import PythonLogger
 
 
 # =========================
@@ -148,7 +149,7 @@ class Upload:
     # -------------------------
     def _dbg(self, method: str, msg: str) -> None:
         if self.debug:
-            print(f"[{self.__class__.__name__}-{method}] {msg}")
+            PythonLogger.debug(f"[{self.__class__.__name__}-{method}] {msg}")
 
     def _sleep_backoff(self, *, attempt: int) -> float:
         wait = self.backoff_base_s * (2 ** attempt)

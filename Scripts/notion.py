@@ -1,5 +1,7 @@
 import requests
 import time
+from logger import PythonLogger
+
 class Notion:
     def __init__(self, token, version="2025-09-03", url="https://api.notion.com/v1"):
         self.token = token
@@ -31,7 +33,7 @@ class Notion:
                     # 如果是 429 (Too Many Requests) 或 5xx 错误，触发重试
                     if res.status_code in [429, 500, 502, 503, 504]:
                         wait_time = 2 ** attempt # 1, 2, 4, 8...
-                        print(f"[Notion-query_page]⚠️ 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                        PythonLogger.warning(f"触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
                         time.sleep(wait_time)
                         continue
                     
@@ -42,10 +44,10 @@ class Notion:
                 except (requests.exceptions.RequestException, Exception) as e:
                     wait_time = 2 ** attempt
                     if attempt < max_retries - 1:
-                        print(f"[Notion-query_page]❌ 请求异常: {e}，等待 {wait_time}s 后重试...")
+                        PythonLogger.warning(f"请求异常: {e}，等待 {wait_time}s 后重试...")
                         time.sleep(wait_time)
                     else:
-                        print(f"[Notion-query_page]🚨 已达到最大重试次数，任务失败。")
+                        PythonLogger.error(f"已达到最大重试次数，任务失败: {e}")
                         return all_blocks # 返回已拿到的部分数据
             #======请求重试机制=======
             data = res.json()
@@ -123,7 +125,7 @@ class Notion:
             if size_bytes:
                 return round(int(size_bytes) / (1024 * 1024), 2)
         except Exception as e:
-            print(f"[Notion-_get_remote_file_size]获取文件大小失败: {e}")
+            PythonLogger.warning(f"获取文件大小失败: {e}")
         return 0
         
         

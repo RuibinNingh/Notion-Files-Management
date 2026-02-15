@@ -111,13 +111,16 @@ namespace Notion_Files_Management.Services
 					string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
 					sys.path.append(scriptsPath);
 
+					// 获取日志目录（与 C# 日志目录相同）
+					string logDir = Logger.LogDirectory ?? "";
+					
 					dynamic mainMod = Py.Import("main");
-					_pyMain = mainMod.Main(notionToken, maxDownloadWorkers, maxUploadWorkers, notionBaseUrl);
+					_pyMain = mainMod.Main(notionToken, maxDownloadWorkers, maxUploadWorkers, notionBaseUrl, logDir);
 					_currentToken = notionToken;
 					_currentDownloadWorkers = maxDownloadWorkers;
 					_currentUploadWorkers = maxUploadWorkers;
 					_currentUrl = notionBaseUrl;
-					Logger.Info($"END Init Python Main(token, dl={maxDownloadWorkers}, ul={maxUploadWorkers}, url={notionBaseUrl})");
+					Logger.Info($"END Init Python Main(token, dl={maxDownloadWorkers}, ul={maxUploadWorkers}, url={notionBaseUrl}, logDir={logDir})");
 				}
 			}
 			finally
@@ -187,13 +190,16 @@ namespace Notion_Files_Management.Services
 					string scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts");
 					sys.path.append(scriptsPath);
 
+					// 获取日志目录（与 C# 日志目录相同）
+					string logDir = Logger.LogDirectory ?? "";
+					
 					dynamic mainMod = Py.Import("main");
-					_pyMain = mainMod.Main(notionToken, maxDownloadWorkers, maxUploadWorkers, notionBaseUrl);
+					_pyMain = mainMod.Main(notionToken, maxDownloadWorkers, maxUploadWorkers, notionBaseUrl, logDir);
 					_currentToken = notionToken;
 					_currentDownloadWorkers = maxDownloadWorkers;
 					_currentUploadWorkers = maxUploadWorkers;
 					_currentUrl = notionBaseUrl;
-					Logger.Info($"ResetTasks: Reinitialized Main(dl={maxDownloadWorkers}, ul={maxUploadWorkers}, url={notionBaseUrl})");
+					Logger.Info($"ResetTasks: Reinitialized Main(dl={maxDownloadWorkers}, ul={maxUploadWorkers}, url={notionBaseUrl}, logDir={logDir})");
 				}
 			}
 			finally

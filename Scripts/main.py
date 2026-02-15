@@ -1,9 +1,17 @@
 from download import Download
 from notion import Notion
 from upload import Upload
+from logger import PythonLogger
 
 class Main:
-    def __init__(self, notion_token: str, max_download_workers: int = 3,max_upload_workers: int = 3,url="https://api.notion.com/v1" ):
+    def __init__(self, notion_token: str, max_download_workers: int = 3, max_upload_workers: int = 3, url="https://api.notion.com/v1", log_dir: str = None):
+        # 初始化日志系统（如果提供了日志目录）
+        if log_dir:
+            PythonLogger.init(log_dir)
+            self.logger = PythonLogger.get_logger()
+        else:
+            self.logger = PythonLogger.get_logger()
+        
         url = url.rstrip('/')  # 确保 URL 没有尾部斜杠
         self.notion = Notion(notion_token, url=url)
         self.downloader = Download(max_workers=max_download_workers)
@@ -19,6 +27,8 @@ class Main:
             url=url,
         )
         self._probe_size_map = {}
+        
+        self.logger.info(f"Main initialized: dl_workers={max_download_workers}, ul_workers={max_upload_workers}, url={url}")
     # -------------------------
     # Download
     # -------------------------

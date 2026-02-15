@@ -14,10 +14,8 @@ namespace Notion_Files_Management.Views
         {
             InitializeComponent();
 
-            // 从 ConfigManager 读取版本号并展示
-            ConfigManager.Load();
-            var version = ConfigManager.Current?.AppVersion;
-            TxtVersion.Text = string.IsNullOrWhiteSpace(version) ? "" : $"v{version}";
+            // 从 AppVersion 类读取版本号并展示（统一版本号来源）
+            TxtVersion.Text = AppVersion.FullVersionString;
         }
 
         private void OnWebsiteClick(object sender, RoutedEventArgs e)
