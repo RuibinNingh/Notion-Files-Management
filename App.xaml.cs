@@ -8,7 +8,7 @@ using Wpf.Ui.Appearance;
 
 namespace Notion_Files_Management
 {
-	public partial class App : Application
+	public partial class App : System.Windows.Application
 	{
 		protected override void OnStartup(StartupEventArgs e)
 		{
@@ -17,14 +17,34 @@ namespace Notion_Files_Management
 			// 1. 应用深色主题 (这步会从系统读取默认颜色)
 			ApplicationThemeManager.Apply(ApplicationTheme.Dark);
 
-		// 2. 【方案 A】强制覆盖所有 Accent 颜色变体为同色
-			// 这样按钮、进度条等常用元素都会用到 #1E90FF，而不是自动生成的浅化版本
-			var forcedAccent = System.Windows.Media.Color.FromRgb(0x1E, 0x90, 0xFF); // #1E90FF
+		// 2. 应用主题色配置
+			ConfigManager.Load();
+			string themeColorHex = ConfigManager.Current?.ThemeAccentColor ?? ConfigData.DefaultThemeAccentColor;
+			if (string.IsNullOrWhiteSpace(themeColorHex))
+				themeColorHex = ConfigData.DefaultThemeAccentColor;
+			
+			// 确保颜色值格式正确
+			if (!themeColorHex.StartsWith("#"))
+				themeColorHex = "#" + themeColorHex;
+			
+			// 解析颜色值
+			System.Windows.Media.Color accentColor;
+			try
+			{
+				accentColor = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(themeColorHex);
+			}
+			catch
+			{
+				// 如果解析失败，使用默认颜色
+				accentColor = System.Windows.Media.Color.FromRgb(0x1E, 0x90, 0xFF);
+			}
+			
+			// 应用主题色到所有 Accent 颜色变体
 			ApplicationAccentColorManager.Apply(
-				systemAccent: forcedAccent,
-				primaryAccent: forcedAccent,
-				secondaryAccent: forcedAccent,
-				tertiaryAccent: forcedAccent
+				systemAccent: accentColor,
+				primaryAccent: accentColor,
+				secondaryAccent: accentColor,
+				tertiaryAccent: accentColor
 			);
 
 

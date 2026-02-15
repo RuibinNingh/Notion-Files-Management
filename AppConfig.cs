@@ -7,11 +7,20 @@ namespace Notion_Files_Management
 {
 	public class ConfigData
 	{
+		/// <summary>
+		/// 默认主题色常量
+		/// </summary>
+		public const string DefaultThemeAccentColor = "#1E90FF";
+
 		public string NotionToken { get; set; } = "";
 		public string NotionBaseUrl { get; set; } = "https://api.notion.com/v1";
 		// Download/Upload concurrency configured in Settings page
 		public int MaxDownloadWorkers { get; set; } = 3;
 		public int MaxUploadWorkers { get; set; } = 3;
+		/// <summary>
+		/// 主题色（Accent Color），格式为十六进制颜色值，如 "#1E90FF"
+		/// </summary>
+		public string ThemeAccentColor { get; set; } = DefaultThemeAccentColor;
 
 		/// <summary>
 		/// 当前应用版本，格式为 {major}.{minor}.{patch}-{State}

@@ -37,7 +37,7 @@ namespace Notion_Files_Management.Views.Tools
             }
         }
 
-        private static string ColorToString(Color c)
+        private static string ColorToString(System.Windows.Media.Color c)
         {
             return $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2} (A={c.A}, R={c.R}, G={c.G}, B={c.B})";
         }
@@ -46,7 +46,7 @@ namespace Notion_Files_Management.Views.Tools
         {
             try
             {
-                if (Application.Current.Resources[resourceKey] is SolidColorBrush brush)
+                if (System.Windows.Application.Current.Resources[resourceKey] is SolidColorBrush brush)
                 {
                     return $"{resourceKey}: {ColorToString(brush.Color)}";
                 }
@@ -59,7 +59,7 @@ namespace Notion_Files_Management.Views.Tools
             }
         }
 
-        private string DescribeButton(string name, Control btn)
+        private string DescribeButton(string name, System.Windows.Controls.Control btn)
         {
             string bg = btn.Background is SolidColorBrush b1 ? ColorToString(b1.Color) : (btn.Background?.ToString() ?? "null");
             string fg = btn.Foreground is SolidColorBrush b2 ? ColorToString(b2.Color) : (btn.Foreground?.ToString() ?? "null");

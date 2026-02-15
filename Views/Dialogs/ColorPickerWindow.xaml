@@ -1,0 +1,266 @@
+<Window x:Class="Notion_Files_Management.Views.Dialogs.ColorPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="选择颜色" 
+        Height="550" 
+        Width="650"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 颜色预览 -->
+        <Border x:Name="ColorPreviewBorder"
+                Grid.Row="0"
+                Height="100"
+                BorderThickness="2"
+                BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"
+                CornerRadius="8"
+                Margin="0,0,0,20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <Border Grid.Column="0" CornerRadius="6,0,0,6">
+                    <Border.Background>
+                        <SolidColorBrush x:Name="ColorPreviewBrush"/>
+                    </Border.Background>
+                    <TextBlock x:Name="ColorHexText"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="20"
+                               FontWeight="Bold"
+                               Foreground="White"
+                               TextAlignment="Center"/>
+                </Border>
+                
+                <Border Grid.Column="1" 
+                        Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        CornerRadius="0,6,6,0"
+                        Padding="15,0">
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="RGB" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="RgbText" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBlock Text="HSV" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,5,0,5"/>
+                        <TextBlock x:Name="HsvText" FontSize="14" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 主颜色选择区域 -->
+        <Grid Grid.Row="1" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 饱和度和亮度选择区域 -->
+            <Border Grid.Column="0" 
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"
+                    CornerRadius="8"
+                    Background="White">
+                <Canvas x:Name="SaturationBrightnessCanvas"
+                        MouseDown="OnSaturationBrightnessMouseDown"
+                        MouseMove="OnSaturationBrightnessMouseMove"
+                        MouseUp="OnSaturationBrightnessMouseUp"
+                        Background="Transparent"
+                        ClipToBounds="True">
+                    <!-- 渐变背景（饱和度从左到右，亮度从下到上） -->
+                    <Rectangle x:Name="SaturationBrightnessGradient" 
+                               Fill="White"
+                               Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                               Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Canvas}}"/>
+                    
+                    <!-- 选择指示器 -->
+                    <Ellipse x:Name="ColorSelector"
+                             Width="16"
+                             Height="16"
+                             Stroke="White"
+                             StrokeThickness="2"
+                             Fill="Transparent"
+                             Canvas.Left="0"
+                             Canvas.Top="0"
+                             Visibility="Collapsed"/>
+                </Canvas>
+            </Border>
+
+            <!-- 色相滑块 -->
+            <Border Grid.Column="2" 
+                    Width="30"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"
+                    CornerRadius="8"
+                    Background="White">
+                <Canvas x:Name="HueCanvas"
+                        MouseDown="OnHueMouseDown"
+                        MouseMove="OnHueMouseMove"
+                        MouseUp="OnHueMouseUp"
+                        Background="Transparent"
+                        ClipToBounds="True">
+                    <!-- 色相渐变 -->
+                    <Rectangle x:Name="HueGradient" 
+                               Fill="White"
+                               Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Canvas}}"
+                               Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Canvas}}"/>
+                    
+                    <!-- 色相选择指示器 -->
+                    <Rectangle x:Name="HueSelector"
+                               Width="30"
+                               Height="8"
+                               Stroke="White"
+                               StrokeThickness="2"
+                               Fill="Transparent"
+                               Canvas.Left="0"
+                               Canvas.Top="0"
+                               Visibility="Collapsed"/>
+                </Canvas>
+            </Border>
+        </Grid>
+
+        <!-- RGB/HSV 输入区域 -->
+        <Grid Grid.Row="2" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- RGB 输入 -->
+            <StackPanel Grid.Column="0">
+                <ui:TextBlock Text="RGB" Margin="0,0,0,8" Appearance="Tertiary" FontWeight="SemiBold"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <ui:TextBlock Text="R:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Width="20"/>
+                    <Slider x:Name="RedSlider" Grid.Row="0" Grid.Column="2" 
+                               Minimum="0" Maximum="255" ValueChanged="OnRgbSliderChanged" Value="30"/>
+                    <ui:TextBox x:Name="RedBox" Grid.Row="0" Grid.Column="4" 
+                                Width="50" TextChanged="OnRgbValueChanged" Text="30"/>
+                    
+                    <ui:TextBlock Text="G:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Width="20"/>
+                    <Slider x:Name="GreenSlider" Grid.Row="1" Grid.Column="2" 
+                               Minimum="0" Maximum="255" ValueChanged="OnRgbSliderChanged" Value="144"/>
+                    <ui:TextBox x:Name="GreenBox" Grid.Row="1" Grid.Column="4" 
+                                Width="50" TextChanged="OnRgbValueChanged" Text="144"/>
+                    
+                    <ui:TextBlock Text="B:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Width="20"/>
+                    <Slider x:Name="BlueSlider" Grid.Row="2" Grid.Column="2" 
+                               Minimum="0" Maximum="255" ValueChanged="OnRgbSliderChanged" Value="255"/>
+                    <ui:TextBox x:Name="BlueBox" Grid.Row="2" Grid.Column="4" 
+                                Width="50" TextChanged="OnRgbValueChanged" Text="255"/>
+                </Grid>
+            </StackPanel>
+
+            <!-- HSV 输入 -->
+            <StackPanel Grid.Column="2">
+                <ui:TextBlock Text="HSV" Margin="0,0,0,8" Appearance="Tertiary" FontWeight="SemiBold"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <ui:TextBlock Text="H:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Width="20"/>
+                    <Slider x:Name="HueSlider" Grid.Row="0" Grid.Column="2" 
+                               Minimum="0" Maximum="360" ValueChanged="OnHsvSliderChanged" Value="210"/>
+                    <ui:TextBox x:Name="HueBox" Grid.Row="0" Grid.Column="4" 
+                                Width="50" TextChanged="OnHsvValueChanged" Text="210"/>
+                    
+                    <ui:TextBlock Text="S:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Width="20"/>
+                    <Slider x:Name="SaturationSlider" Grid.Row="1" Grid.Column="2" 
+                               Minimum="0" Maximum="100" ValueChanged="OnHsvSliderChanged" Value="100"/>
+                    <ui:TextBox x:Name="SaturationBox" Grid.Row="1" Grid.Column="4" 
+                                Width="50" TextChanged="OnHsvValueChanged" Text="100"/>
+                    
+                    <ui:TextBlock Text="V:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Width="20"/>
+                    <Slider x:Name="BrightnessSlider" Grid.Row="2" Grid.Column="2" 
+                               Minimum="0" Maximum="100" ValueChanged="OnHsvSliderChanged" Value="100"/>
+                    <ui:TextBox x:Name="BrightnessBox" Grid.Row="2" Grid.Column="4" 
+                                Width="50" TextChanged="OnHsvValueChanged" Text="100"/>
+                </Grid>
+            </StackPanel>
+        </Grid>
+
+        <!-- 预设颜色 -->
+        <StackPanel Grid.Row="3" Margin="0,0,0,20">
+            <ui:TextBlock Text="预设颜色" Margin="0,0,0,8" Appearance="Tertiary" FontWeight="SemiBold"/>
+            <UniformGrid Columns="12" Rows="3">
+                <!-- 常用颜色 -->
+                <Border Background="#1E90FF" MouseDown="OnPresetColorClick" Tag="#1E90FF" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#FF6B6B" MouseDown="OnPresetColorClick" Tag="#FF6B6B" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#4ECDC4" MouseDown="OnPresetColorClick" Tag="#4ECDC4" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#45B7D1" MouseDown="OnPresetColorClick" Tag="#45B7D1" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#FFA07A" MouseDown="OnPresetColorClick" Tag="#FFA07A" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#98D8C8" MouseDown="OnPresetColorClick" Tag="#98D8C8" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#F7DC6F" MouseDown="OnPresetColorClick" Tag="#F7DC6F" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#BB8FCE" MouseDown="OnPresetColorClick" Tag="#BB8FCE" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#85C1E2" MouseDown="OnPresetColorClick" Tag="#85C1E2" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#F1948A" MouseDown="OnPresetColorClick" Tag="#F1948A" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#52BE80" MouseDown="OnPresetColorClick" Tag="#52BE80" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#F8C471" MouseDown="OnPresetColorClick" Tag="#F8C471" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#A569BD" MouseDown="OnPresetColorClick" Tag="#A569BD" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#5DADE2" MouseDown="OnPresetColorClick" Tag="#5DADE2" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#EC7063" MouseDown="OnPresetColorClick" Tag="#EC7063" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#58D68D" MouseDown="OnPresetColorClick" Tag="#58D68D" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#F4D03F" MouseDown="OnPresetColorClick" Tag="#F4D03F" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#AF7AC5" MouseDown="OnPresetColorClick" Tag="#AF7AC5" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#3498DB" MouseDown="OnPresetColorClick" Tag="#3498DB" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#E74C3C" MouseDown="OnPresetColorClick" Tag="#E74C3C" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#2ECC71" MouseDown="OnPresetColorClick" Tag="#2ECC71" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#F39C12" MouseDown="OnPresetColorClick" Tag="#F39C12" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#9B59B6" MouseDown="OnPresetColorClick" Tag="#9B59B6" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#2980B9" MouseDown="OnPresetColorClick" Tag="#2980B9" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#C0392B" MouseDown="OnPresetColorClick" Tag="#C0392B" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#27AE60" MouseDown="OnPresetColorClick" Tag="#27AE60" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#D68910" MouseDown="OnPresetColorClick" Tag="#D68910" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#7D3C98" MouseDown="OnPresetColorClick" Tag="#7D3C98" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#34495E" MouseDown="OnPresetColorClick" Tag="#34495E" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#95A5A6" MouseDown="OnPresetColorClick" Tag="#95A5A6" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#ECF0F1" MouseDown="OnPresetColorClick" Tag="#ECF0F1" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#2C3E50" MouseDown="OnPresetColorClick" Tag="#2C3E50" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#7F8C8D" MouseDown="OnPresetColorClick" Tag="#7F8C8D" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+                <Border Background="#BDC3C7" MouseDown="OnPresetColorClick" Tag="#BDC3C7" Cursor="Hand" Margin="2" BorderThickness="1" BorderBrush="{DynamicResource ControlFillColorDefaultBrush}"/>
+            </UniformGrid>
+        </StackPanel>
+
+        <!-- 按钮 -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <ui:Button Content="取消" 
+                       Click="OnCancelClick" 
+                       Margin="0,0,10,0"/>
+            <ui:Button Content="确定" 
+                       Style="{StaticResource BluePrimaryUiButton}"
+                       Click="OnOkClick"/>
+        </StackPanel>
+    </Grid>
+</Window>

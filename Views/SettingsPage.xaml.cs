@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
 using Wpf.Ui.Controls;
@@ -47,10 +48,25 @@ namespace Notion_Files_Management.Views
                 NotionUrlInput.Text = ConfigManager.Current.NotionBaseUrl ?? "https://api.notion.com/v1";
                 SelectComboByInt(DownloadWorkersCombo, ClampWorkers(ConfigManager.Current.MaxDownloadWorkers));
                 SelectComboByInt(UploadWorkersCombo, ClampWorkers(ConfigManager.Current.MaxUploadWorkers));
+                
+                // 加载主题色配置
+                LoadThemeColor();
             }
 
             // 显示当前版本号
             TxtCurrentVersion.Text = $"当前版本：{AppVersion.FullVersionString}";
+            
+            // 初始化颜色选择器事件监听
+            Loaded += (s, e) =>
+            {
+                if (ColorPicker != null)
+                {
+                    var dpd = System.ComponentModel.DependencyPropertyDescriptor.FromProperty(
+                        Views.Controls.InlineColorPicker.SelectedColorProperty,
+                        typeof(Views.Controls.InlineColorPicker));
+                    dpd?.AddValueChanged(ColorPicker, OnColorPickerColorChanged);
+                }
+            };
         }
 
         private void OnSaveClick(object sender, RoutedEventArgs e)
@@ -70,6 +86,13 @@ namespace Notion_Files_Management.Views
                 ConfigManager.Current.NotionBaseUrl      = cleanedUrl;
                 ConfigManager.Current.MaxDownloadWorkers = dl;
                 ConfigManager.Current.MaxUploadWorkers   = ul;
+                
+                // 保存主题色（从嵌入式颜色选择器读取）
+                if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
+                {
+                    ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
+                }
+                
                 ConfigManager.Save();
             }
             catch (Exception ex)
@@ -179,7 +202,7 @@ namespace Notion_Files_Management.Views
             }
             catch (Exception ex)
             {
-                Logger.Warning($"[SettingsPage] HTTPS request failed, trying HTTP: {ex.Message}");
+                Logger.Warn($"[SettingsPage] HTTPS request failed, trying HTTP: {ex.Message}");
             }
 
             // HTTPS 失败，降级到 HTTP
@@ -222,7 +245,7 @@ namespace Notion_Files_Management.Views
                         var row = new Grid
                         {
                             Margin = new Thickness(0, 0, 0, 4),
-                            HorizontalAlignment = HorizontalAlignment.Stretch
+                            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch
                         };
                         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -358,7 +381,7 @@ namespace Notion_Files_Management.Views
             return v;
         }
 
-        private static int ReadComboInt(ComboBox combo, int fallback)
+        private static int ReadComboInt(System.Windows.Controls.ComboBox combo, int fallback)
         {
             try
             {
@@ -370,7 +393,7 @@ namespace Notion_Files_Management.Views
             return fallback;
         }
 
-        private static void SelectComboByInt(ComboBox combo, int value)
+        private static void SelectComboByInt(System.Windows.Controls.ComboBox combo, int value)
         {
             foreach (var obj in combo.Items.OfType<ComboBoxItem>())
             {
@@ -392,6 +415,115 @@ namespace Notion_Files_Management.Views
                 !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                 return "https://api.notion.com/v1";
             return url.TrimEnd('/');
+        }
+
+        // ── 主题色相关方法 ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// 加载主题色配置到UI
+        /// </summary>
+        private void LoadThemeColor()
+        {
+            try
+            {
+                string colorHex = ConfigManager.Current?.ThemeAccentColor ?? ConfigData.DefaultThemeAccentColor;
+                if (string.IsNullOrWhiteSpace(colorHex))
+                    colorHex = ConfigData.DefaultThemeAccentColor;
+
+                // 确保颜色值格式正确
+                if (!colorHex.StartsWith("#"))
+                    colorHex = "#" + colorHex;
+
+                // 设置嵌入式颜色选择器的初始颜色
+                if (ColorPicker != null)
+                {
+                    ColorPicker.SelectedColor = colorHex;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Load theme color failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 颜色选择器颜色变化事件处理
+        /// </summary>
+        private void OnColorPickerColorChanged(object? sender, EventArgs e)
+        {
+            try
+            {
+                if (ColorPicker == null) return;
+                
+                string selectedColor = ColorPicker.SelectedColor;
+                if (string.IsNullOrWhiteSpace(selectedColor))
+                    return;
+
+                // 立即保存到配置
+                ConfigManager.Load();
+                ConfigManager.Current.ThemeAccentColor = selectedColor;
+                ConfigManager.Save();
+                
+                Logger.Info($"[SettingsPage] Theme color changed to: {selectedColor}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Save theme color failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 点击"重启应用"按钮
+        /// </summary>
+        private void OnRestartAppClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 获取当前应用程序的路径
+                string appPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                
+                ProcessStartInfo startInfo;
+                
+                // 如果是 .dll 文件（Debug 模式），需要特殊处理
+                if (appPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 尝试查找同名的 .exe 文件
+                    string exePath = appPath.Substring(0, appPath.Length - 4) + ".exe";
+                    if (System.IO.File.Exists(exePath))
+                    {
+                        // 如果找到 .exe 文件，使用它
+                        startInfo = new ProcessStartInfo(exePath) { UseShellExecute = true };
+                    }
+                    else
+                    {
+                        // 如果找不到 .exe，使用 dotnet 命令运行 .dll
+                        startInfo = new ProcessStartInfo
+                        {
+                            FileName = "dotnet",
+                            Arguments = $"\"{appPath}\"",
+                            UseShellExecute = true
+                        };
+                    }
+                }
+                else
+                {
+                    // 如果是 .exe 文件（Release 模式或已发布版本），直接启动
+                    startInfo = new ProcessStartInfo(appPath) { UseShellExecute = true };
+                }
+                
+                // 启动新进程
+                Process.Start(startInfo);
+                
+                // 关闭当前应用
+                Application.Current.Shutdown();
+                
+                Logger.Info("[SettingsPage] Application restarted");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Failed to restart application", ex);
+                System.Windows.MessageBox.Show($"重启应用失败：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            }
         }
     }
 }
