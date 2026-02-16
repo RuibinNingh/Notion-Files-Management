@@ -32,10 +32,7 @@ namespace Notion_Files_Management.Views
             try { PageInfoListView.ItemsSource = PageInfoItems; } catch { }
 
             // Warm up backend (no UI blocking)
-            _ = Task.Run(async () =>
-            {
-                try { await _svc.EnsureBackendReadyFromConfigAsync(); } catch { }
-            });
+            UiHelpers.WarmUpBackend();
         }
 
         // ===== Modal controls =====
@@ -54,24 +51,9 @@ namespace Notion_Files_Management.Views
 
         private void PageIdInput_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (_isFormattingPageId)
-                return;
-
-            try
+            if (sender is TextBox textBox)
             {
-                var (formatted, isValid, hint) = NotionPageId.AutoFormat(PageIdInput.Text);
-                PageIdErrorText.Text = hint;
-
-                if (isValid && !string.Equals(PageIdInput.Text, formatted, StringComparison.Ordinal))
-                {
-                    _isFormattingPageId = true;
-                    PageIdInput.Text = formatted;
-                    PageIdInput.CaretIndex = formatted.Length;
-                }
-            }
-            finally
-            {
-                _isFormattingPageId = false;
+                PageIdInputHelper.HandleTextChanged(textBox, PageIdErrorText, ref _isFormattingPageId);
             }
         }
 

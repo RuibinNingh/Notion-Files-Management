@@ -122,25 +122,20 @@ namespace Notion_Files_Management.Views
                 return;
             
             const double breakpoint = 1200.0; // 断点：1200px
+            bool isSingleColumn = windowWidth < breakpoint;
             
-            if (windowWidth < breakpoint)
+            if (isSingleColumn)
             {
                 // 单列布局：将右侧列的内容移到左侧列下方
                 if (RightPanel.Parent == MainGrid && Grid.GetColumn(RightPanel) == 1)
                 {
-                    // 将右侧面板移到左侧列
                     Grid.SetColumn(RightPanel, 0);
                     Grid.SetRow(RightPanel, 1);
-                    
-                    // 调整边距
                     RightPanel.Margin = new Thickness(0, 30, 0, 0);
                     LeftPanel.Margin = new Thickness(0, 0, 0, 0);
                     
-                    // 添加行定义（如果还没有）
                     if (MainGrid.RowDefinitions.Count < 2)
-                    {
                         MainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                    }
                 }
             }
             else
@@ -148,39 +143,43 @@ namespace Notion_Files_Management.Views
                 // 两列布局：恢复为两列
                 if (RightPanel.Parent == MainGrid && Grid.GetRow(RightPanel) == 1)
                 {
-                    // 将右侧面板移回右侧列
                     Grid.SetColumn(RightPanel, 1);
                     Grid.SetRow(RightPanel, 0);
-                    
-                    // 调整边距
                     RightPanel.Margin = new Thickness(15, 0, 0, 0);
                     LeftPanel.Margin = new Thickness(0, 0, 15, 0);
                 }
             }
         }
 
+        /// <summary>
+        /// 保存基础配置（Token、URL、并发数）
+        /// </summary>
+        private void SaveBasicConfig()
+        {
+            ConfigManager.Load();
+
+            string inputToken = TokenInput.Password?.Trim() ?? "";
+            string inputUrl = NotionUrlInput.Text?.Trim() ?? "";
+            int dl = ClampWorkers(ReadComboInt(DownloadWorkersCombo, fallback: 3));
+            int ul = ClampWorkers(ReadComboInt(UploadWorkersCombo, fallback: 3));
+
+            string cleanedUrl = CleanAndValidateUrl(inputUrl);
+
+            ConfigManager.Current.NotionToken = inputToken;
+            ConfigManager.Current.NotionBaseUrl = cleanedUrl;
+            ConfigManager.Current.MaxDownloadWorkers = dl;
+            ConfigManager.Current.MaxUploadWorkers = ul;
+            
+            ConfigManager.Save();
+        }
+
         private void OnSaveClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                ConfigManager.Load();
-
-                string inputToken = TokenInput.Password?.Trim() ?? "";
-                string inputUrl   = NotionUrlInput.Text?.Trim() ?? "";
-                int dl = ClampWorkers(ReadComboInt(DownloadWorkersCombo, fallback: 3));
-                int ul = ClampWorkers(ReadComboInt(UploadWorkersCombo,   fallback: 3));
-
-                string cleanedUrl = CleanAndValidateUrl(inputUrl);
-
-                ConfigManager.Current.NotionToken        = inputToken;
-                ConfigManager.Current.NotionBaseUrl      = cleanedUrl;
-                ConfigManager.Current.MaxDownloadWorkers = dl;
-                ConfigManager.Current.MaxUploadWorkers   = ul;
-                
+                SaveBasicConfig();
                 // 注意：外观设置（主题色、背景材质）需要通过外观块的保存按钮单独保存
                 // 这里不保存外观设置，避免覆盖用户未保存的外观设置
-                
-                ConfigManager.Save();
             }
             catch (Exception ex)
             {
@@ -192,22 +191,15 @@ namespace Notion_Files_Management.Views
         {
             try
             {
-                ConfigManager.Load();
-
-                string inputToken = TokenInput.Password?.Trim() ?? "";
-                string inputUrl   = NotionUrlInput.Text?.Trim() ?? "";
-                int dl = ClampWorkers(ReadComboInt(DownloadWorkersCombo, fallback: 3));
-                int ul = ClampWorkers(ReadComboInt(UploadWorkersCombo,   fallback: 3));
-
-                string cleanedUrl = CleanAndValidateUrl(inputUrl);
-
-                ConfigManager.Current.NotionToken        = inputToken;
-                ConfigManager.Current.NotionBaseUrl      = cleanedUrl;
-                ConfigManager.Current.MaxDownloadWorkers = dl;
-                ConfigManager.Current.MaxUploadWorkers   = ul;
-                ConfigManager.Save();
+                SaveBasicConfig();
 
                 BtnApplyWorkersReset.IsEnabled = false;
+
+                string inputToken = TokenInput.Password?.Trim() ?? "";
+                string inputUrl = NotionUrlInput.Text?.Trim() ?? "";
+                int dl = ClampWorkers(ReadComboInt(DownloadWorkersCombo, fallback: 3));
+                int ul = ClampWorkers(ReadComboInt(UploadWorkersCombo, fallback: 3));
+                string cleanedUrl = CleanAndValidateUrl(inputUrl);
 
                 await PythonBackendHost.Instance.ResetTasksAndReinitialize(inputToken, dl, ul, cleanedUrl);
 
@@ -691,24 +683,32 @@ namespace Notion_Files_Management.Views
         }
 
         /// <summary>
+        /// 保存外观设置（主题色和背景材质）
+        /// </summary>
+        private void SaveAppearanceSettings()
+        {
+            ConfigManager.Load();
+
+            // 保存主题色（从嵌入式颜色选择器读取）
+            if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
+            {
+                ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
+            }
+
+            // 保存背景材质配置
+            SaveBackgroundMaterial();
+
+            ConfigManager.Save();
+        }
+
+        /// <summary>
         /// 点击"保存"按钮（仅保存外观设置，不重启）
         /// </summary>
         private void OnSaveAppearanceClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                ConfigManager.Load();
-
-                // 保存主题色（从嵌入式颜色选择器读取）
-                if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
-                {
-                    ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
-                }
-
-                // 保存背景材质配置
-                SaveBackgroundMaterial();
-
-                ConfigManager.Save();
+                SaveAppearanceSettings();
 
                 Logger.Info("[SettingsPage] Appearance settings saved");
                 System.Windows.MessageBox.Show("外观设置已保存。部分设置需要重启应用才能完全生效。", "保存成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
@@ -727,19 +727,7 @@ namespace Notion_Files_Management.Views
         {
             try
             {
-                // 先保存设置
-                ConfigManager.Load();
-
-                // 保存主题色（从嵌入式颜色选择器读取）
-                if (ColorPicker != null && !string.IsNullOrEmpty(ColorPicker.SelectedColor))
-                {
-                    ConfigManager.Current.ThemeAccentColor = ColorPicker.SelectedColor;
-                }
-
-                // 保存背景材质配置
-                SaveBackgroundMaterial();
-
-                ConfigManager.Save();
+                SaveAppearanceSettings();
 
                 Logger.Info("[SettingsPage] Appearance settings saved, restarting application");
 

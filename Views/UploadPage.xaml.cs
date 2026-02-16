@@ -76,10 +76,7 @@ namespace Notion_Files_Management.Views
             };
 
             // Warm up python backend (do not block UI)
-            _ = Task.Run(async () =>
-            {
-                try { await _svc.EnsureBackendReadyFromConfigAsync(); } catch { }
-            });
+            UiHelpers.WarmUpBackend();
         }
 
         // ========== UI: modal open/close ==========
@@ -97,24 +94,9 @@ namespace Notion_Files_Management.Views
 
         private void PageIdInput_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (_isFormattingPageId)
-                return;
-
-            try
+            if (sender is TextBox textBox)
             {
-                var (formatted, isValid, hint) = NotionPageId.AutoFormat(PageIdInput.Text);
-                PageIdErrorText.Text = hint;
-
-                if (isValid && !string.Equals(PageIdInput.Text, formatted, StringComparison.Ordinal))
-                {
-                    _isFormattingPageId = true;
-                    PageIdInput.Text = formatted;
-                    PageIdInput.CaretIndex = formatted.Length;
-                }
-            }
-            finally
-            {
-                _isFormattingPageId = false;
+                PageIdInputHelper.HandleTextChanged(textBox, PageIdErrorText, ref _isFormattingPageId);
             }
         }
 
