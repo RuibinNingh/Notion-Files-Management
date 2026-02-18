@@ -332,19 +332,6 @@ namespace Notion_Files_Management.Views
                 return;
             }
 
-            // Best-effort URL expiry pre-check (Notion file urls expire).
-            var expired = selected
-                .Where(x => x.expiry_utc is DateTimeOffset dto && dto <= DateTimeOffset.UtcNow)
-                .ToList();
-
-            if (expired.Count > 0)
-            {
-                MessageBox.Show($"检测到 {expired.Count} 个文件的下载链接已过期（expiry_time 早于当前时间）。\n请重新获取列表后再开始下载。");
-                if (btn != null)
-                    btn.Content = oldContent;
-                return;
-            }
-
             try
             {
                 Logger.Info($"Starting download. selected={selected.Count}, saveDir={_saveDirectory}");
@@ -439,6 +426,7 @@ namespace Notion_Files_Management.Views
                     item.speed_mb_s = s.speed_mb_s;
                     item.ETA = s.ETA;
                     item.error = s.error;
+                    item.created_time = s.created_time;
                 }
             }
 

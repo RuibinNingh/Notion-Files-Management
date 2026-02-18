@@ -1,16 +1,15 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
 
 namespace Notion_Files_Management.Utils
 {
 	/// <summary>
-	/// 简单、稳定、零依赖的控制台日志。
+	/// 简单、稳定、零依赖的日志。
 	/// - 时间戳 + 线程 + 级别
 	/// - 可选输出异常
-	/// - 启动时确保 Console 可用（必要时 AllocConsole）
+	/// - 支持文件日志
 	/// </summary>
 	internal static class Logger
 	{
@@ -27,32 +26,6 @@ namespace Notion_Files_Management.Utils
 		/// 获取日志文件夹路径
 		/// </summary>
 		public static string? LogDirectory { get; private set; }
-
-		public static void InitConsole(bool forceAllocConsole = false)
-		{
-			try
-			{
-				// 如果没有控制台（例如 WinExe 或双击启动），可选择创建一个。
-				if (forceAllocConsole && GetConsoleWindow() == IntPtr.Zero)
-				{
-					AllocConsole();
-				}
-
-				Console.OutputEncoding = Encoding.UTF8;
-				Console.InputEncoding = Encoding.UTF8;
-
-				// 让 Trace/Debug 也走到 Console（可选）。
-				if (Trace.Listeners.Count == 0)
-				{
-					Trace.Listeners.Add(new TextWriterTraceListener(Console.Out));
-					Trace.AutoFlush = true;
-				}
-			}
-			catch
-			{
-				// ignore
-			}
-		}
 
 		public static void InitFileLogging()
 		{
@@ -97,8 +70,6 @@ namespace Notion_Files_Management.Utils
 		public static void Debug(string message) => Write(Level.Debug, message);
 		public static void Info(string message) => Write(Level.Info, message);
 		public static void Warn(string message) => Write(Level.Warn, message);
-		// Backwards-compatible alias used in some files
-		public static void Warning(string message) => Warn(message);
 		public static void Error(string message, Exception? ex = null) => Write(Level.Error, message, ex);
 
 		public static IDisposable Time(string scopeName)
@@ -145,7 +116,5 @@ namespace Notion_Files_Management.Utils
 			}
 		}
 
-		[DllImport("kernel32.dll")] private static extern bool AllocConsole();
-		[DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
 	}
 }

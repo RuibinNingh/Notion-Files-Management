@@ -13,7 +13,7 @@ namespace Notion_Files_Management.Utils
             string s = ret.Trim();
             if (s.StartsWith("OK", StringComparison.OrdinalIgnoreCase))
                 return true;
-            string[] okKeywords = new[] { "success", "started", "已启动", "started" };
+            string[] okKeywords = new[] { "success", "started", "已启动" };
             foreach (var k in okKeywords)
             {
                 if (s.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0)

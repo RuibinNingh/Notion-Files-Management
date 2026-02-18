@@ -15,6 +15,23 @@
 			<RowDefinition Height="*" />
 		</Grid.RowDefinitions>
 
+		<!-- 背景图片/视频层（仅在 Image 模式下显示） -->
+		<Grid x:Name="BackgroundMediaLayer" Grid.RowSpan="2" Visibility="Collapsed">
+			<Image x:Name="BackgroundImage" 
+			       Stretch="UniformToFill"
+			       Visibility="Collapsed"/>
+			<MediaElement x:Name="BackgroundVideo"
+			              Stretch="UniformToFill"
+			              LoadedBehavior="Manual"
+			              UnloadedBehavior="Stop"
+			              IsMuted="True"
+			              Visibility="Collapsed"/>
+			<!-- 半透明覆盖层，用于调整对比度 -->
+			<Border x:Name="BackgroundOverlay"
+			        Background="{DynamicResource ApplicationBackgroundBrush}"
+			        Opacity="0.7"/>
+		</Grid>
+
 		<!-- 自定义 TitleBar，在其中手动添加图标 -->
 		<ui:TitleBar Grid.Row="0" 
                       Title="Notion-Files-Management" 

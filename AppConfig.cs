@@ -1,8 +1,6 @@
 using System;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace Notion_Files_Management
 {
 	public class ConfigData
@@ -23,7 +21,7 @@ namespace Notion_Files_Management
 		public string ThemeAccentColor { get; set; } = DefaultThemeAccentColor;
 
 		/// <summary>
-		/// 背景材质类型，可选值："Mica"（云母）或 "Acrylic"（亚克力）
+		/// 背景材质类型，可选值："Mica"（云母）、"Acrylic"（亚克力）或 "Image"（图片/视频）
 		/// 默认值："Mica"
 		/// </summary>
 		public string BackgroundMaterial { get; set; } = "Mica";
@@ -36,12 +34,24 @@ namespace Notion_Files_Management
 		public double AcrylicOpacity { get; set; } = 0.8;
 
 		/// <summary>
-		/// 当前应用版本，格式为 {major}.{minor}.{patch}-{State}
-		/// 状态可选：Stable / Beta
-		/// 由构建/安装程序写入；运行时只读。
+		/// 背景图片/视频路径（仅在 BackgroundMaterial 为 "Image" 时生效）
+		/// 支持 .png, .jpg, .jpeg, .bmp, .gif, .mp4 格式
 		/// </summary>
-		[JsonPropertyName("version")]
-		public string AppVersion { get; set; } = "1.0.2-Beta";
+		public string BackgroundImagePath { get; set; } = "";
+
+		/// <summary>
+		/// 背景图片/视频模糊度，范围 0-50（像素）
+		/// 仅在 BackgroundMaterial 为 "Image" 时生效
+		/// 默认值：0（不模糊）
+		/// </summary>
+		public double BackgroundImageBlur { get; set; } = 0;
+
+		/// <summary>
+		/// 背景图片/视频不透明度，范围 0.0-1.0
+		/// 仅在 BackgroundMaterial 为 "Image" 时生效
+		/// 默认值：0.3
+		/// </summary>
+		public double BackgroundImageOpacity { get; set; } = 0.3;
 	}
 
 	public static class ConfigManager
@@ -67,9 +77,6 @@ namespace Notion_Files_Management
 				// 兼容处理：如果 NotionBaseUrl 为空，设置默认值
 				if (string.IsNullOrWhiteSpace(Current.NotionBaseUrl))
 					Current.NotionBaseUrl = "https://api.notion.com/v1";
-				// 兼容处理：版本号为空则使用默认值
-				if (string.IsNullOrWhiteSpace(Current.AppVersion))
-					Current.AppVersion = "1.0.0-Beta";
 			}
 			catch { }
 		}

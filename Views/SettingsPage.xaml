@@ -4,252 +4,276 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:controls="clr-namespace:Notion_Files_Management.Views.Controls"
       Title="设置">
+
+  <!-- 
+    不使用自己的 ScrollViewer。
+    WPF-UI NavigationView 内部模板已包含 ScrollViewer（PART_ContentPresenterScrollViewer），
+    如果嵌套 ScrollViewer，内层会获得无限高度，永远不需要滚动。
+    让 NavigationView 的 ScrollViewer 统一处理页面滚动。
+  -->
   <Grid x:Name="MainGrid" Margin="30">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition x:Name="LeftColumn" Width="*"/>
-      <ColumnDefinition x:Name="RightColumn" Width="*"/>
+      <ColumnDefinition x:Name="LeftColumnDef" Width="*"/>
+      <ColumnDefinition x:Name="RightColumnDef" Width="*"/>
     </Grid.ColumnDefinitions>
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-    </Grid.RowDefinitions>
-    
-    <!-- 左侧列：Notion 服务配置和任务并发设置 -->
-    <StackPanel x:Name="LeftPanel" Grid.Column="0" Margin="0,0,15,0" MaxWidth="600">
 
-      <ui:TextBlock Text="Notion 服务配置" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+    <!-- 两列容器，内容由 code-behind 动态分配 -->
+    <StackPanel x:Name="ColumnLeft" Grid.Column="0" Margin="0,0,15,0"/>
+    <StackPanel x:Name="ColumnRight" Grid.Column="1" Margin="15,0,0,0"/>
 
-      <ui:Card Padding="15">
-        <StackPanel>
-          <ui:TextBlock Text="Integration Token" Margin="0,0,0,8" Appearance="Tertiary"/>
+    <!-- ═══ 节区块池（初始隐藏，Loaded 后分配到列中） ═══ -->
+    <StackPanel x:Name="SectionPool" Visibility="Collapsed">
 
-          <ui:PasswordBox 
-                        x:Name="TokenInput"
-                        PlaceholderText="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                        RevealButtonEnabled="True">
-                        <ui:PasswordBox.Icon>
-                          <ui:SymbolIcon Symbol="Key24" Style="{StaticResource InputIconStyle}"/>
-                        </ui:PasswordBox.Icon>
-                      </ui:PasswordBox>
-        </StackPanel>
-      </ui:Card>
+      <!-- ── 节区块 1：Notion 服务配置 ── -->
+      <StackPanel x:Name="SectionNotionConfig">
+        <ui:TextBlock Text="Notion 服务配置" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <ui:Card Padding="15">
+          <StackPanel>
+            <ui:TextBlock Text="Integration Token" Margin="0,0,0,8" Appearance="Tertiary"/>
+            <ui:PasswordBox 
+              x:Name="TokenInput"
+              PlaceholderText="ntn_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              RevealButtonEnabled="True">
+              <ui:PasswordBox.Icon>
+                <ui:SymbolIcon Symbol="Key24" Style="{StaticResource InputIconStyle}"/>
+              </ui:PasswordBox.Icon>
+            </ui:PasswordBox>
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
 
-      <ui:TextBlock Text="任务并发设置" FontTypography="Subtitle" Margin="0,20,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+      <!-- ── 节区块 2：任务并发设置 ── -->
+      <StackPanel x:Name="SectionTaskWorkers">
+        <ui:TextBlock Text="任务并发设置" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <ui:Card Padding="15">
+          <StackPanel>
+            <ui:TextBlock Text="Notion 地址" Appearance="Tertiary" Margin="0,0,0,6"/>
+            <ui:TextBox 
+              x:Name="NotionUrlInput"
+              PlaceholderText="https://api.notion.com/v1"
+              Margin="0,0,0,14">
+              <ui:TextBox.Icon>
+                <ui:SymbolIcon Symbol="Globe24" Style="{StaticResource InputIconStyle}"/>
+              </ui:TextBox.Icon>
+            </ui:TextBox>
+            <ui:TextBlock Text="默认：https://api.notion.com/v1" 
+                 Appearance="Tertiary" FontSize="12" Margin="0,0,0,14"/>
 
-      <ui:Card Padding="15">
-        <StackPanel>
-          <ui:TextBlock Text="Notion 地址" Appearance="Tertiary" Margin="0,0,0,6"/>
-          <ui:TextBox 
-                        x:Name="NotionUrlInput"
-                        PlaceholderText="https://api.notion.com/v1"
-                        Margin="0,0,0,14">
-                        <ui:TextBox.Icon>
-                          <ui:SymbolIcon Symbol="Globe24" Style="{StaticResource InputIconStyle}"/>
-                        </ui:TextBox.Icon>
-                      </ui:TextBox>
-          <ui:TextBlock Text="默认：https://api.notion.com/v1" 
-               Appearance="Tertiary" 
-               FontSize="12" 
-               Margin="0,0,0,14"/>
+            <ui:TextBlock Text="下载并发数" Appearance="Tertiary" Margin="0,0,0,6"/>
+            <ComboBox x:Name="DownloadWorkersCombo" SelectedIndex="1" Margin="0,0,0,14">
+              <ComboBoxItem Content="1"/>
+              <ComboBoxItem Content="3"/>
+              <ComboBoxItem Content="5"/>
+              <ComboBoxItem Content="8"/>
+            </ComboBox>
 
-          <ui:TextBlock Text="下载并发数" Appearance="Tertiary" Margin="0,0,0,6"/>
-          <ComboBox x:Name="DownloadWorkersCombo" SelectedIndex="1" Margin="0,0,0,14">
-            <ComboBoxItem Content="1"/>
-            <ComboBoxItem Content="3"/>
-            <ComboBoxItem Content="5"/>
-            <ComboBoxItem Content="8"/>
-          </ComboBox>
+            <ui:TextBlock Text="上传并发数" Appearance="Tertiary" Margin="0,0,0,6"/>
+            <ComboBox x:Name="UploadWorkersCombo" SelectedIndex="1" Margin="0,0,0,6">
+              <ComboBoxItem Content="1"/>
+              <ComboBoxItem Content="3"/>
+              <ComboBoxItem Content="5"/>
+              <ComboBoxItem Content="8"/>
+            </ComboBox>
 
-          <ui:TextBlock Text="上传并发数" Appearance="Tertiary" Margin="0,0,0,6"/>
-          <ComboBox x:Name="UploadWorkersCombo" SelectedIndex="1" Margin="0,0,0,6">
-            <ComboBoxItem Content="1"/>
-            <ComboBoxItem Content="3"/>
-            <ComboBoxItem Content="5"/>
-            <ComboBoxItem Content="8"/>
-          </ComboBox>
+            <ui:TextBlock Text="说明：并发数由设置页统一管理，下载/上传页不再单独配置。" Appearance="Tertiary" FontSize="12" Margin="0,8,0,0"/>
 
-          <ui:TextBlock Text="说明：并发数由设置页统一管理，下载/上传页不再单独配置。" Appearance="Tertiary" FontSize="12" Margin="0,8,0,0"/>
-
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
               <ui:Button x:Name="BtnApplyWorkersReset"
                      Style="{StaticResource BluePrimaryUiButton}"
                      Content="应用并重置任务"
                      Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
                      Click="OnApplyWorkersResetClick" />
+            </StackPanel>
           </StackPanel>
+        </ui:Card>
+
+        <ui:TextBlock 
+          Text="数据将存储在: AppData\Roaming\NotionFilesManagement\config.json" 
+          Appearance="Tertiary" FontSize="12" Margin="0,15,0,0"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+          <ui:Button x:Name="BtnSave"
+                 Style="{StaticResource BluePrimaryUiButton}"
+                 Content="保存配置"
+                 Icon="{ui:SymbolIcon Symbol=Save24}"
+                 Click="OnSaveClick" />
         </StackPanel>
-      </ui:Card>
-
-      <ui:TextBlock 
-        Text="数据将存储在: AppData\Roaming\NotionFilesManagement\config.json" 
-        Appearance="Tertiary" 
-        FontSize="12"
-        Margin="0,15,0,0"/>
-
-      <!-- Actions (moved to bottom) -->
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-        <ui:Button x:Name="BtnSave"
-               Style="{StaticResource BluePrimaryUiButton}"
-               Content="保存配置"
-               Icon="{ui:SymbolIcon Symbol=Save24}"
-               Click="OnSaveClick" />
       </StackPanel>
 
-    </StackPanel>
-    
-    <!-- 右侧列：外观设置和关于 -->
-    <StackPanel x:Name="RightPanel" Grid.Column="1" Margin="15,0,0,0" MaxWidth="600">
-      <!-- 外观设置 -->
-      <ui:TextBlock Text="外观" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+      <!-- ── 节区块 3：主题色 ── -->
+      <StackPanel x:Name="SectionThemeColor">
+        <ui:TextBlock Text="主题色" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <ui:Card Padding="15">
+          <StackPanel>
+            <controls:InlineColorPicker x:Name="ColorPicker" Margin="0,0,0,8"/>
+            <ui:TextBlock Text="说明：主题色将应用于按钮、进度条等界面元素。修改后需要保存并重启应用才能完全生效。" 
+                 Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
 
-      <ui:Card Padding="15">
-        <StackPanel>
-          <ui:TextBlock Text="主题色" Margin="0,0,0,8" Appearance="Tertiary"/>
-          
-          <!-- 嵌入式颜色选择器 -->
-          <controls:InlineColorPicker x:Name="ColorPicker"
-                                       Margin="0,0,0,8"/>
-          
-          <ui:TextBlock Text="说明：主题色将应用于按钮、进度条等界面元素。修改后需要保存并重启应用才能完全生效。" 
-               Appearance="Tertiary" 
-               FontSize="12" 
-               Margin="0,8,0,15"/>
+      <!-- ── 节区块 4：背景材质 ── -->
+      <StackPanel x:Name="SectionBackground">
+        <ui:TextBlock Text="背景材质" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <ui:Card Padding="15">
+          <StackPanel>
+            <ComboBox x:Name="BackgroundMaterialCombo" 
+                      SelectionChanged="OnBackgroundMaterialChanged"
+                      Margin="0,0,0,8">
+              <ComboBoxItem Content="云母材质" Tag="Mica"/>
+              <ComboBoxItem Content="亚克力材质" Tag="Acrylic"/>
+              <ComboBoxItem Content="图片" Tag="Image"/>
+            </ComboBox>
 
-          <ui:TextBlock Text="背景材质" Margin="0,0,0,8" Appearance="Tertiary"/>
-          
-          <ComboBox x:Name="BackgroundMaterialCombo" 
-                    SelectionChanged="OnBackgroundMaterialChanged"
-                    Margin="0,0,0,8">
-            <ComboBoxItem Content="云母材质" Tag="Mica"/>
-            <ComboBoxItem Content="亚克力材质" Tag="Acrylic"/>
-          </ComboBox>
+            <!-- 亚克力材质不透明度设置 -->
+            <StackPanel x:Name="AcrylicOpacityPanel" Visibility="Collapsed">
+              <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Slider x:Name="AcrylicOpacitySlider"
+                        Grid.Column="0" Minimum="0.0" Maximum="1.0"
+                        TickFrequency="0.1" IsSnapToTickEnabled="True"
+                        ValueChanged="OnAcrylicOpacityChanged" Margin="0,0,12,0"/>
+                <ui:TextBlock x:Name="AcrylicOpacityValue" Grid.Column="1"
+                             Text="80%" VerticalAlignment="Center"
+                             MinWidth="40" TextAlignment="Right"/>
+              </Grid>
+              <ui:TextBlock Text="为了节省性能，系统会在软件未聚焦时显示为背景色，这是系统笔刷的特性，我们这边是无法改变的。" 
+                   Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            </StackPanel>
 
-          <!-- 亚克力材质不透明度设置（仅在选择亚克力时显示） -->
-          <StackPanel x:Name="AcrylicOpacityPanel" Visibility="Collapsed">
-            <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
-            <Grid Margin="0,0,0,8">
+            <!-- 图片/视频背景设置 -->
+            <StackPanel x:Name="ImageBackgroundPanel" Visibility="Collapsed">
+              <ui:TextBlock Text="背景路径" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ui:TextBox x:Name="ImagePathInput" Grid.Column="0"
+                            PlaceholderText="选择 .png / .jpg / .mp4 文件"
+                            IsReadOnly="True" Margin="0,0,8,0">
+                  <ui:TextBox.Icon>
+                    <ui:SymbolIcon Symbol="Image24" Style="{StaticResource InputIconStyle}"/>
+                  </ui:TextBox.Icon>
+                </ui:TextBox>
+                <ui:Button Grid.Column="1" Content="浏览"
+                           Icon="{ui:SymbolIcon Symbol=FolderOpen24}"
+                           Click="OnBrowseImageClick"/>
+              </Grid>
+
+              <ui:TextBlock Text="模糊度" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Slider x:Name="ImageBlurSlider" Grid.Column="0"
+                        Minimum="0" Maximum="50" TickFrequency="1"
+                        IsSnapToTickEnabled="True" ValueChanged="OnImageBlurChanged"
+                        Margin="0,0,12,0"/>
+                <ui:TextBlock x:Name="ImageBlurValue" Grid.Column="1"
+                             Text="0px" VerticalAlignment="Center"
+                             MinWidth="45" TextAlignment="Right"/>
+              </Grid>
+
+              <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Slider x:Name="ImageOpacitySlider" Grid.Column="0"
+                        Minimum="0.0" Maximum="1.0" TickFrequency="0.05"
+                        IsSnapToTickEnabled="True" ValueChanged="OnImageOpacityChanged"
+                        Margin="0,0,12,0"/>
+                <ui:TextBlock x:Name="ImageOpacityValue" Grid.Column="1"
+                             Text="30%" VerticalAlignment="Center"
+                             MinWidth="40" TextAlignment="Right"/>
+              </Grid>
+
+              <ui:TextBlock Text="说明：支持 PNG、JPG、BMP、GIF 图片和 MP4 视频文件作为背景。不透明度控制背景的可见程度，建议设置在 0.1-0.5 之间以确保界面文字可读。" 
+                   Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            </StackPanel>
+
+            <!-- 外观保存按钮 -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+              <ui:Button x:Name="BtnSaveAppearance"
+                     Style="{StaticResource BluePrimaryUiButton}"
+                     Content="保存"
+                     Icon="{ui:SymbolIcon Symbol=Save24}"
+                     Click="OnSaveAppearanceClick"
+                     Margin="0,0,8,0"/>
+              <ui:Button x:Name="BtnSaveAndRestart"
+                     Style="{StaticResource BluePrimaryUiButton}"
+                     Content="保存并重启应用"
+                     Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
+                     Click="OnSaveAndRestartClick"/>
+            </StackPanel>
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
+
+      <!-- ── 节区块 5：关于 ── -->
+      <StackPanel x:Name="SectionAbout">
+        <ui:TextBlock Text="关于" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <ui:Card Padding="15">
+          <StackPanel>
+            <Grid Margin="0,0,0,12">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <Slider x:Name="AcrylicOpacitySlider"
-                      Grid.Column="0"
-                      Minimum="0.0"
-                      Maximum="1.0"
-                      TickFrequency="0.1"
-                      IsSnapToTickEnabled="True"
-                      ValueChanged="OnAcrylicOpacityChanged"
-                      Margin="0,0,12,0"/>
-              <ui:TextBlock x:Name="AcrylicOpacityValue"
-                           Grid.Column="1"
-                           Text="80%"
-                           VerticalAlignment="Center"
-                           MinWidth="40"
-                           TextAlignment="Right"/>
-            </Grid>
-            <ui:TextBlock Text="为了节省性能，系统会在软件未聚焦时显示为背景色，这是系统笔刷的特性，我们这边是无法改变的。" 
-                 Appearance="Tertiary" 
-                 FontSize="12" 
-                 TextWrapping="Wrap"
-                 Margin="0,0,0,15"/>
-          </StackPanel>
-
-          <!-- 保存按钮（在外观块最下面） -->
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
-            <ui:Button x:Name="BtnSaveAppearance"
-                   Style="{StaticResource BluePrimaryUiButton}"
-                   Content="保存"
-                   Icon="{ui:SymbolIcon Symbol=Save24}"
-                   Click="OnSaveAppearanceClick"
-                   Margin="0,0,8,0"/>
-            <ui:Button x:Name="BtnSaveAndRestart"
-                   Style="{StaticResource BluePrimaryUiButton}"
-                   Content="保存并重启应用"
-                   Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
-                   Click="OnSaveAndRestartClick"/>
-          </StackPanel>
-        </StackPanel>
-      </ui:Card>
-
-      <!-- 关于 / 版本检查 -->
-      <ui:TextBlock Text="关于" FontTypography="Subtitle" Margin="0,30,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-
-      <ui:Card Padding="15">
-        <StackPanel>
-          <!-- 当前版本显示 -->
-          <Grid Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            
-            <StackPanel Grid.Column="0">
-              <ui:TextBlock Text="Notion Files Management" FontTypography="BodyStrong" Margin="0,0,0,4"/>
-              <ui:TextBlock x:Name="TxtCurrentVersion" Text="当前版本：v2.4.0-Stable" Appearance="Tertiary" FontSize="13"/>
-            </StackPanel>
-
-            <ui:Button x:Name="BtnCheckUpdate"
-                       Grid.Column="1"
-                       Content="检查版本更新"
-                       Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
-                       Click="OnCheckUpdateClick"/>
-          </Grid>
-
-          <!-- 版本信息面板（默认隐藏，检查后显示） -->
-          <Border x:Name="VersionInfoPanel" 
-                  Visibility="Collapsed"
-                  BorderThickness="0"
-                  Padding="0,8,0,0">
-            <StackPanel>
-              <!-- 状态提示信息栏 -->
-              <ui:InfoBar x:Name="UpdateInfoBar" 
-                          IsOpen="True"
-                          IsClosable="False"
-                          Margin="0,0,0,12"/>
-
-              <!-- 版本详细信息 -->
-              <Grid x:Name="VersionDetailGrid" 
-                    Visibility="Collapsed"
-                    Margin="0,0,0,12">
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto"/>
-                  <RowDefinition Height="Auto"/>
-                  <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="100"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <ui:TextBlock Grid.Row="0" Grid.Column="0" Text="最新版本：" Margin="0,0,0,6" Appearance="Tertiary"/>
-                <ui:TextBlock Grid.Row="0" Grid.Column="1" x:Name="TxtLatestVersion" Text="-" Margin="0,0,0,6" FontTypography="BodyStrong"/>
-
-                <ui:TextBlock Grid.Row="1" Grid.Column="0" Text="构建日期：" Margin="0,0,0,6" Appearance="Tertiary"/>
-                <ui:TextBlock Grid.Row="1" Grid.Column="1" x:Name="TxtBuildDate" Text="-" Margin="0,0,0,6"/>
-
-                <ui:TextBlock Grid.Row="2" Grid.Column="0" Text="更新内容：" Margin="0,0,0,6" Appearance="Tertiary" VerticalAlignment="Top"/>
-                <StackPanel Grid.Row="2" Grid.Column="1" x:Name="ChangelogPanel" Margin="0,0,0,6" HorizontalAlignment="Stretch"/>
-              </Grid>
-
-              <!-- 下载按钮面板 -->
-              <StackPanel x:Name="DownloadButtonPanel" 
-                          Orientation="Horizontal" 
-                          HorizontalAlignment="Right"
-                          Visibility="Collapsed">
-                <ui:Button x:Name="BtnOpenGithub"
-                           Content="从 GitHub 下载"
-                           Icon="{ui:SymbolIcon Symbol=Open24}"
-                           Click="OnOpenGithubClick"
-                           Margin="0,0,8,0"/>
-                <ui:Button x:Name="BtnGetDownloadUrl"
-                           Style="{StaticResource BluePrimaryUiButton}"
-                           Content="获取下载链接"
-                           Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
-                           Click="OnGetDownloadUrlClick"/>
+              <StackPanel Grid.Column="0">
+                <ui:TextBlock Text="Notion Files Management" FontTypography="BodyStrong" Margin="0,0,0,4"/>
+                <ui:TextBlock x:Name="TxtCurrentVersion" Text="当前版本：v2.4.0-Stable" Appearance="Tertiary" FontSize="13"/>
               </StackPanel>
-            </StackPanel>
-          </Border>
-        </StackPanel>
-      </ui:Card>
+              <ui:Button x:Name="BtnCheckUpdate" Grid.Column="1"
+                         Content="检查版本更新"
+                         Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
+                         Click="OnCheckUpdateClick"/>
+            </Grid>
+
+            <Border x:Name="VersionInfoPanel" Visibility="Collapsed" BorderThickness="0" Padding="0,8,0,0">
+              <StackPanel>
+                <ui:InfoBar x:Name="UpdateInfoBar" IsOpen="True" IsClosable="False" Margin="0,0,0,12"/>
+                <Grid x:Name="VersionDetailGrid" Visibility="Collapsed" Margin="0,0,0,12">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <ui:TextBlock Grid.Row="0" Grid.Column="0" Text="最新版本：" Margin="0,0,0,6" Appearance="Tertiary"/>
+                  <ui:TextBlock Grid.Row="0" Grid.Column="1" x:Name="TxtLatestVersion" Text="-" Margin="0,0,0,6" FontTypography="BodyStrong"/>
+                  <ui:TextBlock Grid.Row="1" Grid.Column="0" Text="构建日期：" Margin="0,0,0,6" Appearance="Tertiary"/>
+                  <ui:TextBlock Grid.Row="1" Grid.Column="1" x:Name="TxtBuildDate" Text="-" Margin="0,0,0,6"/>
+                  <ui:TextBlock Grid.Row="2" Grid.Column="0" Text="更新内容：" Margin="0,0,0,6" Appearance="Tertiary" VerticalAlignment="Top"/>
+                  <StackPanel Grid.Row="2" Grid.Column="1" x:Name="ChangelogPanel" Margin="0,0,0,6" HorizontalAlignment="Stretch"/>
+                </Grid>
+                <StackPanel x:Name="DownloadButtonPanel" Orientation="Horizontal" HorizontalAlignment="Right" Visibility="Collapsed">
+                  <ui:Button x:Name="BtnOpenGithub" Content="从 GitHub 下载"
+                             Icon="{ui:SymbolIcon Symbol=Open24}"
+                             Click="OnOpenGithubClick" Margin="0,0,8,0"/>
+                  <ui:Button x:Name="BtnGetDownloadUrl"
+                             Style="{StaticResource BluePrimaryUiButton}"
+                             Content="获取下载链接"
+                             Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+                             Click="OnGetDownloadUrlClick"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
+
     </StackPanel>
+    <!-- ═══ 节区块池结束 ═══ -->
   </Grid>
 </Page>

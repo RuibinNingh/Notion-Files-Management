@@ -48,32 +48,6 @@ namespace Notion_Files_Management.Services
 			}
 		}
 
-		public async Task<T> RunPython<T>(Func<T> func, CancellationToken token = default)
-		{
-			await _pyLock.WaitAsync(token);
-			try
-			{
-				return await Task.Run(() =>
-				{
-					token.ThrowIfCancellationRequested();
-					using (Logger.Time("Py:GIL scope"))
-					using (Py.GIL())
-					{
-						return func();
-					}
-				}, token);
-			}
-			catch (Exception ex)
-			{
-				Logger.Error("RunPython failed", ex);
-				throw;
-			}
-			finally
-			{
-				_pyLock.Release();
-			}
-		}
-
 		public async Task EnsureBackendReady(string notionToken, int maxDownloadWorkers, int maxUploadWorkers, string notionBaseUrl = "https://api.notion.com/v1")
 		{
 			await _pyLock.WaitAsync();

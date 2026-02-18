@@ -144,6 +144,8 @@ namespace Notion_Files_Management.Services
                         string realName = "";
                         string? expiry = null;
                         double size = 0.0;
+                        string blockId = "";
+                        string? createdTime = null;
 
                         try { url = item["url"]?.ToString() ?? ""; } catch { }
                         try { name = item["name"]?.ToString() ?? ""; } catch { }
@@ -157,6 +159,15 @@ namespace Notion_Files_Management.Services
                         }
                         catch { }
                         try { size = PyConvert.ToDouble(item["size_mb"], 0.0); } catch { }
+                        try { blockId = item["block_id"]?.ToString() ?? ""; } catch { }
+                        try
+                        {
+                            var ct = item["created_time"];
+                            createdTime = ct == null ? null : ct.ToString();
+                            if (string.Equals(createdTime, "None", StringComparison.OrdinalIgnoreCase))
+                                createdTime = null;
+                        }
+                        catch { }
 
                         result.Add(new FileSelectItem
                         {
@@ -165,6 +176,8 @@ namespace Notion_Files_Management.Services
                             real_name = realName,
                             expiry_time = expiry,
                             size_mb = size,
+                            block_id = blockId,
+                            created_time = createdTime,
                             IsSelected = true
                         });
                     }
@@ -266,6 +279,20 @@ namespace Notion_Files_Management.Services
                         using (var v = f.size_mb.ToPython())
                             d.SetItem(k, v);
 
+                        if (!string.IsNullOrWhiteSpace(f.block_id))
+                        {
+                            using var k = "block_id".ToPython();
+                            using var v = (f.block_id ?? "").ToPython();
+                            d.SetItem(k, v);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(f.created_time))
+                        {
+                            using var k = "created_time".ToPython();
+                            using var v = (f.created_time ?? "").ToPython();
+                            d.SetItem(k, v);
+                        }
+
                         pyListToDownload.Append(d);
                     }
 
@@ -298,7 +325,8 @@ namespace Notion_Files_Management.Services
                             total_mb = PythonHelpers.ToDoubleSafe(s, "total_mb"),
                             speed_mb_s = PythonHelpers.ToDoubleSafe(s, "speed_mb_s"),
                             ETA = PythonHelpers.ToIntSafe(s, "ETA"),
-                            error = PythonHelpers.NormalizePythonNone(s, "error")
+                            error = PythonHelpers.NormalizePythonNone(s, "error"),
+                            created_time = PythonHelpers.NormalizePythonNone(s, "created_time"),
                         });
                     }
 

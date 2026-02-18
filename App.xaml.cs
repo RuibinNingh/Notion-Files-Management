@@ -72,8 +72,16 @@ namespace Notion_Files_Management
 
 		protected override void OnExit(ExitEventArgs e)
 		{
-			PythonEngine.Shutdown(); // 彻底释放内存，关闭 Python 引擎
-									 // Shutdown file logging
+			try
+			{
+				PythonEngine.Shutdown(); // 彻底释放内存，关闭 Python 引擎
+			}
+			catch (Exception ex)
+			{
+				// Python 引擎关闭失败不应阻止应用退出（重启场景中尤为重要）
+				System.Diagnostics.Debug.WriteLine($"PythonEngine.Shutdown failed: {ex.Message}");
+			}
+			// Shutdown file logging
 			Logger.ShutdownFileLogging();
 			base.OnExit(e);
 		}

@@ -1,5 +1,6 @@
 import requests
 import time
+from datetime import datetime, timezone
 from logger import PythonLogger
 
 class Notion:
@@ -66,6 +67,7 @@ class Notion:
                 break
             cursor = data.get("next_cursor")
         return all_blocks
+
     def get_download_url(self, body):
         """
         下载链接的格式:
@@ -75,7 +77,9 @@ class Notion:
                 "real_name": "example.zip"
                 "url": "https://s3.us-west-2.amazonaws.com/secure.notion-static.com/...."
                 "expiry_time": "2024-10-01T12:00:00.000Z",
-                "size_mb": 2.5
+                "size_mb": 2.5,
+                "block_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                "created_time": "2026-02-18T12:00:00.000Z"
             }
         ]
         """
@@ -83,10 +87,14 @@ class Notion:
         if not body:
             return download_list
 
+        # 记录链接创建时间（即本次获取列表的时间）
+        created_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
         for block in body:
             if block.get("type") == "file":
                 file_info = block["file"]
                 original_name = file_info.get("name", "unknown")
+                block_id = block.get("id", "")
 
                 if file_info["type"] == "file":
                     url = file_info["file"]["url"]
@@ -106,7 +114,9 @@ class Notion:
                     "real_name": real_name,
                     "url": url,
                     "expiry_time": expiry_time,
-                    "size_mb": size_mb 
+                    "size_mb": size_mb,
+                    "block_id": block_id,
+                    "created_time": created_time,
                 })
 
             if block.get("has_children") and "children" in block:
@@ -115,6 +125,60 @@ class Notion:
 
         return download_list
 
+    def refresh_file_url(self, block_id: str) -> dict | None:
+        """
+        通过 block_id 重新获取单个文件块的最新下载链接。
+        用于下载过程中链接过期时自动刷新。
+        
+        返回: {"url": "...", "expiry_time": "..."} 或 None（失败时）
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = requests.get(
+                    f"{self.url}/blocks/{block_id}",
+                    headers=self.default_headers,
+                    timeout=10
+                )
+
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[refresh_file_url] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+
+                res.raise_for_status()
+                block = res.json()
+
+                if block.get("type") != "file":
+                    PythonLogger.warning(f"[refresh_file_url] block {block_id} type={block.get('type')}，不是 file 类型")
+                    return None
+
+                file_info = block["file"]
+                if file_info["type"] == "file":
+                    new_url = file_info["file"]["url"]
+                    new_expiry = file_info["file"].get("expiry_time")
+                else:
+                    # external 类型没有过期问题
+                    new_url = file_info["external"]["url"]
+                    new_expiry = None
+
+                PythonLogger.info(f"[refresh_file_url] block_id={block_id} 刷新成功，new_expiry={new_expiry}")
+                return {
+                    "url": new_url,
+                    "expiry_time": new_expiry,
+                }
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[refresh_file_url] 异常: {e}，等待 {wait_time}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    PythonLogger.error(f"[refresh_file_url] block_id={block_id} 刷新失败: {e}")
+                    return None
+
+        return None
 
     def _get_remote_file_size(self, url):
         """探测远程文件大小，返回 MB"""

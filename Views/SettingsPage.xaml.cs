@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Microsoft.Win32;
 using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
 using Wpf.Ui.Controls;
@@ -34,6 +35,33 @@ namespace Notion_Files_Management.Views
             public string github { get; set; } = "";
             public string[] changelog { get; set; } = Array.Empty<string>();
         }
+
+        // ── 自动排版相关 ─────────────────────────────────────────────────
+        
+        /// <summary>
+        /// 所有独立的节区块（按显示顺序），将在 Loaded 时从 SectionPool 中提取
+        /// </summary>
+        private StackPanel[] _sections = Array.Empty<StackPanel>();
+        
+        /// <summary>
+        /// 节区块间距（非首块顶部 Margin）
+        /// </summary>
+        private const double SectionSpacing = 20.0;
+        
+        /// <summary>
+        /// 双列模式断点宽度
+        /// </summary>
+        private const double LayoutBreakpoint = 1200.0;
+        
+        /// <summary>
+        /// 当前是否处于单列布局
+        /// </summary>
+        private bool _isSingleColumn = false;
+
+        /// <summary>
+        /// 运行时发现的最近祖先 ScrollViewer（来自 NavigationView 内部模板）
+        /// </summary>
+        private ScrollViewer? _ancestorScrollViewer = null;
 
         public SettingsPage()
         {
@@ -76,78 +104,250 @@ namespace Notion_Files_Management.Views
                     dpd?.AddValueChanged(ColorPicker, OnColorPickerColorChanged);
                 }
                 
-                // 初始化响应式布局
-                InitializeResponsiveLayout();
+                // 初始化自动排版
+                InitializeSectionLayout();
+                
+                // 诊断 + 发现祖先 ScrollViewer
+                DumpVisualTreeAncestors();
+                
+                // 注册鼠标滚轮拦截（handledEventsToo=true 确保即使被子控件吃掉也能触发）
+                this.AddHandler(
+                    UIElement.PreviewMouseWheelEvent,
+                    new System.Windows.Input.MouseWheelEventHandler(OnPagePreviewMouseWheel),
+                    handledEventsToo: true);
             };
             
             // 监听窗口大小变化
             SizeChanged += OnPageSizeChanged;
         }
-        
+
+        // ── 滚动处理 + 视觉树诊断 ─────────────────────────────────────────
+
         /// <summary>
-        /// 初始化响应式布局
+        /// 遍历视觉树祖先，找到最近的 ScrollViewer 并记录完整链路。
+        /// 这是定位滚动问题的关键诊断方法。
         /// </summary>
-        private void InitializeResponsiveLayout()
+        private void DumpVisualTreeAncestors()
         {
-            // 获取窗口引用
-            var window = Window.GetWindow(this);
-            if (window != null)
+            try
             {
-                // 初始布局调整
-                UpdateLayoutForWindowSize(window.ActualWidth);
+                Logger.Info("[SettingsPage:VisualTree] ═══ 开始遍历祖先链 ═══");
+                
+                DependencyObject current = this;
+                int depth = 0;
+                _ancestorScrollViewer = null;
+                
+                while (current != null)
+                {
+                    string typeName = current.GetType().FullName ?? current.GetType().Name;
+                    string name = (current is FrameworkElement fe) ? (fe.Name ?? "(unnamed)") : "(no-name)";
+                    string size = (current is FrameworkElement fe2) 
+                        ? $"Actual={fe2.ActualWidth:F0}x{fe2.ActualHeight:F0}" 
+                        : "";
+                    
+                    string extra = "";
+                    if (current is ScrollViewer sv)
+                    {
+                        extra = $" ★ScrollViewer★ Viewport={sv.ViewportHeight:F0}, Extent={sv.ExtentHeight:F0}, " +
+                                $"Scrollable={sv.ScrollableHeight:F0}, VBar={sv.VerticalScrollBarVisibility}, " +
+                                $"Computed={sv.ComputedVerticalScrollBarVisibility}";
+                        
+                        // 记录第一个找到的祖先 ScrollViewer
+                        if (_ancestorScrollViewer == null)
+                        {
+                            _ancestorScrollViewer = sv;
+                            extra += " ← 已捕获为目标 ScrollViewer";
+                        }
+                    }
+                    
+                    Logger.Info($"[SettingsPage:VisualTree] [{depth}] {typeName} Name=\"{name}\" {size}{extra}");
+                    
+                    current = VisualTreeHelper.GetParent(current);
+                    depth++;
+                    
+                    if (depth > 50) break; // 安全阀
+                }
+                
+                Logger.Info($"[SettingsPage:VisualTree] ═══ 遍历完毕，共 {depth} 层 ═══");
+                
+                if (_ancestorScrollViewer != null)
+                {
+                    Logger.Info($"[SettingsPage:VisualTree] ✓ 已找到祖先 ScrollViewer: " +
+                                $"Name=\"{_ancestorScrollViewer.Name}\", Type={_ancestorScrollViewer.GetType().Name}");
+                }
+                else
+                {
+                    Logger.Warn("[SettingsPage:VisualTree] ✗ 未找到任何祖先 ScrollViewer！滚动可能不工作。");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage:VisualTree] Dump failed", ex);
             }
         }
-        
+
+        /// <summary>
+        /// Page 级别鼠标滚轮处理。
+        /// 找到祖先 ScrollViewer 并手动驱动滚动，防止 Slider/ComboBox 吞事件。
+        /// </summary>
+        private void OnPagePreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            // 优先使用已发现的祖先 ScrollViewer
+            ScrollViewer? target = _ancestorScrollViewer;
+            
+            if (target == null)
+            {
+                Logger.Warn("[SettingsPage:Scroll] No ancestor ScrollViewer found, cannot scroll");
+                return;
+            }
+
+            double scrollAmount = e.Delta > 0 ? -48.0 : 48.0;
+            double newOffset = target.VerticalOffset + scrollAmount;
+            
+            if (newOffset < 0) newOffset = 0;
+            if (newOffset > target.ScrollableHeight) newOffset = target.ScrollableHeight;
+            
+            target.ScrollToVerticalOffset(newOffset);
+            e.Handled = true;
+            
+            // 诊断日志（确认滚动正在工作，调试后可移除）
+            Logger.Info($"[SettingsPage:Scroll] delta={e.Delta}, offset={newOffset:F0}/{target.ScrollableHeight:F0}, " +
+                        $"viewport={target.ViewportHeight:F0}, extent={target.ExtentHeight:F0}");
+        }
+
+        /// <summary>
+        /// 初始化自动排版：从 SectionPool 提取所有节区块，执行首次分配
+        /// </summary>
+        private void InitializeSectionLayout()
+        {
+            try
+            {
+                // 提取节区块引用（按显示顺序）
+                _sections = new StackPanel[]
+                {
+                    SectionNotionConfig,
+                    SectionTaskWorkers,
+                    SectionThemeColor,
+                    SectionBackground,
+                    SectionAbout
+                };
+
+                // 从 SectionPool 移除所有节区块
+                SectionPool.Children.Clear();
+                SectionPool.Visibility = Visibility.Collapsed;
+
+                // 执行首次分配
+                var window = Window.GetWindow(this);
+                double windowWidth = window?.ActualWidth ?? ActualWidth;
+                DistributeSections(windowWidth);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Initialize section layout failed", ex);
+            }
+        }
+
         /// <summary>
         /// 页面大小变化事件处理
         /// </summary>
         private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
         {
-            // 获取窗口引用
             var window = Window.GetWindow(this);
-            if (window != null)
-            {
-                UpdateLayoutForWindowSize(window.ActualWidth);
-            }
+            double windowWidth = window?.ActualWidth ?? ActualWidth;
+            DistributeSections(windowWidth);
         }
-        
+
         /// <summary>
-        /// 根据窗口宽度更新布局
-        /// 当窗口宽度小于 1200px 时，切换为单列布局
-        /// 当窗口宽度大于等于 1200px 时，使用两列布局
+        /// 根据窗口宽度分配节区块到列中
+        /// 窄窗口（&lt; 1200px）：单列布局
+        /// 宽窗口（≥ 1200px）：双列布局，使用贪心高度平衡算法
         /// </summary>
-        private void UpdateLayoutForWindowSize(double windowWidth)
+        private void DistributeSections(double windowWidth)
         {
-            if (MainGrid == null || LeftPanel == null || RightPanel == null)
+            if (_sections == null || _sections.Length == 0 || MainGrid == null)
                 return;
-            
-            const double breakpoint = 1200.0; // 断点：1200px
-            bool isSingleColumn = windowWidth < breakpoint;
-            
-            if (isSingleColumn)
+
+            try
             {
-                // 单列布局：将右侧列的内容移到左侧列下方
-                if (RightPanel.Parent == MainGrid && Grid.GetColumn(RightPanel) == 1)
+                bool shouldBeSingleColumn = windowWidth < LayoutBreakpoint;
+
+                // 1. 从当前父容器中移除所有节区块
+                foreach (var section in _sections)
                 {
-                    Grid.SetColumn(RightPanel, 0);
-                    Grid.SetRow(RightPanel, 1);
-                    RightPanel.Margin = new Thickness(0, 30, 0, 0);
-                    LeftPanel.Margin = new Thickness(0, 0, 0, 0);
-                    
-                    if (MainGrid.RowDefinitions.Count < 2)
-                        MainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    if (section.Parent is Panel parent)
+                        parent.Children.Remove(section);
+                }
+
+                if (shouldBeSingleColumn)
+                {
+                    // ── 单列布局 ──
+                    _isSingleColumn = true;
+                    RightColumnDef.Width = new GridLength(0);
+                    ColumnLeft.Margin = new Thickness(0);
+                    ColumnRight.Margin = new Thickness(0);
+
+                    for (int i = 0; i < _sections.Length; i++)
+                    {
+                        _sections[i].Margin = new Thickness(0, i > 0 ? SectionSpacing : 0, 0, 0);
+                        ColumnLeft.Children.Add(_sections[i]);
+                    }
+                }
+                else
+                {
+                    // ── 双列布局：贪心高度平衡 ──
+                    _isSingleColumn = false;
+                    RightColumnDef.Width = new GridLength(1, GridUnitType.Star);
+                    ColumnLeft.Margin = new Thickness(0, 0, 15, 0);
+                    ColumnRight.Margin = new Thickness(15, 0, 0, 0);
+
+                    // 测量每个节区块的期望高度
+                    double availableWidth = Math.Max(200, (windowWidth - 90) / 2); // 减去 Margin 和间距
+                    var heights = new double[_sections.Length];
+                    for (int i = 0; i < _sections.Length; i++)
+                    {
+                        _sections[i].Measure(new Size(availableWidth, double.PositiveInfinity));
+                        heights[i] = _sections[i].DesiredSize.Height + SectionSpacing;
+                    }
+
+                    // 贪心分配：依次将区块放入当前较矮的列
+                    double leftHeight = 0, rightHeight = 0;
+                    var leftIndices = new System.Collections.Generic.List<int>();
+                    var rightIndices = new System.Collections.Generic.List<int>();
+
+                    for (int i = 0; i < _sections.Length; i++)
+                    {
+                        if (leftHeight <= rightHeight)
+                        {
+                            leftIndices.Add(i);
+                            leftHeight += heights[i];
+                        }
+                        else
+                        {
+                            rightIndices.Add(i);
+                            rightHeight += heights[i];
+                        }
+                    }
+
+                    // 将区块添加到对应列
+                    for (int j = 0; j < leftIndices.Count; j++)
+                    {
+                        int idx = leftIndices[j];
+                        _sections[idx].Margin = new Thickness(0, j > 0 ? SectionSpacing : 0, 0, 0);
+                        ColumnLeft.Children.Add(_sections[idx]);
+                    }
+                    for (int j = 0; j < rightIndices.Count; j++)
+                    {
+                        int idx = rightIndices[j];
+                        _sections[idx].Margin = new Thickness(0, j > 0 ? SectionSpacing : 0, 0, 0);
+                        ColumnRight.Children.Add(_sections[idx]);
+                    }
+
+                    Logger.Info($"[SettingsPage] Layout balanced: Left=[{string.Join(",", leftIndices)}] ({leftHeight:F0}px), Right=[{string.Join(",", rightIndices)}] ({rightHeight:F0}px)");
                 }
             }
-            else
+            catch (Exception ex)
             {
-                // 两列布局：恢复为两列
-                if (RightPanel.Parent == MainGrid && Grid.GetRow(RightPanel) == 1)
-                {
-                    Grid.SetColumn(RightPanel, 1);
-                    Grid.SetRow(RightPanel, 0);
-                    RightPanel.Margin = new Thickness(15, 0, 0, 0);
-                    LeftPanel.Margin = new Thickness(0, 0, 15, 0);
-                }
+                Logger.Error("[SettingsPage] Distribute sections failed", ex);
             }
         }
 
@@ -556,7 +756,8 @@ namespace Notion_Files_Management.Views
             try
             {
                 string material = ConfigManager.Current?.BackgroundMaterial ?? "Mica";
-                if (string.IsNullOrWhiteSpace(material) || (material != "Mica" && material != "Acrylic"))
+                if (string.IsNullOrWhiteSpace(material) || 
+                    (material != "Mica" && material != "Acrylic" && material != "Image"))
                     material = "Mica";
 
                 // 设置下拉框选择
@@ -572,7 +773,7 @@ namespace Notion_Files_Management.Views
                     }
                 }
 
-                // 加载不透明度
+                // 加载亚克力不透明度
                 double opacity = ConfigManager.Current?.AcrylicOpacity ?? 0.8;
                 if (opacity < 0.0 || opacity > 1.0)
                     opacity = 0.8;
@@ -583,8 +784,32 @@ namespace Notion_Files_Management.Views
                     UpdateAcrylicOpacityDisplay(opacity);
                 }
 
-                // 根据选择的材质显示/隐藏不透明度面板
-                UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
+                // 加载图片背景设置
+                if (ImagePathInput != null)
+                {
+                    ImagePathInput.Text = ConfigManager.Current?.BackgroundImagePath ?? "";
+                }
+
+                double imgBlur = ConfigManager.Current?.BackgroundImageBlur ?? 0;
+                if (imgBlur < 0) imgBlur = 0;
+                if (imgBlur > 50) imgBlur = 50;
+                if (ImageBlurSlider != null)
+                {
+                    ImageBlurSlider.Value = imgBlur;
+                    UpdateImageBlurDisplay(imgBlur);
+                }
+
+                double imgOpacity = ConfigManager.Current?.BackgroundImageOpacity ?? 0.3;
+                if (imgOpacity < 0.0) imgOpacity = 0.0;
+                if (imgOpacity > 1.0) imgOpacity = 1.0;
+                if (ImageOpacitySlider != null)
+                {
+                    ImageOpacitySlider.Value = imgOpacity;
+                    UpdateImageOpacityDisplay(imgOpacity);
+                }
+
+                // 根据选择的材质显示/隐藏对应面板
+                UpdateBackgroundPanelVisibility(material);
             }
             catch (Exception ex)
             {
@@ -603,18 +828,38 @@ namespace Notion_Files_Management.Views
                 if (BackgroundMaterialCombo?.SelectedItem is ComboBoxItem selectedItem)
                 {
                     string material = selectedItem.Tag?.ToString() ?? "Mica";
-                    if (material != "Mica" && material != "Acrylic")
+                    if (material != "Mica" && material != "Acrylic" && material != "Image")
                         material = "Mica";
                     ConfigManager.Current.BackgroundMaterial = material;
                 }
 
-                // 保存不透明度
+                // 保存亚克力不透明度
                 if (AcrylicOpacitySlider != null)
                 {
                     double opacity = AcrylicOpacitySlider.Value;
                     if (opacity < 0.0) opacity = 0.0;
                     if (opacity > 1.0) opacity = 1.0;
                     ConfigManager.Current.AcrylicOpacity = opacity;
+                }
+
+                // 保存图片背景设置
+                if (ImagePathInput != null)
+                {
+                    ConfigManager.Current.BackgroundImagePath = ImagePathInput.Text?.Trim() ?? "";
+                }
+                if (ImageBlurSlider != null)
+                {
+                    double blur = ImageBlurSlider.Value;
+                    if (blur < 0) blur = 0;
+                    if (blur > 50) blur = 50;
+                    ConfigManager.Current.BackgroundImageBlur = blur;
+                }
+                if (ImageOpacitySlider != null)
+                {
+                    double imgOpacity = ImageOpacitySlider.Value;
+                    if (imgOpacity < 0.0) imgOpacity = 0.0;
+                    if (imgOpacity > 1.0) imgOpacity = 1.0;
+                    ConfigManager.Current.BackgroundImageOpacity = imgOpacity;
                 }
             }
             catch (Exception ex)
@@ -633,7 +878,7 @@ namespace Notion_Files_Management.Views
                 if (BackgroundMaterialCombo?.SelectedItem is ComboBoxItem selectedItem)
                 {
                     string material = selectedItem.Tag?.ToString() ?? "Mica";
-                    UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
+                    UpdateBackgroundPanelVisibility(material);
                     
                     Logger.Info($"[SettingsPage] Background material UI changed to: {material} (not saved yet)");
                 }
@@ -642,6 +887,23 @@ namespace Notion_Files_Management.Views
             {
                 Logger.Error("[SettingsPage] Background material change failed", ex);
             }
+        }
+
+        /// <summary>
+        /// 根据材质类型更新面板可见性
+        /// </summary>
+        private void UpdateBackgroundPanelVisibility(string material)
+        {
+            UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
+            UpdateImageBackgroundPanelVisibility(material == "Image");
+            
+            // 子面板可见性变化后，重新平衡布局（延迟执行，等待布局更新）
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var window = Window.GetWindow(this);
+                double windowWidth = window?.ActualWidth ?? ActualWidth;
+                DistributeSections(windowWidth);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         /// <summary>
@@ -679,6 +941,99 @@ namespace Notion_Files_Management.Views
             {
                 int percentage = (int)(opacity * 100);
                 AcrylicOpacityValue.Text = $"{percentage}%";
+            }
+        }
+
+        /// <summary>
+        /// 更新图片背景面板的可见性
+        /// </summary>
+        private void UpdateImageBackgroundPanelVisibility(bool isVisible)
+        {
+            if (ImageBackgroundPanel != null)
+            {
+                ImageBackgroundPanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        /// <summary>
+        /// 浏览图片/视频文件按钮点击事件
+        /// </summary>
+        private void OnBrowseImageClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dialog = new OpenFileDialog
+                {
+                    Title = "选择背景图片或视频",
+                    Filter = "图片和视频文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.mp4|图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|视频文件|*.mp4|所有文件|*.*",
+                    CheckFileExists = true
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    if (ImagePathInput != null)
+                    {
+                        ImagePathInput.Text = dialog.FileName;
+                        Logger.Info($"[SettingsPage] Background image path selected: {dialog.FileName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Browse image file failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 图片模糊度滑动条值变化事件处理（仅更新UI显示，不保存）
+        /// </summary>
+        private void OnImageBlurChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            try
+            {
+                UpdateImageBlurDisplay(e.NewValue);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Image blur change failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 更新模糊度显示文本
+        /// </summary>
+        private void UpdateImageBlurDisplay(double blur)
+        {
+            if (ImageBlurValue != null)
+            {
+                ImageBlurValue.Text = $"{(int)blur}px";
+            }
+        }
+
+        /// <summary>
+        /// 图片不透明度滑动条值变化事件处理（仅更新UI显示，不保存）
+        /// </summary>
+        private void OnImageOpacityChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            try
+            {
+                UpdateImageOpacityDisplay(e.NewValue);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Image opacity change failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 更新图片不透明度显示文本
+        /// </summary>
+        private void UpdateImageOpacityDisplay(double opacity)
+        {
+            if (ImageOpacityValue != null)
+            {
+                int percentage = (int)(opacity * 100);
+                ImageOpacityValue.Text = $"{percentage}%";
             }
         }
 
@@ -748,24 +1103,38 @@ namespace Notion_Files_Management.Views
         {
             try
             {
-                // 获取当前应用程序的路径
-                string appPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                
+                // 优先使用 Environment.ProcessPath（.NET 6+），兼容单文件发布模式
+                // Assembly.GetExecutingAssembly().Location 在单文件发布时返回空字符串
+                string? appPath = Environment.ProcessPath;
+
+                // 回退方案：通过当前进程获取路径
+                if (string.IsNullOrEmpty(appPath))
+                {
+                    appPath = Process.GetCurrentProcess().MainModule?.FileName;
+                }
+
+                if (string.IsNullOrEmpty(appPath))
+                {
+                    Logger.Error("[SettingsPage] Failed to determine application path for restart");
+                    System.Windows.MessageBox.Show("无法确定应用程序路径，重启失败。请手动重启应用。", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                    return;
+                }
+
+                Logger.Info($"[SettingsPage] Restarting application from path: {appPath}");
+
                 ProcessStartInfo startInfo;
-                
-                // 如果是 .dll 文件（Debug 模式），需要特殊处理
+
+                // 如果是 .dll 文件（Debug 模式下 dotnet run），需要通过 dotnet 命令启动
                 if (appPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                 {
                     // 尝试查找同名的 .exe 文件
                     string exePath = appPath.Substring(0, appPath.Length - 4) + ".exe";
                     if (System.IO.File.Exists(exePath))
                     {
-                        // 如果找到 .exe 文件，使用它
                         startInfo = new ProcessStartInfo(exePath) { UseShellExecute = true };
                     }
                     else
                     {
-                        // 如果找不到 .exe，使用 dotnet 命令运行 .dll
                         startInfo = new ProcessStartInfo
                         {
                             FileName = "dotnet",
@@ -776,17 +1145,17 @@ namespace Notion_Files_Management.Views
                 }
                 else
                 {
-                    // 如果是 .exe 文件（Release 模式或已发布版本），直接启动
+                    // .exe 文件（Release 模式或已发布版本），直接启动
                     startInfo = new ProcessStartInfo(appPath) { UseShellExecute = true };
                 }
-                
+
                 // 启动新进程
                 Process.Start(startInfo);
-                
+
+                Logger.Info("[SettingsPage] New process started, shutting down current instance");
+
                 // 关闭当前应用
                 Application.Current.Shutdown();
-                
-                Logger.Info("[SettingsPage] Application restarted");
             }
             catch (Exception ex)
             {

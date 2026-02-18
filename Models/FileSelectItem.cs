@@ -22,6 +22,8 @@ namespace Notion_Files_Management.Models
         public string? real_name { get; set; }
         public string? expiry_time { get; set; }
         public double size_mb { get; set; }
+        public string? block_id { get; set; }
+        public string? created_time { get; set; }
 
         /// <summary>
         /// Best-effort parse of Notion file expiry_time (ISO 8601).

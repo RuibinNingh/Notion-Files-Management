@@ -1,10 +1,15 @@
 import urllib.request
+import urllib.error
 import threading
 import os
 import time
 import random
 from concurrent.futures import ThreadPoolExecutor
 from logger import PythonLogger
+
+
+# HTTP 状态码：表示链接过期或无权访问（需要刷新 URL）
+_EXPIRED_HTTP_CODES = {401, 403, 410}
 
 
 class Download:
@@ -31,7 +36,7 @@ class Download:
     # =========================
     def start_probe_sizes(self, urls: list[str], timeout: float = 10.0, max_retries: int = 3) -> int:
         """
-        ✅ 异步启动“探测文件大小”任务，返回 probe_id
+        ✅ 异步启动"探测文件大小"任务，返回 probe_id
         - urls > 10 -> 10 线程
         - urls <=10 -> len(urls) 线程
         - 每个 url 默认重试 3 次（可传 max_retries）
@@ -276,7 +281,16 @@ class Download:
     # =========================
     # Download: task
     # =========================
-    def download(self, url: str, save_name: str, size: float):
+    def download(self, url: str, save_name: str, size: float,
+                 url_refresh_callback=None, max_url_refresh: int = 2):
+        """
+        提交下载任务。
+        
+        url_refresh_callback: 可选回调函数，签名 () -> str|None
+            当下载因链接过期（HTTP 401/403/410）失败时，调用此回调获取新 URL。
+            返回新 URL 字符串，或 None 表示无法刷新。
+        max_url_refresh: 最大 URL 刷新次数（默认 2 次）
+        """
         with self.lock:
             if url in self.status_map and self.status_map[url]["status"] in ["waiting", "downloading", "completed"]:
                 return {"msg": "Task already exists", "status": self.status_map[url]["status"]}
@@ -293,18 +307,108 @@ class Download:
                 "error": None
             }
 
-        self.executor.submit(self._worker, url, save_name, size)
+        self.executor.submit(self._worker, url, save_name, size,
+                             url_refresh_callback, max_url_refresh)
         return {"msg": "Task submitted", "url": url}
 
-    def _worker(self, url: str, save_name: str, manual_size_mb: float):
+    def _worker(self, url: str, save_name: str, manual_size_mb: float,
+                url_refresh_callback=None, max_url_refresh: int = 2):
+        """
+        下载工作线程。
+        支持链接过期自动刷新：当遇到 HTTP 401/403/410 时，
+        通过 url_refresh_callback 获取新 URL 并重试下载。
+        """
+        current_url = url
+        refresh_count = 0
+
+        while True:
+            success, is_expired = self._do_download(current_url, url, save_name, manual_size_mb)
+
+            if success:
+                return  # 下载完成
+
+            if not is_expired:
+                return  # 非过期错误，不重试
+
+            # 链接过期，尝试刷新
+            if url_refresh_callback is None:
+                PythonLogger.warning(f"[Download] URL 过期但无刷新回调: {current_url[:80]}...")
+                return
+
+            if refresh_count >= max_url_refresh:
+                PythonLogger.error(f"[Download] URL 刷新次数已达上限({max_url_refresh}): {current_url[:80]}...")
+                with self.lock:
+                    if url in self.status_map:
+                        self.status_map[url]["error"] = f"链接过期，已重试刷新 {max_url_refresh} 次仍失败"
+                return
+
+            refresh_count += 1
+            PythonLogger.info(f"[Download] 链接过期，尝试刷新 URL (第 {refresh_count}/{max_url_refresh} 次)...")
+
+            # 更新状态为"刷新中"
+            with self.lock:
+                if url in self.status_map:
+                    self.status_map[url]["status"] = "refreshing"
+                    self.status_map[url]["error"] = None
+
+            try:
+                new_url = url_refresh_callback()
+            except Exception as e:
+                PythonLogger.error(f"[Download] URL 刷新回调异常: {e}")
+                with self.lock:
+                    if url in self.status_map:
+                        self.status_map[url]["status"] = "error"
+                        self.status_map[url]["error"] = f"刷新链接失败: {e}"
+                return
+
+            if not new_url:
+                PythonLogger.error("[Download] URL 刷新回调返回空")
+                with self.lock:
+                    if url in self.status_map:
+                        self.status_map[url]["status"] = "error"
+                        self.status_map[url]["error"] = "刷新链接失败（回调返回空）"
+                return
+
+            PythonLogger.info(f"[Download] URL 已刷新，重新下载: {new_url[:80]}...")
+            current_url = new_url
+
+            # 重置下载状态，准备重新下载
+            with self.lock:
+                if url in self.status_map:
+                    self.status_map[url].update({
+                        "status": "downloading",
+                        "progress": 0,
+                        "downloaded_mb": 0.0,
+                        "speed_mb_s": 0.0,
+                        "ETA": 0,
+                        "error": None,
+                    })
+
+            # 删除之前可能下载了一部分的文件
+            try:
+                if os.path.exists(save_name):
+                    os.remove(save_name)
+            except Exception:
+                pass
+
+    def _do_download(self, current_url: str, original_url: str,
+                     save_name: str, manual_size_mb: float) -> tuple[bool, bool]:
+        """
+        执行一次实际下载。
+        
+        返回: (success: bool, is_expired: bool)
+        - success=True: 下载成功
+        - success=False, is_expired=True: 因链接过期失败（可重试）
+        - success=False, is_expired=False: 因其他原因失败（不可重试）
+        """
         start_mono = time.monotonic()
         last_update_mono = start_mono
         last_downloaded_bytes = 0
         current_speed_bps = 0.0
 
         with self.lock:
-            if url in self.status_map:
-                self.status_map[url]["status"] = "downloading"
+            if original_url in self.status_map:
+                self.status_map[original_url]["status"] = "downloading"
 
         def report(block_num, block_size, total_size):
             nonlocal last_update_mono, last_downloaded_bytes, current_speed_bps
@@ -330,8 +434,8 @@ class Download:
                     last_downloaded_bytes = downloaded_bytes
 
                     with self.lock:
-                        if url in self.status_map:
-                            item = self.status_map[url]
+                        if original_url in self.status_map:
+                            item = self.status_map[original_url]
                             item["downloaded_mb"] = round(downloaded_bytes / (1024 * 1024), 2)
                             item["total_mb"] = round(total_size / (1024 * 1024), 2)
                             item["progress"] = round((downloaded_bytes / total_size) * 100, 2)
@@ -344,27 +448,63 @@ class Download:
             if d:
                 os.makedirs(d, exist_ok=True)
 
-            urllib.request.urlretrieve(url, save_name, reporthook=report)
+            urllib.request.urlretrieve(current_url, save_name, reporthook=report)
 
             end_mono = time.monotonic()
             with self.lock:
-                if url in self.status_map:
-                    self.status_map[url].update({
+                if original_url in self.status_map:
+                    self.status_map[original_url].update({
                         "status": "completed",
                         "progress": 100.0,
-                        "downloaded_mb": self.status_map[url]["total_mb"],
+                        "downloaded_mb": self.status_map[original_url]["total_mb"],
                         "speed_mb_s": 0.0,
                         "ETA": 0,
                         "usedTime": int(end_mono - start_mono),
                     })
+            return True, False  # success
+
+        except urllib.error.HTTPError as e:
+            end_mono = time.monotonic()
+            is_expired = e.code in _EXPIRED_HTTP_CODES
+
+            if is_expired:
+                PythonLogger.warning(
+                    f"[Download] HTTP {e.code} 链接可能过期: {current_url[:80]}...")
+            
+            with self.lock:
+                if original_url in self.status_map:
+                    self.status_map[original_url]["status"] = "error"
+                    self.status_map[original_url]["error"] = (
+                        f"HTTP {e.code} 链接过期" if is_expired else str(e)
+                    )
+                    self.status_map[original_url]["usedTime"] = int(end_mono - start_mono)
+
+            return False, is_expired
 
         except Exception as e:
             end_mono = time.monotonic()
+
+            # urllib.request.urlretrieve 可能抛 URLError 包裹 HTTPError
+            is_expired = False
+            err_str = str(e)
+            if hasattr(e, 'reason') and hasattr(e.reason, 'status'):
+                if e.reason.status in _EXPIRED_HTTP_CODES:
+                    is_expired = True
+            # 也检查错误消息中的常见过期关键词
+            if not is_expired:
+                lower_err = err_str.lower()
+                if any(kw in lower_err for kw in ['403', '401', '410', 'forbidden', 'unauthorized', 'expired']):
+                    is_expired = True
+
             with self.lock:
-                if url in self.status_map:
-                    self.status_map[url]["status"] = "error"
-                    self.status_map[url]["error"] = str(e)
-                    self.status_map[url]["usedTime"] = int(end_mono - start_mono)
+                if original_url in self.status_map:
+                    self.status_map[original_url]["status"] = "error"
+                    self.status_map[original_url]["error"] = (
+                        f"链接过期: {err_str}" if is_expired else err_str
+                    )
+                    self.status_map[original_url]["usedTime"] = int(end_mono - start_mono)
+
+            return False, is_expired
 
     def get_status(self, url: str):
         with self.lock:
@@ -381,7 +521,7 @@ class Download:
         "progress": 100,  # 0-100
         "downloaded_mb": 20.5,
         "total_mb": 20.5,
-        "status": "completed",
+        "status": "completed",  # waiting/downloading/refreshing/completed/error
         "save_name": "path/to/file.ext",
         "speed_mb_s": 2.5,
         "usedTime": 0,

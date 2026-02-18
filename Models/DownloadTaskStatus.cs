@@ -16,6 +16,7 @@ namespace Notion_Files_Management.Models
         private double _speed;
         private int _eta;
         private string? _error;
+        private string? _created_time;
 
         public string? url
         {
@@ -75,6 +76,12 @@ namespace Notion_Files_Management.Models
         {
             get => _error;
             set => SetProperty(ref _error, value);
+        }
+
+        public string? created_time
+        {
+            get => _created_time;
+            set => SetProperty(ref _created_time, value);
         }
     }
 }

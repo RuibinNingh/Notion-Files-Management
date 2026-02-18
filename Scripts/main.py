@@ -101,12 +101,23 @@ class Main:
             "error": progress.get("errors"),
         }
 
-
-
+    def _make_url_refresh_callback(self, block_id: str):
+        """
+        创建一个 URL 刷新回调闭包。
+        当下载链接过期时，通过 block_id 重新向 Notion API 请求新链接。
+        """
+        def _refresh() -> str | None:
+            result = self.notion.refresh_file_url(block_id)
+            if result and result.get("url"):
+                return result["url"]
+            return None
+        return _refresh
 
     def download_notion_files(self, download_list, save_directory: str):
         """
         启动下载任务（批量）
+        对每个有 block_id 的文件，传入 URL 刷新回调，
+        使下载器在链接过期时能自动刷新并重试。
         """
         self.download_list = download_list
 
@@ -115,21 +126,27 @@ class Main:
             real_name = file_info["real_name"]
             save_path = f"{save_directory}/{real_name}"
             size_mb = file_info.get("size_mb", 0.0)
+            block_id = file_info.get("block_id", "")
 
-            # 假设 downloader.download(url, save_path, size=...)
-            self.downloader.download(url, save_path, size=size_mb)
+            # 如果有 block_id，创建刷新回调；否则为 None（不支持刷新）
+            refresh_cb = self._make_url_refresh_callback(block_id) if block_id else None
+
+            self.downloader.download(url, save_path, size=size_mb,
+                                     url_refresh_callback=refresh_cb,
+                                     max_url_refresh=2)
 
         return "Download tasks started"
 
     def get_download_statuses(self):
         """
-        返回下载状态列表
+        返回下载状态列表（包含 created_time）
         """
         statuses = []
         for file_info in self.download_list:
             url = file_info["url"]
             name = file_info.get("name")
             real_name = file_info.get("real_name")
+            created_time = file_info.get("created_time")
 
             status_info = self.downloader.get_status(url)  # 以 url 为 key
 
@@ -145,6 +162,7 @@ class Main:
                 "usedTime": status_info.get("usedTime", 0),
                 "ETA": status_info.get("ETA", 0),
                 "error": status_info.get("error"),
+                "created_time": created_time,
             })
         return statuses
 
@@ -290,11 +308,6 @@ if __name__ == "__main__":
                     f"errors={err_count}"
                 )
 
-                # 如果你想看具体 error（会很长）：
-                # if err_count:
-                #     for u, e in err.items():
-                #         print("  -", u, e)
-
                 last_print = now
 
             if prog.get("status") == "done":
@@ -310,6 +323,7 @@ if __name__ == "__main__":
             print(
                 f"{i:02d}. {item.get('real_name') or item.get('name')} | "
                 f"size={_fmt_size(item.get('size_mb', 0.0))} | "
+                f"block_id={item.get('block_id', 'N/A')} | "
                 f"url={(item.get('url') or '')[:60]}..."
             )
         print()
@@ -331,13 +345,14 @@ if __name__ == "__main__":
             errn = sum(1 for s in statuses if s.get("status") == "error")
             downloading = sum(1 for s in statuses if s.get("status") == "downloading")
             waiting = sum(1 for s in statuses if s.get("status") == "waiting")
+            refreshing = sum(1 for s in statuses if s.get("status") == "refreshing")
 
             now = time.time()
             if now - last_print >= download_print_interval_s:
                 elapsed = int(now - start)
-                print(f"[sum] t={elapsed}s total={total} waiting={waiting} downloading={downloading} done={done} error={errn}")
+                print(f"[sum] t={elapsed}s total={total} waiting={waiting} downloading={downloading} refreshing={refreshing} done={done} error={errn}")
 
-                # 每个文件一行（你也可以只打印 downloading 的）
+                # 每个文件一行
                 for s in statuses:
                     name = s.get("real_name") or s.get("name") or "unknown"
                     print(
@@ -353,8 +368,8 @@ if __name__ == "__main__":
                 print("-" * 80)
                 last_print = now
 
-            # 结束条件：全部完成或错误
-            if total > 0 and (done + errn) >= total and downloading == 0 and waiting == 0:
+            # 结束条件：全部完成或错误（且没有正在刷新的）
+            if total > 0 and (done + errn) >= total and downloading == 0 and waiting == 0 and refreshing == 0:
                 print("\n=== All downloads finished. ===\n")
                 break
 
