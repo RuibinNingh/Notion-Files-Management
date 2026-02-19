@@ -559,15 +559,23 @@ namespace Notion_Files_Management.Views
             string currentVersion = CleanVersionString(AppVersion.Current);
             string latestVersion = CleanVersionString(info.version);
             
-            bool isNewVersion = !latestVersion.Equals(currentVersion, StringComparison.OrdinalIgnoreCase);
+            int cmpResult = CompareVersionStrings(latestVersion, currentVersion);
             
-            if (isNewVersion)
+            if (cmpResult > 0)
             {
+                // 远程版本 > 本地版本：建议升级
                 ShowInfoBar(InfoBarSeverity.Warning, $"发现新版本 {info.version}，建议更新");
                 DownloadButtonPanel.Visibility = Visibility.Visible;
             }
+            else if (cmpResult < 0)
+            {
+                // 远程版本 < 本地版本：穿越彩蛋
+                ShowInfoBar(InfoBarSeverity.Informational, "你是穿越来的吗？");
+                DownloadButtonPanel.Visibility = Visibility.Collapsed;
+            }
             else
             {
+                // 版本相同：已是最新
                 ShowInfoBar(InfoBarSeverity.Success, "已是最新版本");
                 DownloadButtonPanel.Visibility = Visibility.Collapsed;
             }
@@ -599,6 +607,71 @@ namespace Notion_Files_Management.Views
                 version = version.Substring(0, plusIndex);
             
             return version.Trim();
+        }
+
+        /// <summary>
+        /// 比较两个版本号字符串（格式：X.Y.Z-Status）
+        /// 先比较数字部分（X.Y.Z），再比较状态后缀（Status > Beta）
+        /// 返回值：正数 = a 更新，0 = 相同，负数 = b 更新
+        /// </summary>
+        private static int CompareVersionStrings(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b)) return 0;
+            if (string.IsNullOrEmpty(a)) return -1;
+            if (string.IsNullOrEmpty(b)) return 1;
+
+            // 分离数字部分和状态后缀
+            SplitVersion(a, out string aNumeric, out string aStatus);
+            SplitVersion(b, out string bNumeric, out string bStatus);
+
+            // 比较数字部分（逐段比较）
+            var aParts = aNumeric.Split('.');
+            var bParts = bNumeric.Split('.');
+            int maxLen = Math.Max(aParts.Length, bParts.Length);
+
+            for (int i = 0; i < maxLen; i++)
+            {
+                int aVal = i < aParts.Length && int.TryParse(aParts[i], out int av) ? av : 0;
+                int bVal = i < bParts.Length && int.TryParse(bParts[i], out int bv) ? bv : 0;
+                if (aVal != bVal) return aVal.CompareTo(bVal);
+            }
+
+            // 数字部分相同，比较状态后缀：Status（正式版） > Beta（测试版）
+            int aRank = GetStatusRank(aStatus);
+            int bRank = GetStatusRank(bStatus);
+            return aRank.CompareTo(bRank);
+        }
+
+        /// <summary>
+        /// 将版本号分离为数字部分和状态后缀
+        /// 例如 "1.3.0-Status" → numeric="1.3.0", status="Status"
+        /// </summary>
+        private static void SplitVersion(string version, out string numeric, out string status)
+        {
+            var dashIndex = version.IndexOf('-');
+            if (dashIndex > 0)
+            {
+                numeric = version.Substring(0, dashIndex);
+                status = version.Substring(dashIndex + 1);
+            }
+            else
+            {
+                numeric = version;
+                status = "";
+            }
+        }
+
+        /// <summary>
+        /// 获取版本状态的优先级排名（数值越大越新）
+        /// Status（正式版）> Beta（测试版）> 未知
+        /// </summary>
+        private static int GetStatusRank(string status)
+        {
+            if (string.IsNullOrEmpty(status)) return 0;
+            if (status.Equals("Beta", StringComparison.OrdinalIgnoreCase)) return 1;
+            if (status.Equals("Status", StringComparison.OrdinalIgnoreCase)) return 2;
+            // 未来可扩展更多状态
+            return 0;
         }
 
         /// <summary>

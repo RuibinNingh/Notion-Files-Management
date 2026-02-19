@@ -14,6 +14,16 @@ class Notion:
             "Notion-Version": self.version,
             "Authorization": f"Bearer {self.token}",
         }
+
+    # =========================================================================
+    # 不可通过 API 写入的属性类型 (Notion 自动生成的值，或不支持创建时写入的)
+    # =========================================================================
+    READONLY_PROPERTY_TYPES = frozenset({
+        "rollup", "created_by", "created_time",
+        "last_edited_by", "last_edited_time",
+        "formula", "unique_id", "button",
+    })
+
     def query_page(self, page_id, fetch_all=False):
         all_blocks = []
         cursor = None#分页游标
@@ -179,6 +189,350 @@ class Notion:
                     return None
 
         return None
+
+    # =========================================================================
+    # Data Sources API (v1.3.0-Status+, Notion API 2025-09-03)
+    # =========================================================================
+
+    def get_database_properties(self, data_source_id: str) -> dict:
+        """
+        获取数据源属性 Schema。
+        使用 Data Sources API: GET /v1/data_sources/{data_source_id}
+
+        返回格式:
+        {
+            "status": "success" | "error",
+            "data_source_id": "...",
+            "title": "...",
+            "properties": {
+                "属性名": {
+                    "id": "...",
+                    "type": "title" | "rich_text" | "number" | ...
+                },
+                ...
+            },
+            "error": "..." (仅在 status=error 时)
+        }
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = requests.get(
+                    f"{self.url}/data_sources/{data_source_id}",
+                    headers=self.default_headers,
+                    timeout=15
+                )
+
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[get_database_properties] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+
+                if res.status_code == 404:
+                    return {
+                        "status": "error",
+                        "data_source_id": data_source_id,
+                        "title": "",
+                        "properties": {},
+                        "error": f"数据源 {data_source_id} 不存在或无权限访问。请确认 ID 是数据源 ID（而非数据库 ID），并检查 Integration 权限。"
+                    }
+
+                res.raise_for_status()
+                data = res.json()
+
+                # 提取属性 Schema（只保留 id 和 type 用于映射）
+                raw_props = data.get("properties", {})
+                properties = {}
+                for name, config in raw_props.items():
+                    properties[name] = {
+                        "id": config.get("id", ""),
+                        "type": config.get("type", "unknown"),
+                    }
+
+                # 提取标题
+                title_arr = data.get("title", [])
+                title = "".join([t.get("plain_text", "") for t in title_arr]).strip() if title_arr else ""
+
+                PythonLogger.info(f"[get_database_properties] data_source_id={data_source_id}, title={title}, properties_count={len(properties)}")
+                return {
+                    "status": "success",
+                    "data_source_id": data_source_id,
+                    "title": title,
+                    "properties": properties,
+                }
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[get_database_properties] 异常: {e}，等待 {wait_time}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    PythonLogger.error(f"[get_database_properties] data_source_id={data_source_id} 失败: {e}")
+                    return {
+                        "status": "error",
+                        "data_source_id": data_source_id,
+                        "title": "",
+                        "properties": {},
+                        "error": str(e)
+                    }
+
+        return {"status": "error", "data_source_id": data_source_id, "title": "", "properties": {}, "error": "未知错误"}
+
+    def query_database(self, data_source_id: str) -> list:
+        """
+        查询数据源中的所有页面（自动分页）。
+        使用 Data Sources API: POST /v1/data_sources/{data_source_id}/query
+
+        返回: 页面对象列表 (list of page objects)
+        """
+        all_pages = []
+        cursor = None
+        max_retries = 4
+
+        while True:
+            body = {}
+            if cursor:
+                body["start_cursor"] = cursor
+            body["page_size"] = 100  # 每页最大 100
+
+            for attempt in range(max_retries):
+                try:
+                    res = requests.post(
+                        f"{self.url}/data_sources/{data_source_id}/query",
+                        headers={**self.default_headers, "Content-Type": "application/json"},
+                        json=body,
+                        timeout=30
+                    )
+
+                    if res.status_code in [429, 500, 502, 503, 504]:
+                        wait_time = 2 ** attempt
+                        PythonLogger.warning(f"[query_database] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+
+                    res.raise_for_status()
+                    break
+
+                except (requests.exceptions.RequestException, Exception) as e:
+                    wait_time = 2 ** attempt
+                    if attempt < max_retries - 1:
+                        PythonLogger.warning(f"[query_database] 异常: {e}，等待 {wait_time}s 后重试...")
+                        time.sleep(wait_time)
+                    else:
+                        PythonLogger.error(f"[query_database] 已达到最大重试次数: {e}")
+                        return all_pages
+
+            data = res.json()
+            pages = data.get("results", [])
+            all_pages.extend(pages)
+
+            PythonLogger.info(f"[query_database] 已获取 {len(all_pages)} 页，has_more={data.get('has_more')}")
+
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+
+        return all_pages
+
+    def create_page_in_database(self, data_source_id: str, properties: dict, children: list | None = None) -> dict:
+        """
+        在数据源中创建新页面。
+        使用 POST /v1/pages，parent 使用 data_source_id（2025-09-03 API）。
+
+        参数:
+            data_source_id: 目标数据源 ID
+            properties: 页面属性字典（键=属性名，值=属性值对象）
+            children: 页面内容 blocks 列表（可选，最多 100 个一级 block）
+
+        返回: 创建的页面对象（dict）
+        """
+        max_retries = 4
+        body = {
+            "parent": {
+                "type": "data_source_id",
+                "data_source_id": data_source_id,
+            },
+            "properties": properties,
+        }
+        if children:
+            # Notion API 在创建页面时最多允许 100 个一级 block
+            body["children"] = children[:100]
+
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(
+                    f"{self.url}/pages",
+                    headers={**self.default_headers, "Content-Type": "application/json"},
+                    json=body,
+                    timeout=30
+                )
+
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[create_page_in_database] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+
+                res.raise_for_status()
+                return res.json()
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[create_page_in_database] 异常: {e}，等待 {wait_time}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    PythonLogger.error(f"[create_page_in_database] 失败: {e}")
+                    raise
+
+        raise RuntimeError("create_page_in_database: 未知错误")
+
+    def move_page(self, page_id: str, target_data_source_id: str) -> dict:
+        """
+        移动页面到目标数据源。
+        使用 POST /v1/pages/{page_id}/move
+
+        参数:
+            page_id: 要移动的页面 ID
+            target_data_source_id: 目标数据源 ID
+
+        返回: 移动后的页面对象（dict）
+        """
+        max_retries = 4
+        body = {
+            "parent": {
+                "type": "data_source_id",
+                "data_source_id": target_data_source_id,
+            }
+        }
+
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(
+                    f"{self.url}/pages/{page_id}/move",
+                    headers={**self.default_headers, "Content-Type": "application/json"},
+                    json=body,
+                    timeout=30
+                )
+
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[move_page] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+
+                if res.status_code >= 400:
+                    try:
+                        err_body = res.json()
+                        PythonLogger.error(f"[move_page] API 错误 {res.status_code}: code={err_body.get('code')}, message={err_body.get('message')}")
+                    except Exception:
+                        PythonLogger.error(f"[move_page] API 错误 {res.status_code}: {res.text[:500]}")
+
+                res.raise_for_status()
+                return res.json()
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[move_page] 异常: {e}，等待 {wait_time}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    PythonLogger.error(f"[move_page] page_id={page_id} 失败: {e}")
+                    raise
+
+        raise RuntimeError("move_page: 未知错误")
+
+    def update_page_properties(self, page_id: str, properties: dict) -> dict:
+        """
+        更新页面属性。
+        使用 PATCH /v1/pages/{page_id}
+
+        参数:
+            page_id: 页面 ID
+            properties: 属性字典（键=属性名，值=属性值对象）
+
+        返回: 更新后的页面对象（dict）
+        """
+        max_retries = 4
+        body = {"properties": properties}
+
+        for attempt in range(max_retries):
+            try:
+                res = requests.patch(
+                    f"{self.url}/pages/{page_id}",
+                    headers={**self.default_headers, "Content-Type": "application/json"},
+                    json=body,
+                    timeout=30
+                )
+
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[update_page_properties] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+
+                if res.status_code >= 400:
+                    try:
+                        err_body = res.json()
+                        PythonLogger.error(f"[update_page_properties] API 错误 {res.status_code}: code={err_body.get('code')}, message={err_body.get('message')}")
+                    except Exception:
+                        PythonLogger.error(f"[update_page_properties] API 错误 {res.status_code}: {res.text[:500]}")
+
+                res.raise_for_status()
+                return res.json()
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[update_page_properties] 异常: {e}，等待 {wait_time}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    PythonLogger.error(f"[update_page_properties] page_id={page_id} 失败: {e}")
+                    raise
+
+        raise RuntimeError("update_page_properties: 未知错误")
+
+    def append_blocks(self, page_id: str, children: list) -> None:
+        """
+        向页面追加 blocks（自动分批，每批最多 100 个）。
+        使用 PATCH /v1/blocks/{page_id}/children
+
+        参数:
+            page_id: 目标页面 ID
+            children: block 对象列表
+        """
+        max_retries = 4
+        # 分批，每批最多 100
+        for i in range(0, len(children), 100):
+            batch = children[i:i+100]
+
+            for attempt in range(max_retries):
+                try:
+                    res = requests.patch(
+                        f"{self.url}/blocks/{page_id}/children",
+                        headers={**self.default_headers, "Content-Type": "application/json"},
+                        json={"children": batch},
+                        timeout=30
+                    )
+
+                    if res.status_code in [429, 500, 502, 503, 504]:
+                        wait_time = 2 ** attempt
+                        PythonLogger.warning(f"[append_blocks] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+
+                    res.raise_for_status()
+                    break
+
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        PythonLogger.warning(f"[append_blocks] 异常: {e}，等待 {wait_time}s 后重试...")
+                        time.sleep(wait_time)
+                    else:
+                        PythonLogger.error(f"[append_blocks] page_id={page_id} 批次 {i//100+1} 失败: {e}")
+                        raise
 
     def _get_remote_file_size(self, url):
         """探测远程文件大小，返回 MB"""

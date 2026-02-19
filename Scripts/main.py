@@ -1,6 +1,8 @@
 from download import Download
 from notion import Notion
 from upload import Upload
+from migrate import MigrationTask
+from batch_rename import BatchRemoveSuffixTask
 from logger import PythonLogger
 
 class Main:
@@ -27,6 +29,8 @@ class Main:
             url=url,
         )
         self._probe_size_map = {}
+        self._migration_task: MigrationTask | None = None
+        self._batch_rename_task: BatchRemoveSuffixTask | None = None
         
         self.logger.info(f"Main initialized: dl_workers={max_download_workers}, ul_workers={max_upload_workers}, url={url}")
     # -------------------------
@@ -229,6 +233,154 @@ class Main:
                 "error": status.get("error"),
             })
         return statuses
+
+    # -------------------------
+    # Migration (v1.3.0-Status)
+    # -------------------------
+    def get_database_properties(self, data_source_id: str):
+        """
+        获取数据源属性 Schema。
+        返回: {
+            "status": "success" | "error",
+            "data_source_id": "...",
+            "title": "...",
+            "properties": { "属性名": {"id": "...", "type": "..."}, ... },
+            "error": "..." (仅在 status=error 时)
+        }
+        """
+        return self.notion.get_database_properties(data_source_id)
+
+    def start_migration(self, source_id: str, target_id: str, property_mapping: dict, max_workers: int = 3):
+        """
+        启动后台迁移任务。
+        
+        参数:
+            source_id:        源数据源 ID
+            target_id:        目标数据源 ID
+            property_mapping: 属性映射 {源属性名: 目标属性名}
+            max_workers:      并发线程数
+        
+        返回: {"status": "started"} 或 {"status": "error", "error": "..."}
+        """
+        # 如果有正在运行的迁移任务，先检查状态
+        if self._migration_task is not None:
+            progress = self._migration_task.get_progress()
+            if progress["status"] in ("querying", "migrating"):
+                return {"status": "error", "error": "已有迁移任务正在运行，请先等待完成或取消"}
+
+        self._migration_task = MigrationTask(
+            notion=self.notion,
+            source_id=source_id,
+            target_id=target_id,
+            property_mapping=property_mapping,
+            max_workers=max_workers,
+        )
+
+        result = self._migration_task.start()
+        self.logger.info(f"Migration started: {source_id} -> {target_id}, mapping={property_mapping}, workers={max_workers}")
+        return result
+
+    def get_migration_progress(self):
+        """
+        查询迁移进度。
+        返回: {
+            "status": "idle" | "querying" | "migrating" | "done" | "cancelled" | "error",
+            "total": int,
+            "done": int,
+            "failed": int,
+            "percent": float,
+            "errors": list[str]
+        }
+        """
+        if self._migration_task is None:
+            return {
+                "status": "idle",
+                "total": 0,
+                "done": 0,
+                "failed": 0,
+                "percent": 0.0,
+                "errors": [],
+            }
+        return self._migration_task.get_progress()
+
+    def cancel_migration(self):
+        """
+        取消迁移任务。
+        返回: {"status": "cancelled"} 或 {"status": "idle"}
+        """
+        if self._migration_task is None:
+            return {"status": "idle"}
+        result = self._migration_task.cancel()
+        self.logger.info("Migration cancelled by user")
+        return result
+
+    # -------------------------
+    # Batch Remove Suffix (v1.3.0-Status)
+    # -------------------------
+    def start_batch_remove_suffix(self, data_source_id: str, suffix: str, max_workers: int = 3):
+        """
+        启动批量去除后缀任务。
+
+        参数:
+            data_source_id: 数据源 ID
+            suffix:         要去除的后缀字符串（如 "(1)"）
+            max_workers:    并发线程数
+
+        返回: {"status": "started"} 或 {"status": "error", "error": "..."}
+        """
+        if self._batch_rename_task is not None:
+            progress = self._batch_rename_task.get_progress()
+            if progress["status"] in ("querying", "processing"):
+                return {"status": "error", "error": "已有批量去除后缀任务正在运行，请先等待完成或取消"}
+
+        self._batch_rename_task = BatchRemoveSuffixTask(
+            notion=self.notion,
+            data_source_id=data_source_id,
+            suffix=suffix,
+            max_workers=max_workers,
+        )
+
+        result = self._batch_rename_task.start()
+        self.logger.info(f"BatchRemoveSuffix started: ds={data_source_id}, suffix='{suffix}', workers={max_workers}")
+        return result
+
+    def get_batch_remove_suffix_progress(self):
+        """
+        查询批量去除后缀进度。
+        返回: {
+            "status": "idle" | "querying" | "processing" | "done" | "cancelled" | "error",
+            "total": int,       # 匹配后缀的页面数
+            "scanned": int,     # 扫描的页面总数
+            "done": int,        # 成功更新的页面数
+            "failed": int,
+            "skipped": int,     # 不含后缀的页面数
+            "percent": float,
+            "errors": list[str]
+        }
+        """
+        if self._batch_rename_task is None:
+            return {
+                "status": "idle",
+                "total": 0,
+                "scanned": 0,
+                "done": 0,
+                "failed": 0,
+                "skipped": 0,
+                "percent": 0.0,
+                "errors": [],
+            }
+        return self._batch_rename_task.get_progress()
+
+    def cancel_batch_remove_suffix(self):
+        """
+        取消批量去除后缀任务。
+        返回: {"status": "cancelled"} 或 {"status": "idle"}
+        """
+        if self._batch_rename_task is None:
+            return {"status": "idle"}
+        result = self._batch_rename_task.cancel()
+        self.logger.info("BatchRemoveSuffix cancelled by user")
+        return result
 
     def shutdown(self):
         """

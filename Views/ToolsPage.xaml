@@ -50,10 +50,12 @@
                                               FontTypography="Subtitle"
                                               Margin="2,2,2,10"/>
 
+                                <!-- Notion 页面信息 -->
                                 <Border BorderThickness="1"
                                         BorderBrush="#22000000"
                                         CornerRadius="8"
-                                        Padding="12">
+                                        Padding="12"
+                                        Margin="0,0,0,10">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
@@ -79,6 +81,73 @@
                                                    Style="{StaticResource BluePrimaryUiButton}"
                                                    MinWidth="96"
                                                    Click="OpenPageInfoModal_Click"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 数据源迁移 (v1.3.0-Status+) -->
+                                <Border BorderThickness="1"
+                                        BorderBrush="#22000000"
+                                        CornerRadius="8"
+                                        Padding="12"
+                                        Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <ui:SymbolIcon Symbol="ArrowSync24"
+                                                       FontSize="22"
+                                                       Margin="0,2,14,0"/>
+
+                                        <StackPanel Grid.Column="1">
+                                            <ui:TextBlock Text="数据源迁移"
+                                                          FontWeight="SemiBold"/>
+                                            <ui:TextBlock Text="将一个数据源的所有页面按属性映射批量复制到另一个数据源，保留页面内容。支持多线程并发。"
+                                                          Appearance="Tertiary"
+                                                          TextWrapping="Wrap"
+                                                          Margin="0,4,0,0"/>
+                                        </StackPanel>
+
+                                        <ui:Button Grid.Column="2"
+                                                   Content="开始迁移"
+                                                   Style="{StaticResource BluePrimaryUiButton}"
+                                                   MinWidth="96"
+                                                   Click="OpenMigrateModal_Click"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- 批量去除后缀 (v1.3.0-Status+) -->
+                                <Border BorderThickness="1"
+                                        BorderBrush="#22000000"
+                                        CornerRadius="8"
+                                        Padding="12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <ui:SymbolIcon Symbol="Rename24"
+                                                       FontSize="22"
+                                                       Margin="0,2,14,0"/>
+
+                                        <StackPanel Grid.Column="1">
+                                            <ui:TextBlock Text="批量去除后缀"
+                                                          FontWeight="SemiBold"/>
+                                            <ui:TextBlock Text="批量去除数据库页面标题中的指定后缀（如 &quot;(1)&quot;），支持自定义后缀内容。"
+                                                          Appearance="Tertiary"
+                                                          TextWrapping="Wrap"
+                                                          Margin="0,4,0,0"/>
+                                        </StackPanel>
+
+                                        <ui:Button Grid.Column="2"
+                                                   Content="运行"
+                                                   Style="{StaticResource BluePrimaryUiButton}"
+                                                   MinWidth="96"
+                                                   Click="OpenBatchSuffixModal_Click"/>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -170,7 +239,7 @@
         <!-- ============ ModalOverlay（参考 DownloadPage） ============ -->
         <Grid x:Name="ModalOverlay" Background="#99000000" Visibility="Collapsed">
 
-            <!-- Step1：输入 Page ID -->
+            <!-- ===== PageInfo Step1：输入 Page ID ===== -->
             <ui:Card x:Name="ModalStep1" Background="#ff222329" Width="460" VerticalAlignment="Center" Visibility="Collapsed">
                 <StackPanel Margin="10">
                     <ui:TextBlock Text="获取 Notion 页面信息" FontTypography="Subtitle" Margin="0,0,0,15"/>
@@ -201,7 +270,7 @@
                 </StackPanel>
             </ui:Card>
 
-            <!-- Step2：进度 + 结果列表 -->
+            <!-- ===== PageInfo Step2：进度 + 结果列表 ===== -->
             <ui:Card x:Name="ModalStep2" Background="#ff222329" Width="760" VerticalAlignment="Center" Visibility="Collapsed">
                 <StackPanel Margin="10">
 
@@ -283,6 +352,258 @@
                         </ListView>
                     </Border>
 
+                </StackPanel>
+            </ui:Card>
+
+            <!-- ===== Migrate Step1：输入源和目标数据源 ID ===== -->
+            <ui:Card x:Name="MigrateStep1" Background="#ff222329" Width="520" VerticalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Margin="10">
+                    <ui:TextBlock Text="数据源迁移" FontTypography="Subtitle" Margin="0,0,0,6"/>
+                    <ui:TextBlock Text="将源数据源的所有页面按属性映射复制到目标数据源（使用数据源 ID，非数据库 ID）。"
+                                  Appearance="Tertiary" TextWrapping="Wrap" Margin="0,0,0,15"/>
+
+                    <ui:TextBlock Text="源数据源 ID" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="MigSourceIdInput" PlaceholderText="粘贴被迁移的数据源 ID" TextChanged="MigSourceId_TextChanged"/>
+                    <ui:TextBlock x:Name="MigSourceIdError" Text="" FontSize="12" Margin="0,4,0,10" Foreground="#FFEF5350"/>
+
+                    <ui:TextBlock Text="目标数据源 ID" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="MigTargetIdInput" PlaceholderText="粘贴迁移后的数据源 ID" TextChanged="MigTargetId_TextChanged"/>
+                    <ui:TextBlock x:Name="MigTargetIdError" Text="" FontSize="12" Margin="0,4,0,10" Foreground="#FFEF5350"/>
+
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ui:Button Content="取消" Click="CloseModal_Click"/>
+                        <ui:Button x:Name="BtnMigFetchProps"
+                                   Grid.Column="2"
+                                   Content="获取属性"
+                                   Style="{StaticResource BluePrimaryUiButton}"
+                                   MinWidth="96"
+                                   Click="MigFetchProperties_Click"/>
+                    </Grid>
+                </StackPanel>
+            </ui:Card>
+
+            <!-- ===== Migrate Step2：属性映射 ===== -->
+            <ui:Card x:Name="MigrateStep2" Background="#ff222329" Width="720" VerticalAlignment="Center" MaxHeight="600" Visibility="Collapsed">
+                <StackPanel Margin="10">
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <ui:TextBlock Text="属性映射" FontTypography="Subtitle" Margin="0,0,0,4"/>
+                            <ui:TextBlock x:Name="MigMappingHint"
+                                          Text="为源属性选择对应的目标属性，形成映射关系。只读属性（如 created_time 等）将被自动跳过。"
+                                          Appearance="Tertiary" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                            <ui:Button Content="返回" Margin="0,0,8,0" Click="MigBackToStep1_Click"/>
+                            <ui:Button Content="关闭" Click="CloseModal_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 映射列表 -->
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,0,0,12">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="350">
+                            <StackPanel x:Name="MappingPanel"/>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- 并发数 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <ui:TextBlock Text="并发线程数：" VerticalAlignment="Center"/>
+                        <ui:TextBox x:Name="MigWorkersInput" Text="3" Width="60" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <ui:Button x:Name="BtnMigStart"
+                               Content="开始迁移"
+                               Style="{StaticResource BluePrimaryUiButton}"
+                               HorizontalAlignment="Right"
+                               MinWidth="120"
+                               Click="MigStartMigration_Click"/>
+                </StackPanel>
+            </ui:Card>
+
+            <!-- ===== Migrate Step3：迁移进度 ===== -->
+            <ui:Card x:Name="MigrateStep3" Background="#ff222329" Width="560" VerticalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Margin="10">
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <ui:TextBlock Text="迁移进度" FontTypography="Subtitle" Margin="0,0,0,4"/>
+                            <ui:TextBlock x:Name="MigProgressStatus" Text="准备中…" Appearance="Tertiary"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                            <ui:Button x:Name="BtnMigCancel" Content="取消迁移" Appearance="Danger" Margin="0,0,8,0" Click="MigCancel_Click"/>
+                            <ui:Button x:Name="BtnMigClose" Content="关闭" Click="CloseModal_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <ProgressBar x:Name="MigProgressBar"
+                                 Minimum="0" Maximum="100"
+                                 Height="6" Margin="0,0,0,14"/>
+
+                    <!-- 统计信息 -->
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel>
+                                <ui:TextBlock Text="总计" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="MigStatTotal" Text="0" FontWeight="SemiBold" FontSize="18"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <ui:TextBlock Text="成功" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="MigStatDone" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FF4CAF50"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <ui:TextBlock Text="失败" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="MigStatFailed" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FFEF5350"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 错误列表 -->
+                    <Border x:Name="MigErrorBorder"
+                            BorderBrush="#44EF5350"
+                            BorderThickness="1" CornerRadius="8" Padding="8"
+                            Visibility="Collapsed">
+                        <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                            <ui:TextBlock x:Name="MigErrorList"
+                                          Text="" Foreground="#FFEF5350" FontSize="12"
+                                          TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </Border>
+                </StackPanel>
+            </ui:Card>
+
+            <!-- ===== BatchSuffix Step1：输入数据源 ID 和后缀 (v1.3.0-Status) ===== -->
+            <ui:Card x:Name="SuffixStep1" Background="#ff222329" Width="520" VerticalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Margin="10">
+                    <ui:TextBlock Text="批量去除后缀" FontTypography="Subtitle" Margin="0,0,0,6"/>
+                    <ui:TextBlock Text="输入数据源 ID 和要去除的后缀。程序将扫描数据源中所有页面，对标题以该后缀结尾的页面自动去除后缀。"
+                                  Appearance="Tertiary" TextWrapping="Wrap" Margin="0,0,0,15"/>
+
+                    <ui:TextBlock Text="数据源 ID" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="SuffixDsIdInput" PlaceholderText="粘贴数据源 ID" TextChanged="SuffixDsId_TextChanged"/>
+                    <ui:TextBlock x:Name="SuffixDsIdError" Text="" FontSize="12" Margin="0,4,0,10" Foreground="#FFEF5350"/>
+
+                    <ui:TextBlock Text="要去除的后缀" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <ui:TextBox x:Name="SuffixInput" PlaceholderText="例如: (1)" Margin="0,0,0,4"/>
+                    <ui:TextBlock Text="提示：输入的后缀将从页面标题末尾精确匹配并移除。" Appearance="Tertiary" FontSize="12" Margin="0,0,0,10"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ui:TextBlock Text="并发线程数：" VerticalAlignment="Center"/>
+                        <ui:TextBox x:Name="SuffixWorkersInput" Text="3" Width="60" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ui:Button Content="取消" Click="CloseModal_Click"/>
+                        <ui:Button x:Name="BtnSuffixStart"
+                                   Grid.Column="2"
+                                   Content="开始去除"
+                                   Style="{StaticResource BluePrimaryUiButton}"
+                                   MinWidth="96"
+                                   Click="SuffixStart_Click"/>
+                    </Grid>
+                </StackPanel>
+            </ui:Card>
+
+            <!-- ===== BatchSuffix Step2：进度 (v1.3.0-Status) ===== -->
+            <ui:Card x:Name="SuffixStep2" Background="#ff222329" Width="560" VerticalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Margin="10">
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <ui:TextBlock Text="批量去除后缀" FontTypography="Subtitle" Margin="0,0,0,4"/>
+                            <ui:TextBlock x:Name="SuffixProgressStatus" Text="准备中…" Appearance="Tertiary"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                            <ui:Button x:Name="BtnSuffixCancel" Content="取消" Appearance="Danger" Margin="0,0,8,0" Click="SuffixCancel_Click"/>
+                            <ui:Button x:Name="BtnSuffixClose" Content="关闭" Click="CloseModal_Click"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <ProgressBar x:Name="SuffixProgressBar"
+                                 Minimum="0" Maximum="100"
+                                 Height="6" Margin="0,0,0,14"/>
+
+                    <!-- 统计信息 -->
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                            BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel>
+                                <ui:TextBlock Text="扫描" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="SuffixStatScanned" Text="0" FontWeight="SemiBold" FontSize="18"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <ui:TextBlock Text="匹配" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="SuffixStatTotal" Text="0" FontWeight="SemiBold" FontSize="18"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <ui:TextBlock Text="成功" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="SuffixStatDone" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FF4CAF50"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3">
+                                <ui:TextBlock Text="失败" Appearance="Tertiary" FontSize="12"/>
+                                <ui:TextBlock x:Name="SuffixStatFailed" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FFEF5350"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 错误列表 -->
+                    <Border x:Name="SuffixErrorBorder"
+                            BorderBrush="#44EF5350"
+                            BorderThickness="1" CornerRadius="8" Padding="8"
+                            Visibility="Collapsed">
+                        <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                            <ui:TextBlock x:Name="SuffixErrorList"
+                                          Text="" Foreground="#FFEF5350" FontSize="12"
+                                          TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                    </Border>
                 </StackPanel>
             </ui:Card>
 

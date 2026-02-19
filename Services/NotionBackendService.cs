@@ -381,5 +381,229 @@ namespace Notion_Files_Management.Services
                 }
             }, token);
         }
+
+        // ===================================================================
+        // Migration (v1.3.0-Status)
+        // ===================================================================
+
+        /// <summary>
+        /// Retrieve data source property schema (uses Data Sources API 2025-09-03).
+        /// Returns: (status, title, properties dict as List of (name, type), error)
+        /// </summary>
+        public sealed record DataSourcePropertyInfo(string Name, string Type);
+
+        public sealed record DataSourcePropertiesResult(
+            string Status,
+            string DataSourceId,
+            string Title,
+            IReadOnlyList<DataSourcePropertyInfo> Properties,
+            string Error);
+
+        public async Task<DataSourcePropertiesResult> GetDatabasePropertiesAsync(string dataSourceId, CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.get_database_properties"))
+                {
+                    dynamic ret = pyMain.get_database_properties(dataSourceId);
+
+                    string status = ret["status"]?.ToString() ?? "error";
+                    string dsId = ret["data_source_id"]?.ToString() ?? "";
+                    string title = ret["title"]?.ToString() ?? "";
+                    string error = "";
+                    try { error = ret["error"]?.ToString() ?? ""; } catch { }
+                    if (string.Equals(error, "None", StringComparison.OrdinalIgnoreCase)) error = "";
+
+                    var props = new List<DataSourcePropertyInfo>();
+                    try
+                    {
+                        dynamic pyProps = ret["properties"];
+                        dynamic builtins = Py.Import("builtins");
+                        dynamic keys = builtins.list(pyProps.keys());
+                        int count = (int)builtins.len(keys);
+                        for (int i = 0; i < count; i++)
+                        {
+                            string name = keys[i]?.ToString() ?? "";
+                            string type = pyProps[keys[i]]["type"]?.ToString() ?? "unknown";
+                            props.Add(new DataSourcePropertyInfo(name, type));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"GetDatabasePropertiesAsync: parse properties failed: {ex.Message}");
+                    }
+
+                    return new DataSourcePropertiesResult(status, dsId, title, props, error);
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// Migration progress data.
+        /// </summary>
+        public sealed record MigrationProgress(
+            string Status, int Total, int Done, int Failed, double Percent, IReadOnlyList<string> Errors);
+
+        public async Task<string> StartMigrationAsync(
+            string sourceId, string targetId,
+            Dictionary<string, string> propertyMapping,
+            int maxWorkers,
+            CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.start_migration"))
+                {
+                    // Build Python dict for property mapping
+                    using var pyMapping = new PyDict();
+                    foreach (var kv in propertyMapping)
+                    {
+                        using var k = kv.Key.ToPython();
+                        using var v = kv.Value.ToPython();
+                        pyMapping.SetItem(k, v);
+                    }
+
+                    dynamic ret = pyMain.start_migration(sourceId, targetId, pyMapping, maxWorkers);
+                    string status = ret["status"]?.ToString() ?? "";
+                    string error = "";
+                    try { error = ret["error"]?.ToString() ?? ""; } catch { }
+                    if (string.Equals(error, "None", StringComparison.OrdinalIgnoreCase)) error = "";
+
+                    if (!string.IsNullOrEmpty(error))
+                        return $"Error: {error}";
+                    return status;
+                }
+            }, token);
+        }
+
+        public async Task<MigrationProgress> GetMigrationProgressAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.get_migration_progress"))
+                {
+                    dynamic ret = pyMain.get_migration_progress();
+
+                    string status = ret["status"]?.ToString() ?? "idle";
+                    int total = PyConvert.ToInt(ret["total"], 0);
+                    int done = PyConvert.ToInt(ret["done"], 0);
+                    int failed = PyConvert.ToInt(ret["failed"], 0);
+                    double percent = PyConvert.ToDouble(ret["percent"], 0.0);
+
+                    var errors = new List<string>();
+                    try
+                    {
+                        dynamic pyErrors = ret["errors"];
+                        dynamic builtins = Py.Import("builtins");
+                        int count = (int)builtins.len(pyErrors);
+                        for (int i = 0; i < count; i++)
+                        {
+                            string e = pyErrors[i]?.ToString() ?? "";
+                            if (!string.IsNullOrEmpty(e)) errors.Add(e);
+                        }
+                    }
+                    catch { }
+
+                    return new MigrationProgress(status, total, done, failed, percent, errors);
+                }
+            }, token);
+        }
+
+        public async Task<string> CancelMigrationAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.cancel_migration"))
+                {
+                    dynamic ret = pyMain.cancel_migration();
+                    return ret["status"]?.ToString() ?? "";
+                }
+            }, token);
+        }
+
+        // ===================================================================
+        // Batch Remove Suffix (v1.3.0-Status)
+        // ===================================================================
+
+        /// <summary>
+        /// Progress data for batch remove suffix task.
+        /// </summary>
+        public sealed record BatchRemoveSuffixProgress(
+            string Status, int Total, int Scanned, int Done,
+            int Failed, int Skipped, double Percent, IReadOnlyList<string> Errors);
+
+        public async Task<string> StartBatchRemoveSuffixAsync(
+            string dataSourceId, string suffix, int maxWorkers, CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.start_batch_remove_suffix"))
+                {
+                    dynamic ret = pyMain.start_batch_remove_suffix(dataSourceId, suffix, maxWorkers);
+                    string status = ret["status"]?.ToString() ?? "";
+                    string error = "";
+                    try { error = ret["error"]?.ToString() ?? ""; } catch { }
+                    if (string.Equals(error, "None", StringComparison.OrdinalIgnoreCase)) error = "";
+
+                    if (!string.IsNullOrEmpty(error))
+                        return $"Error: {error}";
+                    return status;
+                }
+            }, token);
+        }
+
+        public async Task<BatchRemoveSuffixProgress> GetBatchRemoveSuffixProgressAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.get_batch_remove_suffix_progress"))
+                {
+                    dynamic ret = pyMain.get_batch_remove_suffix_progress();
+
+                    string status = ret["status"]?.ToString() ?? "idle";
+                    int total = PyConvert.ToInt(ret["total"], 0);
+                    int scanned = PyConvert.ToInt(ret["scanned"], 0);
+                    int done = PyConvert.ToInt(ret["done"], 0);
+                    int failed = PyConvert.ToInt(ret["failed"], 0);
+                    int skipped = PyConvert.ToInt(ret["skipped"], 0);
+                    double percent = PyConvert.ToDouble(ret["percent"], 0.0);
+
+                    var errors = new List<string>();
+                    try
+                    {
+                        dynamic pyErrors = ret["errors"];
+                        dynamic builtins = Py.Import("builtins");
+                        int count = (int)builtins.len(pyErrors);
+                        for (int i = 0; i < count; i++)
+                        {
+                            string e = pyErrors[i]?.ToString() ?? "";
+                            if (!string.IsNullOrEmpty(e)) errors.Add(e);
+                        }
+                    }
+                    catch { }
+
+                    return new BatchRemoveSuffixProgress(status, total, scanned, done, failed, skipped, percent, errors);
+                }
+            }, token);
+        }
+
+        public async Task<string> CancelBatchRemoveSuffixAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.cancel_batch_remove_suffix"))
+                {
+                    dynamic ret = pyMain.cancel_batch_remove_suffix();
+                    return ret["status"]?.ToString() ?? "";
+                }
+            }, token);
+        }
     }
 }
