@@ -37,6 +37,15 @@ namespace Notion_Files_Management.Views
         private CancellationTokenSource? _suffixCts;
         private bool _isFormattingSuffixDsId;
 
+        // Size update state (v1.4.0-Status)
+        private CancellationTokenSource? _suCts;
+        private bool _isFormattingSuDsId;
+        private List<NotionBackendService.DataSourcePropertyInfo>? _suProperties;
+        private List<NotionBackendService.PageSizeInfo> _suPagesWithSize = new();
+        private List<NotionBackendService.PageSizeInfo> _suPagesWithoutSize = new();
+        private readonly List<CheckBox> _suEmptyCheckboxes = new();
+        private readonly List<CheckBox> _suSetCheckboxes = new();
+
         public ToolsPage()
         {
             InitializeComponent();
@@ -49,6 +58,28 @@ namespace Notion_Files_Management.Views
         }
 
         // ===== Modal controls =====
+        private void OpenSizeUpdateChoice_Click(object sender, RoutedEventArgs e)
+        {
+            ModalOverlay.Visibility = Visibility.Visible;
+            ModalStep1.Visibility = Visibility.Collapsed;
+            ModalStep2.Visibility = Visibility.Collapsed;
+            HideAllMigrateSteps();
+            HideAllSizeUpdateSteps();
+            SizeUpdateChoice.Visibility = Visibility.Visible;
+        }
+
+        private void SizeUpdateAutoMode_Click(object sender, RoutedEventArgs e)
+        {
+            SizeUpdateChoice.Visibility = Visibility.Collapsed;
+            OpenSizeUpdateStep1();
+        }
+
+        private void SizeUpdateQueryMode_Click(object sender, RoutedEventArgs e)
+        {
+            SizeUpdateChoice.Visibility = Visibility.Collapsed;
+            OpenStep1();
+        }
+
         private void OpenPageInfoModal_Click(object sender, RoutedEventArgs e) => OpenStep1();
 
         private void OpenStep1()
@@ -89,10 +120,12 @@ namespace Notion_Files_Management.Views
             _cts?.Cancel();
             _migCts?.Cancel();
             _suffixCts?.Cancel();
+            _suCts?.Cancel();
             ModalOverlay.Visibility = Visibility.Collapsed;
             ModalStep1.Visibility = Visibility.Collapsed;
             ModalStep2.Visibility = Visibility.Collapsed;
             HideAllMigrateSteps();
+            HideAllSizeUpdateSteps();
         }
 
         private void BackToStep1_Click(object sender, RoutedEventArgs e)
@@ -255,6 +288,14 @@ namespace Notion_Files_Management.Views
             MigrateStep3.Visibility = Visibility.Collapsed;
             SuffixStep1.Visibility = Visibility.Collapsed;
             SuffixStep2.Visibility = Visibility.Collapsed;
+        }
+
+        private void HideAllSizeUpdateSteps()
+        {
+            SizeUpdateChoice.Visibility = Visibility.Collapsed;
+            SizeUpdateStep1.Visibility = Visibility.Collapsed;
+            SizeUpdateStep2.Visibility = Visibility.Collapsed;
+            SizeUpdateStep3.Visibility = Visibility.Collapsed;
         }
 
         private void OpenMigrateModal_Click(object sender, RoutedEventArgs e)
@@ -806,6 +847,401 @@ namespace Notion_Files_Management.Views
             {
                 MessageBox.Show("取消失败：" + ex.Message);
                 Logger.Error("SuffixCancel failed", ex);
+            }
+        }
+
+        // =================================================================
+        // Page Size Auto-Update (v1.4.0-Status)
+        // =================================================================
+
+        private void SuDsId_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sender is TextBox tb)
+                PageIdInputHelper.HandleTextChanged(tb, SuDsIdError, ref _isFormattingSuDsId);
+        }
+
+        private void OpenSizeUpdateStep1()
+        {
+            ModalOverlay.Visibility = Visibility.Visible;
+            HideAllMigrateSteps();
+            HideAllSizeUpdateSteps();
+            ModalStep1.Visibility = Visibility.Collapsed;
+            ModalStep2.Visibility = Visibility.Collapsed;
+            SizeUpdateStep1.Visibility = Visibility.Visible;
+
+            SuDsIdInput.Text = "";
+            SuSizePropCombo.ItemsSource = null;
+            SuSizePropCombo.Items.Clear();
+            try { SuDsIdError.Text = ""; } catch { }
+        }
+
+        private async void SuFetchProperties_Click(object sender, RoutedEventArgs e)
+        {
+            if (!NotionPageId.TryNormalize(SuDsIdInput.Text, out string dsId, out string dsErr))
+            {
+                try { SuDsIdError.Text = dsErr; } catch { }
+                MessageBox.Show("数据源 ID：" + dsErr);
+                return;
+            }
+            SuDsIdInput.Text = dsId;
+
+            var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
+            if (!ok)
+            {
+                MessageBox.Show(err);
+                return;
+            }
+
+            BtnSuFetchProps.IsEnabled = false;
+            try
+            {
+                _suCts?.Cancel();
+                _suCts = new CancellationTokenSource();
+                var token = _suCts.Token;
+
+                var result = await _svc.GetDatabasePropertiesAsync(dsId, token);
+                if (!string.Equals(result.Status, "success", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("获取数据源属性失败：" + result.Error);
+                    return;
+                }
+
+                _suProperties = result.Properties.ToList();
+
+                // Filter for number type properties only
+                var numberProps = _suProperties.Where(p =>
+                    string.Equals(p.Type, "number", StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (numberProps.Count == 0)
+                {
+                    MessageBox.Show("该数据源没有数字 (number) 类型的属性。\n请先在 Notion 中为数据源添加一个数字属性用于存储大小。");
+                    return;
+                }
+
+                var items = numberProps.Select(p => $"{p.Name} [number]").ToList();
+                SuSizePropCombo.ItemsSource = items;
+                SuSizePropCombo.SelectedIndex = 0;
+
+                Logger.Info($"SizeUpdate: fetched {_suProperties.Count} properties, {numberProps.Count} number props");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                MessageBox.Show("获取属性失败：" + ex.Message);
+                Logger.Error("SuFetchProperties failed", ex);
+            }
+            finally
+            {
+                BtnSuFetchProps.IsEnabled = true;
+            }
+        }
+
+        private async void SuNextToPageSelection_Click(object sender, RoutedEventArgs e)
+        {
+            // Validate
+            if (!NotionPageId.TryNormalize(SuDsIdInput.Text, out string dsId, out string dsErr))
+            {
+                try { SuDsIdError.Text = dsErr; } catch { }
+                MessageBox.Show("数据源 ID：" + dsErr);
+                return;
+            }
+
+            if (SuSizePropCombo.SelectedItem == null)
+            {
+                MessageBox.Show("请先获取属性并选择大小属性。");
+                return;
+            }
+
+            // Extract property name from "PropName [number]"
+            string selectedText = SuSizePropCombo.SelectedItem.ToString() ?? "";
+            string sizePropName = selectedText.Contains(" [")
+                ? selectedText[..selectedText.LastIndexOf(" [")]
+                : selectedText;
+
+            var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
+            if (!ok)
+            {
+                MessageBox.Show(err);
+                return;
+            }
+
+            BtnSuNext1.IsEnabled = false;
+            try
+            {
+                _suCts?.Cancel();
+                _suCts = new CancellationTokenSource();
+                var token = _suCts.Token;
+
+                // Scan pages
+                var result = await _svc.ScanDataSourcePagesAsync(dsId, sizePropName, token);
+                if (!string.Equals(result.Status, "success", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("扫描页面失败：" + result.Error);
+                    return;
+                }
+
+                _suPagesWithoutSize = result.PagesWithoutSize.ToList();
+                _suPagesWithSize = result.PagesWithSize.ToList();
+
+                // Build page selection UI
+                BuildPageSelectionUI();
+
+                // Show step 2
+                SizeUpdateStep1.Visibility = Visibility.Collapsed;
+                SizeUpdateStep2.Visibility = Visibility.Visible;
+
+                SuPageCountHint.Text = $"共 {result.Total} 个页面（未设置 {_suPagesWithoutSize.Count}，已设置 {_suPagesWithSize.Count}）";
+
+                Logger.Info($"SizeUpdate: scanned {result.Total} pages, without={_suPagesWithoutSize.Count}, with={_suPagesWithSize.Count}");
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                MessageBox.Show("扫描页面失败：" + ex.Message);
+                Logger.Error("SuNextToPageSelection failed", ex);
+            }
+            finally
+            {
+                BtnSuNext1.IsEnabled = true;
+            }
+        }
+
+        private void BuildPageSelectionUI()
+        {
+            _suEmptyCheckboxes.Clear();
+            _suSetCheckboxes.Clear();
+            SuEmptyPagesPanel.Children.Clear();
+            SuSetPagesPanel.Children.Clear();
+
+            SuEmptyHeader.Text = $"未设置大小 ({_suPagesWithoutSize.Count})";
+            SuSetHeader.Text = $"已设置大小 ({_suPagesWithSize.Count})";
+
+            // Empty pages (default selected)
+            foreach (var page in _suPagesWithoutSize)
+            {
+                var cb = new CheckBox
+                {
+                    Content = $"{page.Title}",
+                    Tag = page.Id,
+                    IsChecked = true,
+                    Margin = new Thickness(0, 1, 0, 1),
+                    Foreground = FindResource("TextFillColorPrimaryBrush") as System.Windows.Media.Brush,
+                };
+                _suEmptyCheckboxes.Add(cb);
+                SuEmptyPagesPanel.Children.Add(cb);
+            }
+
+            // Set pages (default NOT selected)
+            foreach (var page in _suPagesWithSize)
+            {
+                var cb = new CheckBox
+                {
+                    Content = $"{page.Title}  ({page.SizeValue:0.###} GB)",
+                    Tag = page.Id,
+                    IsChecked = false,
+                    Margin = new Thickness(0, 1, 0, 1),
+                    Foreground = FindResource("TextFillColorPrimaryBrush") as System.Windows.Media.Brush,
+                };
+                _suSetCheckboxes.Add(cb);
+                SuSetPagesPanel.Children.Add(cb);
+            }
+        }
+
+        private void SuSelectAllEmpty_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var cb in _suEmptyCheckboxes) cb.IsChecked = true;
+        }
+
+        private void SuDeselectAllEmpty_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var cb in _suEmptyCheckboxes) cb.IsChecked = !cb.IsChecked;
+        }
+
+        private void SuSelectAllSet_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var cb in _suSetCheckboxes) cb.IsChecked = true;
+        }
+
+        private void SuDeselectAllSet_Click(object sender, RoutedEventArgs e)
+        {
+            foreach (var cb in _suSetCheckboxes) cb.IsChecked = !cb.IsChecked;
+        }
+
+        private void SuBackToStep1_Click(object sender, RoutedEventArgs e)
+        {
+            _suCts?.Cancel();
+            SizeUpdateStep2.Visibility = Visibility.Collapsed;
+            SizeUpdateStep1.Visibility = Visibility.Visible;
+        }
+
+        private async void SuStartUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            // Collect selected page IDs
+            var selectedIds = new List<string>();
+            foreach (var cb in _suEmptyCheckboxes)
+            {
+                if (cb.IsChecked == true && cb.Tag is string id)
+                    selectedIds.Add(id);
+            }
+            foreach (var cb in _suSetCheckboxes)
+            {
+                if (cb.IsChecked == true && cb.Tag is string id)
+                    selectedIds.Add(id);
+            }
+
+            if (selectedIds.Count == 0)
+            {
+                MessageBox.Show("请至少选择一个页面。");
+                return;
+            }
+
+            // Validate thread counts
+            if (!int.TryParse(SuLinkWorkersInput.Text?.Trim(), out int linkWorkers) || linkWorkers < 1 || linkWorkers > 8)
+            {
+                MessageBox.Show("链接查询线程数应为 1-8 的整数。");
+                return;
+            }
+            if (!int.TryParse(SuSizeWorkersInput.Text?.Trim(), out int sizeWorkers) || sizeWorkers < 1 || sizeWorkers > 16)
+            {
+                MessageBox.Show("大小查询线程数应为 1-16 的整数。");
+                return;
+            }
+
+            // Get property name
+            string selectedText = SuSizePropCombo.SelectedItem?.ToString() ?? "";
+            string sizePropName = selectedText.Contains(" [")
+                ? selectedText[..selectedText.LastIndexOf(" [")]
+                : selectedText;
+
+            if (!NotionPageId.TryNormalize(SuDsIdInput.Text, out string dsId, out _))
+            {
+                MessageBox.Show("数据源 ID 无效。");
+                return;
+            }
+
+            var (ok, err) = await _svc.EnsureBackendReadyFromConfigAsync();
+            if (!ok)
+            {
+                MessageBox.Show(err);
+                return;
+            }
+
+            BtnSuStartUpdate.IsEnabled = false;
+
+            try
+            {
+                _suCts?.Cancel();
+                _suCts = new CancellationTokenSource();
+                var token = _suCts.Token;
+
+                // Start update task
+                string result = await _svc.StartPageSizeUpdateAsync(
+                    dsId, sizePropName, selectedIds, linkWorkers, sizeWorkers, token);
+
+                if (result.StartsWith("Error", StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("启动失败：" + result);
+                    return;
+                }
+
+                Logger.Info($"PageSizeUpdate started: ds={dsId}, prop={sizePropName}, pages={selectedIds.Count}, linkW={linkWorkers}, sizeW={sizeWorkers}");
+
+                // Show progress step
+                SizeUpdateStep2.Visibility = Visibility.Collapsed;
+                SizeUpdateStep3.Visibility = Visibility.Visible;
+                SuProgressBar.Value = 0;
+                SuProgressStatus.Text = "正在扫描页面文件链接…";
+                SuStatTotal.Text = selectedIds.Count.ToString();
+                SuStatLinkQueried.Text = "0";
+                SuStatUpdated.Text = "0";
+                SuStatFailed.Text = "0";
+                SuErrorBorder.Visibility = Visibility.Collapsed;
+                BtnSuCancel.IsEnabled = true;
+
+                // Poll progress
+                await PollSizeUpdateProgress(token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                MessageBox.Show("操作失败：" + ex.Message);
+                Logger.Error("SuStartUpdate failed", ex);
+            }
+            finally
+            {
+                BtnSuStartUpdate.IsEnabled = true;
+            }
+        }
+
+        private async Task PollSizeUpdateProgress(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    var p = await _svc.GetPageSizeUpdateProgressAsync(token);
+
+                    SuProgressBar.Value = p.Percent;
+                    SuStatTotal.Text = p.Total.ToString();
+                    SuStatLinkQueried.Text = p.LinkQueried.ToString();
+                    SuStatUpdated.Text = p.SizeUpdated.ToString();
+                    SuStatFailed.Text = p.Failed.ToString();
+
+                    string statusText = p.Status switch
+                    {
+                        "scanning" => $"扫描页面文件链接中…（{p.LinkQueried}/{p.Total}）",
+                        "updating" => $"更新中 {p.Percent:0.0}%（已更新 {p.SizeUpdated}，失败 {p.Failed}）",
+                        "done" => $"完成！已更新 {p.SizeUpdated}，失败 {p.Failed}。",
+                        "cancelled" => "已取消。",
+                        "error" => "出错。",
+                        _ => p.Status,
+                    };
+                    SuProgressStatus.Text = statusText;
+
+                    // Show errors
+                    if (p.Errors.Count > 0)
+                    {
+                        SuErrorBorder.Visibility = Visibility.Visible;
+                        SuErrorList.Text = string.Join("\n", p.Errors);
+                    }
+
+                    // Terminal states
+                    if (p.Status is "done" or "cancelled" or "error")
+                    {
+                        BtnSuCancel.IsEnabled = false;
+                        if (p.Status == "done")
+                        {
+                            SuProgressBar.Value = 100;
+                        }
+                        break;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("PollSizeUpdateProgress error", ex);
+                }
+
+                await Task.Delay(500, token);
+            }
+        }
+
+        private async void SuCancel_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                BtnSuCancel.IsEnabled = false;
+                await _svc.CancelPageSizeUpdateAsync(CancellationToken.None);
+                SuProgressStatus.Text = "已取消。";
+                Logger.Info("User cancelled page size update");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("取消失败：" + ex.Message);
+                Logger.Error("SuCancel failed", ex);
             }
         }
     }

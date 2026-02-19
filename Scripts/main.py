@@ -3,6 +3,7 @@ from notion import Notion
 from upload import Upload
 from migrate import MigrationTask
 from batch_rename import BatchRemoveSuffixTask
+from page_size_update import PageSizeUpdateTask, scan_pages_for_size_property
 from logger import PythonLogger
 
 class Main:
@@ -31,6 +32,7 @@ class Main:
         self._probe_size_map = {}
         self._migration_task: MigrationTask | None = None
         self._batch_rename_task: BatchRemoveSuffixTask | None = None
+        self._page_size_task: PageSizeUpdateTask | None = None
         
         self.logger.info(f"Main initialized: dl_workers={max_download_workers}, ul_workers={max_upload_workers}, url={url}")
     # -------------------------
@@ -380,6 +382,109 @@ class Main:
             return {"status": "idle"}
         result = self._batch_rename_task.cancel()
         self.logger.info("BatchRemoveSuffix cancelled by user")
+        return result
+
+    # -------------------------
+    # Page Size Update (v1.4.0-Status)
+    # -------------------------
+    def scan_data_source_pages(self, data_source_id: str, size_property_name: str):
+        """
+        扫描数据源所有页面，按大小属性是否已设置分类。
+
+        参数:
+            data_source_id:    数据源 ID
+            size_property_name: 大小属性名
+
+        返回: {
+            "status": "success" | "error",
+            "pages_with_size": [{"id": "...", "title": "...", "size_value": 123.45}, ...],
+            "pages_without_size": [{"id": "...", "title": "..."}, ...],
+            "total": int,
+            "error": "..."
+        }
+        """
+        self.logger.info(f"scan_data_source_pages: ds={data_source_id}, prop={size_property_name}")
+        return scan_pages_for_size_property(self.notion, data_source_id, size_property_name)
+
+    def start_page_size_update(
+        self,
+        data_source_id: str,
+        size_property_name: str,
+        page_ids: list[str],
+        link_workers: int = 3,
+        size_workers: int = 5,
+    ):
+        """
+        启动页面大小自动更新任务。
+
+        参数:
+            data_source_id:    数据源 ID
+            size_property_name: 大小属性名 (number 类型)
+            page_ids:          要更新的页面 ID 列表
+            link_workers:      链接查询线程数 (默认 3)
+            size_workers:      大小查询线程数 (默认 5)
+
+        返回: {"status": "started"} 或 {"status": "error", "error": "..."}
+        """
+        if self._page_size_task is not None:
+            progress = self._page_size_task.get_progress()
+            if progress["status"] in ("scanning", "updating"):
+                return {"status": "error", "error": "已有页面大小更新任务正在运行，请先等待完成或取消"}
+
+        self._page_size_task = PageSizeUpdateTask(
+            notion=self.notion,
+            data_source_id=data_source_id,
+            size_property_name=size_property_name,
+            page_ids=page_ids,
+            link_workers=link_workers,
+            size_workers=size_workers,
+        )
+
+        result = self._page_size_task.start()
+        self.logger.info(
+            f"PageSizeUpdate started: ds={data_source_id}, prop={size_property_name}, "
+            f"pages={len(page_ids)}, link_workers={link_workers}, size_workers={size_workers}"
+        )
+        return result
+
+    def get_page_size_update_progress(self):
+        """
+        查询页面大小更新进度。
+        返回: {
+            "status": "idle" | "scanning" | "updating" | "done" | "cancelled" | "error",
+            "total": int,
+            "link_queried": int,
+            "size_updated": int,
+            "failed": int,
+            "percent": float,
+            "current_page": str,
+            "current_files": int,
+            "errors": list[str]
+        }
+        """
+        if self._page_size_task is None:
+            return {
+                "status": "idle",
+                "total": 0,
+                "link_queried": 0,
+                "size_updated": 0,
+                "failed": 0,
+                "percent": 0.0,
+                "current_page": "",
+                "current_files": 0,
+                "errors": [],
+            }
+        return self._page_size_task.get_progress()
+
+    def cancel_page_size_update(self):
+        """
+        取消页面大小更新任务。
+        返回: {"status": "cancelled"} 或 {"status": "idle"}
+        """
+        if self._page_size_task is None:
+            return {"status": "idle"}
+        result = self._page_size_task.cancel()
+        self.logger.info("PageSizeUpdate cancelled by user")
         return result
 
     def shutdown(self):

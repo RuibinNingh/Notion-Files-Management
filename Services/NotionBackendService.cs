@@ -605,5 +605,163 @@ namespace Notion_Files_Management.Services
                 }
             }, token);
         }
+        // ===================================================================
+        // Page Size Update (v1.4.0-Status)
+        // ===================================================================
+
+        /// <summary>
+        /// Page info from data source scan for size update feature.
+        /// </summary>
+        public sealed record PageSizeInfo(string Id, string Title, double? SizeValue);
+
+        public sealed record ScanPagesResult(
+            string Status,
+            IReadOnlyList<PageSizeInfo> PagesWithSize,
+            IReadOnlyList<PageSizeInfo> PagesWithoutSize,
+            int Total,
+            string Error);
+
+        public async Task<ScanPagesResult> ScanDataSourcePagesAsync(
+            string dataSourceId, string sizePropertyName, CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.scan_data_source_pages"))
+                {
+                    dynamic ret = pyMain.scan_data_source_pages(dataSourceId, sizePropertyName);
+
+                    string status = ret["status"]?.ToString() ?? "error";
+                    int total = PyConvert.ToInt(ret["total"], 0);
+                    string error = "";
+                    try { error = ret["error"]?.ToString() ?? ""; } catch { }
+                    if (string.Equals(error, "None", StringComparison.OrdinalIgnoreCase)) error = "";
+
+                    var withSize = new List<PageSizeInfo>();
+                    var withoutSize = new List<PageSizeInfo>();
+
+                    try
+                    {
+                        dynamic builtins = Py.Import("builtins");
+
+                        dynamic pyWith = ret["pages_with_size"];
+                        int wc = (int)builtins.len(pyWith);
+                        for (int i = 0; i < wc; i++)
+                        {
+                            string id = pyWith[i]["id"]?.ToString() ?? "";
+                            string title = pyWith[i]["title"]?.ToString() ?? "";
+                            double sv = PyConvert.ToDouble(pyWith[i]["size_value"], 0.0);
+                            withSize.Add(new PageSizeInfo(id, title, sv));
+                        }
+
+                        dynamic pyWithout = ret["pages_without_size"];
+                        int woc = (int)builtins.len(pyWithout);
+                        for (int i = 0; i < woc; i++)
+                        {
+                            string id = pyWithout[i]["id"]?.ToString() ?? "";
+                            string title = pyWithout[i]["title"]?.ToString() ?? "";
+                            withoutSize.Add(new PageSizeInfo(id, title, null));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"ScanDataSourcePagesAsync parse failed: {ex.Message}");
+                    }
+
+                    return new ScanPagesResult(status, withSize, withoutSize, total, error);
+                }
+            }, token);
+        }
+
+        public async Task<string> StartPageSizeUpdateAsync(
+            string dataSourceId, string sizePropertyName,
+            List<string> pageIds, int linkWorkers, int sizeWorkers,
+            CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.start_page_size_update"))
+                {
+                    using var pyPageIds = new PyList();
+                    foreach (var id in pageIds)
+                        pyPageIds.Append((id ?? "").ToPython());
+
+                    dynamic ret = pyMain.start_page_size_update(
+                        dataSourceId, sizePropertyName, pyPageIds,
+                        linkWorkers, sizeWorkers);
+
+                    string status = ret["status"]?.ToString() ?? "";
+                    string error = "";
+                    try { error = ret["error"]?.ToString() ?? ""; } catch { }
+                    if (string.Equals(error, "None", StringComparison.OrdinalIgnoreCase)) error = "";
+
+                    if (!string.IsNullOrEmpty(error))
+                        return $"Error: {error}";
+                    return status;
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// Page size update progress data.
+        /// </summary>
+        public sealed record PageSizeUpdateProgress(
+            string Status, int Total, int LinkQueried, int SizeUpdated,
+            int Failed, double Percent, string CurrentPage, int CurrentFiles,
+            IReadOnlyList<string> Errors);
+
+        public async Task<PageSizeUpdateProgress> GetPageSizeUpdateProgressAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.get_page_size_update_progress"))
+                {
+                    dynamic ret = pyMain.get_page_size_update_progress();
+
+                    string status = ret["status"]?.ToString() ?? "idle";
+                    int total = PyConvert.ToInt(ret["total"], 0);
+                    int linkQueried = PyConvert.ToInt(ret["link_queried"], 0);
+                    int sizeUpdated = PyConvert.ToInt(ret["size_updated"], 0);
+                    int failed = PyConvert.ToInt(ret["failed"], 0);
+                    double percent = PyConvert.ToDouble(ret["percent"], 0.0);
+                    string currentPage = "";
+                    try { currentPage = ret["current_page"]?.ToString() ?? ""; } catch { }
+                    int currentFiles = PyConvert.ToInt(ret["current_files"], 0);
+
+                    var errors = new List<string>();
+                    try
+                    {
+                        dynamic pyErrors = ret["errors"];
+                        dynamic builtins = Py.Import("builtins");
+                        int count = (int)builtins.len(pyErrors);
+                        for (int i = 0; i < count; i++)
+                        {
+                            string e = pyErrors[i]?.ToString() ?? "";
+                            if (!string.IsNullOrEmpty(e)) errors.Add(e);
+                        }
+                    }
+                    catch { }
+
+                    return new PageSizeUpdateProgress(
+                        status, total, linkQueried, sizeUpdated,
+                        failed, percent, currentPage, currentFiles, errors);
+                }
+            }, token);
+        }
+
+        public async Task<string> CancelPageSizeUpdateAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.cancel_page_size_update"))
+                {
+                    dynamic ret = pyMain.cancel_page_size_update();
+                    return ret["status"]?.ToString() ?? "";
+                }
+            }, token);
+        }
     }
 }

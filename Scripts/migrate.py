@@ -1,5 +1,5 @@
 """
-migrate.py — 数据源属性同步模块 (v1.3.0-Status.4)
+migrate.py — 数据源属性同步模块 (v1.3.1-Status.1)
 
 方案:
     用户先在 Notion 中手动复制源数据库页面并粘贴到目标数据库（保留 blocks 和文件），
@@ -332,16 +332,19 @@ class MigrationTask:
             for item in copied.get("multi_select", []):
                 item.pop("id", None)
                 item.pop("description", None)
+                item.pop("color", None)
         elif prop_type == "select":
             sel = copied.get("select")
             if sel:
                 sel.pop("id", None)
                 sel.pop("description", None)
+                sel.pop("color", None)
         elif prop_type == "status":
             st = copied.get("status")
             if st:
                 st.pop("id", None)
                 st.pop("description", None)
+                st.pop("color", None)
         elif prop_type == "relation":
             for item in copied.get("relation", []):
                 keys_to_remove = [k for k in item if k != "id"]
