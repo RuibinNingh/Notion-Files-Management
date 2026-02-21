@@ -4,6 +4,12 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="下载">
 
+	<Page.Resources>
+		<SolidColorBrush x:Key="StatusCompletedBrush" Color="#4CAF50"/>
+		<SolidColorBrush x:Key="StatusErrorBrush"     Color="#EF5350"/>
+		<SolidColorBrush x:Key="StatusWaitingBrush"    Color="#78909C"/>
+	</Page.Resources>
+
 	<Grid>
 		<Grid Margin="30" VerticalAlignment="Top">
 			<Grid.RowDefinitions>
@@ -21,7 +27,7 @@
 				              Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 			</StackPanel>
 
-			<!-- 中间卡片：参照上传页的布局，确保无任务时也有固定高度且内容顶部对齐 -->
+			<!-- 中间卡片 -->
 			<ui:Card Grid.Row="1" Padding="20">
 				<StackPanel>
 					<ui:Button x:Name="BtnOpenDownloadDialog"
@@ -38,68 +44,149 @@
 							BorderThickness="1"
 							CornerRadius="8">
 						<ListView x:Name="DownloadTaskListView"
-									 ItemsSource="{Binding DisplayTasks}"
-									 MinHeight="200"
-									 MaxHeight="450"
-									 Background="Transparent"
-									 Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-									 HorizontalContentAlignment="Stretch"
-									 ScrollViewer.VerticalScrollBarVisibility="Auto">
+								     ItemsSource="{Binding DisplayTasks}"
+								     MinHeight="200"
+								     MaxHeight="520"
+								     Background="Transparent"
+								     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+								     HorizontalContentAlignment="Stretch"
+								     ScrollViewer.VerticalScrollBarVisibility="Auto"
+								     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+							<ListView.ItemContainerStyle>
+								<Style TargetType="ListViewItem">
+									<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+									<Setter Property="Padding" Value="0"/>
+									<Setter Property="Margin" Value="0"/>
+								</Style>
+							</ListView.ItemContainerStyle>
 							<ListView.ItemTemplate>
 								<DataTemplate>
-									<Grid Margin="0,8">
-										<Grid.ColumnDefinitions>
-											<ColumnDefinition Width="200"/>
-											<ColumnDefinition Width="*"/>
-											<ColumnDefinition Width="180"/>
-										</Grid.ColumnDefinitions>
-
-										<StackPanel VerticalAlignment="Center">
-											<ui:TextBlock Text="{Binding real_name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-											<ui:TextBlock Text="{Binding status}" FontSize="11" Appearance="Tertiary"/>
-										</StackPanel>
-
-										<StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
-											<ProgressBar Value="{Binding progress}" Maximum="100" Height="6" Margin="0,0,0,5" HorizontalAlignment="Stretch"/>
-
-											<!-- 只显示大小，不显示百分比 -->
-											<Grid>
+									<Border CornerRadius="8"
+									        Padding="14,10"
+									        Margin="4,3"
+									        Background="{DynamicResource ControlFillColorDefaultBrush}">
+										<StackPanel>
+											<!-- 第一行: 状态图标 + 文件名（左）  百分比 + 速度（右） -->
+											<Grid Margin="0,0,0,8">
 												<Grid.ColumnDefinitions>
-													<ColumnDefinition Width="Auto"/>
+													<ColumnDefinition Width="*"/>
 													<ColumnDefinition Width="Auto"/>
 												</Grid.ColumnDefinitions>
 
-												<ui:TextBlock Grid.Column="0"
-		                      Text="{Binding downloaded_mb, StringFormat={}{0:0.0} MB}"
-		                      FontSize="10"
-		                      Appearance="Tertiary"/>
+												<StackPanel Orientation="Horizontal"
+												            VerticalAlignment="Center"
+												            Grid.Column="0">
+													<ui:SymbolIcon FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center">
+														<ui:SymbolIcon.Style>
+															<Style TargetType="ui:SymbolIcon">
+																<Setter Property="Symbol" Value="ArrowDownload24"/>
+																<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}"/>
+																<Style.Triggers>
+																	<DataTrigger Binding="{Binding status}" Value="completed">
+																		<Setter Property="Symbol" Value="CheckmarkCircle24"/>
+																		<Setter Property="Foreground" Value="{StaticResource StatusCompletedBrush}"/>
+																	</DataTrigger>
+																	<DataTrigger Binding="{Binding status}" Value="error">
+																		<Setter Property="Symbol" Value="DismissCircle24"/>
+																		<Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+																	</DataTrigger>
+																	<DataTrigger Binding="{Binding status}" Value="waiting">
+																		<Setter Property="Symbol" Value="Clock24"/>
+																		<Setter Property="Foreground" Value="{StaticResource StatusWaitingBrush}"/>
+																	</DataTrigger>
+																</Style.Triggers>
+															</Style>
+														</ui:SymbolIcon.Style>
+													</ui:SymbolIcon>
 
-												<ui:TextBlock Grid.Column="1"
-		                      Text="{Binding total_mb, StringFormat={}/ {0:0.0} MB}"
-		                      Margin="6,0,0,0"
-		                      FontSize="10"
-		                      Appearance="Tertiary"/>
+													<TextBlock Text="{Binding real_name}"
+													           FontWeight="SemiBold"
+													           FontSize="13"
+													           TextTrimming="CharacterEllipsis"
+													           VerticalAlignment="Center"/>
+												</StackPanel>
+
+												<StackPanel Orientation="Horizontal"
+												            Grid.Column="1"
+												            VerticalAlignment="Center">
+													<TextBlock Text="{Binding progress, StringFormat={}{0:0}%}"
+													           FontSize="14"
+													           FontWeight="Bold"
+													           Margin="12,0,12,0"
+													           VerticalAlignment="Center">
+														<TextBlock.Style>
+															<Style TargetType="TextBlock">
+																<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}"/>
+																<Style.Triggers>
+																	<DataTrigger Binding="{Binding status}" Value="completed">
+																		<Setter Property="Foreground" Value="{StaticResource StatusCompletedBrush}"/>
+																	</DataTrigger>
+																	<DataTrigger Binding="{Binding status}" Value="error">
+																		<Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+																	</DataTrigger>
+																</Style.Triggers>
+															</Style>
+														</TextBlock.Style>
+													</TextBlock>
+
+													<TextBlock Text="{Binding speed_mb_s, StringFormat={}{0:0.0} MB/s}"
+													           FontSize="12"
+													           VerticalAlignment="Center"
+													           Foreground="{DynamicResource SystemAccentColorBrush}"/>
+												</StackPanel>
+											</Grid>
+
+											<!-- 第二行: 全宽进度条 -->
+											<ProgressBar Value="{Binding progress}"
+											             Maximum="100"
+											             Height="8"
+											             Margin="0,0,0,6"
+											             HorizontalAlignment="Stretch">
+												<ProgressBar.Style>
+													<Style TargetType="ProgressBar">
+														<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}"/>
+														<Style.Triggers>
+															<DataTrigger Binding="{Binding status}" Value="completed">
+																<Setter Property="Foreground" Value="{StaticResource StatusCompletedBrush}"/>
+															</DataTrigger>
+															<DataTrigger Binding="{Binding status}" Value="error">
+																<Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+															</DataTrigger>
+															<DataTrigger Binding="{Binding status}" Value="waiting">
+																<Setter Property="Foreground" Value="{StaticResource StatusWaitingBrush}"/>
+															</DataTrigger>
+														</Style.Triggers>
+													</Style>
+												</ProgressBar.Style>
+											</ProgressBar>
+
+											<!-- 第三行: 大小详情（左）+ 剩余时间（右） -->
+											<Grid>
+												<Grid.ColumnDefinitions>
+													<ColumnDefinition Width="*"/>
+													<ColumnDefinition Width="Auto"/>
+												</Grid.ColumnDefinitions>
+
+												<StackPanel Orientation="Horizontal" Grid.Column="0">
+													<TextBlock Text="{Binding downloaded_mb, StringFormat={}{0:0.0} MB}"
+													           FontSize="11"
+													           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+													<TextBlock Text="{Binding total_mb, StringFormat={} / {0:0.0} MB}"
+													           FontSize="11"
+													           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+													<TextBlock Text="{Binding status, StringFormat={} · {0}}"
+													           FontSize="11"
+													           Margin="4,0,0,0"
+													           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+												</StackPanel>
+
+												<TextBlock Grid.Column="1"
+												           Text="{Binding ETA, StringFormat=剩余 {0}s}"
+												           FontSize="11"
+												           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
 											</Grid>
 										</StackPanel>
-
-										<StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-											<ui:TextBlock Text="{Binding progress, StringFormat={}{0:0}%}"
-		                  HorizontalAlignment="Right"
-		                  FontSize="12"
-		                  FontWeight="SemiBold"
-		                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
-
-											<ui:TextBlock Text="{Binding speed_mb_s, StringFormat={}{0:0.0} MB/s}"
-		                  HorizontalAlignment="Right"
-		                  Foreground="{DynamicResource SystemAccentColorBrush}"/>
-
-											<ui:TextBlock Text="{Binding ETA, StringFormat=剩余时间: {0}s}"
-		                  FontSize="11"
-		                  Appearance="Tertiary"
-		                  HorizontalAlignment="Right"/>
-										</StackPanel>
-
-									</Grid>
+									</Border>
 								</DataTemplate>
 							</ListView.ItemTemplate>
 						</ListView>
@@ -107,10 +194,10 @@
 				</StackPanel>
 			</ui:Card>
 
-			<!-- 底部占位行（当前为空，但保留以便未来增加汇总/按钮） -->
 			<Grid Grid.Row="2" />
 		</Grid>
 
+		<!-- ========== 模态层（保持不变） ========== -->
 		<Grid x:Name="ModalOverlay" Background="#99000000" Visibility="Collapsed">
 
 			<ui:Card x:Name="ModalStep1" Background="#ff222329" Width="420" VerticalAlignment="Center" Visibility="Collapsed">
@@ -160,7 +247,6 @@
 								</DataTemplate>
 							</ListView.ItemTemplate>
 						</ListView>
-
 					</Border>
 
 					<ui:TextBlock Text="下载至" Appearance="Tertiary" Margin="0,0,0,8"/>

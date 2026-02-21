@@ -688,21 +688,40 @@ class Upload:
         task_key: Optional[str],
         display_name: str,
     ) -> dict:
+        """
+        将上传完成的文件挂载到页面。
+        v1.4.2: 根据文件扩展名自动选择原生块类型 (image/video/audio/pdf/file)。
+        """
+        block_type = self._detect_notion_block_type(display_name)
         caption = [{"type": "text", "text": {"content": display_name}}]
+
+        if block_type == "file":
+            # file 块支持 name 字段
+            block_content = {
+                "type": "file_upload",
+                "file_upload": {"id": file_upload_id},
+                "caption": caption,
+                "name": display_name,
+            }
+        else:
+            # image/video/audio/pdf 块不支持 name 字段，仅支持 caption
+            block_content = {
+                "type": "file_upload",
+                "file_upload": {"id": file_upload_id},
+                "caption": caption,
+            }
 
         payload = {
             "children": [
                 {
-                    "type": "file",
-                    "file": {
-                        "type": "file_upload",
-                        "file_upload": {"id": file_upload_id},
-                        "caption": caption,
-                        "name": display_name,
-                    },
+                    "type": block_type,
+                    block_type: block_content,
                 }
             ]
         }
+
+        self._dbg("_attach_to_page", f"block_type={block_type}, display_name={display_name}")
+
         resp = self._request(
             "PATCH",
             f"{self.url}/blocks/{page_id}/children",
@@ -713,6 +732,58 @@ class Upload:
             retry_limit=3,
         )
         return resp.json()
+
+    # -------------------------
+    # Native Block Type Detection (v1.4.2-Status)
+    # -------------------------
+    # 文件扩展名 → Notion 原生块类型映射
+    _IMAGE_EXTS = frozenset({
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+        ".bmp", ".ico", ".tiff", ".tif", ".heic", ".heif",
+    })
+    _VIDEO_EXTS = frozenset({
+        ".mp4", ".webm", ".mov", ".avi", ".mkv", ".flv",
+        ".wmv", ".m4v", ".f4v", ".asf", ".amv", ".mpeg", ".mpg",
+    })
+    _AUDIO_EXTS = frozenset({
+        ".mp3", ".wav", ".ogg", ".aac", ".flac", ".m4a",
+        ".wma", ".midi", ".mid", ".opus",
+    })
+    _PDF_EXTS = frozenset({".pdf"})
+
+    @classmethod
+    def _detect_notion_block_type(cls, filename: str) -> str:
+        """
+        根据文件扩展名检测应使用的 Notion 原生块类型。(v1.4.2-Status)
+
+        映射规则:
+          - 图片 (.jpg/.png/.gif/...) → "image"
+          - 视频 (.mp4/.webm/.mov/...) → "video"
+          - 音频 (.mp3/.wav/.ogg/...) → "audio"
+          - PDF (.pdf)                → "pdf"
+          - 其他所有文件              → "file"
+
+        返回: Notion block type 字符串
+        """
+        ext = Path(filename).suffix.lower()
+
+        # 去除伪装后缀 .txt（上传时 MIME 不支持的文件会被加上 .txt）
+        if ext == ".txt":
+            base_name = Path(filename).stem
+            real_ext = Path(base_name).suffix.lower()
+            if real_ext:
+                ext = real_ext
+
+        if ext in cls._IMAGE_EXTS:
+            return "image"
+        elif ext in cls._VIDEO_EXTS:
+            return "video"
+        elif ext in cls._AUDIO_EXTS:
+            return "audio"
+        elif ext in cls._PDF_EXTS:
+            return "pdf"
+        else:
+            return "file"
 
     # -------------------------
     # MIME

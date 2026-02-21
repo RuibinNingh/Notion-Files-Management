@@ -114,7 +114,7 @@ namespace Notion_Files_Management.Services
                     catch { }
 
                     string raw = "";
-                    try { raw = ((PyObject)prog).Repr().ToString(); } catch { }
+                    try { raw = ((PyObject)prog).Repr()?.ToString() ?? ""; } catch { }
 
                     return new ProbeProgress(st, pct, dn, tt, errText, raw);
                 }
@@ -160,6 +160,8 @@ namespace Notion_Files_Management.Services
                         catch { }
                         try { size = PyConvert.ToDouble(item["size_mb"], 0.0); } catch { }
                         try { blockId = item["block_id"]?.ToString() ?? ""; } catch { }
+                        string blockType = "file";
+                        try { blockType = item["block_type"]?.ToString() ?? "file"; } catch { }
                         try
                         {
                             var ct = item["created_time"];
@@ -177,6 +179,7 @@ namespace Notion_Files_Management.Services
                             expiry_time = expiry,
                             size_mb = size,
                             block_id = blockId,
+                            block_type = blockType,
                             created_time = createdTime,
                             IsSelected = true
                         });

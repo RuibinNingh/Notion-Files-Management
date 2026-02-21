@@ -41,10 +41,22 @@ class Main:
     def get_download_list(self, page_id: str):
         """
         发起：拉取 Notion 页面文件列表 + 异步探测 size
+        v1.4.2: 扩展支持所有媒体块 (file/image/pdf/audio/video) + 页面级文件 (icon/cover/files属性)
         返回：Success + probe_id（前端后续用 probe_id 轮询进度）
         """
         page_data = self.notion.query_page(page_id, True)
         self.download_list = self.notion.get_download_url(page_data)
+
+        # v1.4.2: 获取页面对象，提取 icon/cover/files 属性
+        try:
+            page_obj = self.notion.get_page_object(page_id)
+            if page_obj:
+                page_level_files = self.notion.extract_page_level_files(page_obj)
+                if page_level_files:
+                    self.download_list.extend(page_level_files)
+                    self.logger.info(f"Page-level files found: {len(page_level_files)} (icon/cover/property files)")
+        except Exception as e:
+            self.logger.warning(f"Page-level file extraction failed (non-fatal): {e}")
 
         urls = [f["url"] for f in self.download_list if f.get("url")]
         if urls:
@@ -145,7 +157,7 @@ class Main:
 
     def get_download_statuses(self):
         """
-        返回下载状态列表（包含 created_time）
+        返回下载状态列表（包含 created_time, block_type）
         """
         statuses = []
         for file_info in self.download_list:
@@ -153,6 +165,7 @@ class Main:
             name = file_info.get("name")
             real_name = file_info.get("real_name")
             created_time = file_info.get("created_time")
+            block_type = file_info.get("block_type", "file")
 
             status_info = self.downloader.get_status(url)  # 以 url 为 key
 
@@ -169,6 +182,7 @@ class Main:
                 "ETA": status_info.get("ETA", 0),
                 "error": status_info.get("error"),
                 "created_time": created_time,
+                "block_type": block_type,
             })
         return statuses
 

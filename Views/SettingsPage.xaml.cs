@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
@@ -26,15 +27,50 @@ namespace Notion_Files_Management.Views
             Timeout = TimeSpan.FromSeconds(15)
         };
 
+        // 下载更新用的 HttpClient（超时更长）
+        private static readonly HttpClient _downloadHttpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromMinutes(10)
+        };
+
         // 版本信息数据模型（与服务端 JSON 字段对应）
-        private sealed class VersionInfo
+        internal sealed class VersionInfo
         {
             public string version { get; set; } = "";
             public string build_date { get; set; } = "";
-            public string download_url { get; set; } = "";
             public string github { get; set; } = "";
+            public DownloadInfo? download { get; set; }
             public string[] changelog { get; set; } = Array.Empty<string>();
         }
+
+        internal sealed class DownloadInfo
+        {
+            public ManualDownloadInfo? manual { get; set; }
+            public AutoDownloadEntry[] auto { get; set; } = Array.Empty<AutoDownloadEntry>();
+        }
+
+        internal sealed class ManualDownloadInfo
+        {
+            public string url { get; set; } = "";
+            public string label { get; set; } = "";
+        }
+
+        internal sealed class AutoDownloadEntry
+        {
+            public string id { get; set; } = "";
+            public string label { get; set; } = "";
+            public string url { get; set; } = "";
+            public int priority { get; set; } = 99;
+            /// <summary>
+            /// 下载类型："installer"（安装包，默认）或 "exe"（裸 exe，需替换自身）
+            /// </summary>
+            public string type { get; set; } = "installer";
+        }
+
+        /// <summary>
+        /// 静态缓存：启动时静默检查的版本信息（供 SettingsPage 使用）
+        /// </summary>
+        internal static VersionInfo? CachedVersionInfo { get; set; }
 
         // ── 自动排版相关 ─────────────────────────────────────────────────
         
@@ -115,6 +151,20 @@ namespace Notion_Files_Management.Views
                     UIElement.PreviewMouseWheelEvent,
                     new System.Windows.Input.MouseWheelEventHandler(OnPagePreviewMouseWheel),
                     handledEventsToo: true);
+                
+                // 如果启动时静默检查已有缓存结果，自动展示
+                if (CachedVersionInfo != null)
+                {
+                    try
+                    {
+                        VersionInfoPanel.Visibility = Visibility.Visible;
+                        RenderVersionInfo(CachedVersionInfo);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error("[SettingsPage] Failed to render cached version info", ex);
+                    }
+                }
             };
             
             // 监听窗口大小变化
@@ -229,6 +279,7 @@ namespace Notion_Files_Management.Views
                     SectionTaskWorkers,
                     SectionThemeColor,
                     SectionBackground,
+                    SectionAppConfig,
                     SectionAbout
                 };
 
@@ -373,52 +424,41 @@ namespace Notion_Files_Management.Views
             ConfigManager.Save();
         }
 
-        private void OnSaveClick(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// 点击"保存配置"按钮 — 统一保存所有配置（基础 + 外观）
+        /// </summary>
+        private void OnSaveAllConfigClick(object sender, RoutedEventArgs e)
         {
             try
             {
                 SaveBasicConfig();
-                // 注意：外观设置（主题色、背景材质）需要通过外观块的保存按钮单独保存
-                // 这里不保存外观设置，避免覆盖用户未保存的外观设置
+                SaveAppearanceSettings();
+
+                Logger.Info("[SettingsPage] All config saved (basic + appearance)");
+                ShowSaveResultInfoBar(InfoBarSeverity.Success, "保存成功", "所有配置已保存。部分设置需要重启应用才能生效。");
             }
             catch (Exception ex)
             {
-                Logger.Error("[SettingsPage] Save config failed", ex);
+                Logger.Error("[SettingsPage] Save all config failed", ex);
+                ShowSaveResultInfoBar(InfoBarSeverity.Error, "保存失败", $"保存配置失败：{ex.Message}");
             }
         }
 
-        private async void OnApplyWorkersResetClick(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// 显示保存结果的内嵌式 InfoBar 提示（替代系统弹窗）
+        /// </summary>
+        private void ShowSaveResultInfoBar(InfoBarSeverity severity, string title, string message)
         {
-            try
+            if (SaveResultInfoBar != null)
             {
-                SaveBasicConfig();
-
-                BtnApplyWorkersReset.IsEnabled = false;
-
-                string inputToken = TokenInput.Password?.Trim() ?? "";
-                string inputUrl = NotionUrlInput.Text?.Trim() ?? "";
-                int dl = ClampWorkers(ReadComboInt(DownloadWorkersCombo, fallback: 3));
-                int ul = ClampWorkers(ReadComboInt(UploadWorkersCombo, fallback: 3));
-                string cleanedUrl = CleanAndValidateUrl(inputUrl);
-
-                await PythonBackendHost.Instance.ResetTasksAndReinitialize(inputToken, dl, ul, cleanedUrl);
-
-                var ds = DownloadSession.Instance;
-                ds.FileSelectionList.Clear();
-                ds.DisplayTasks.Clear();
-                ds.HasActiveDownloads = false;
-
-                TaskResetNotifier.NotifyTasksReset();
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("[SettingsPage] Apply+Reset failed", ex);
-            }
-            finally
-            {
-                BtnApplyWorkersReset.IsEnabled = true;
+                SaveResultInfoBar.Severity = severity;
+                SaveResultInfoBar.Title = title;
+                SaveResultInfoBar.Message = message;
+                SaveResultInfoBar.IsOpen = true;
             }
         }
+
+        // OnApplyWorkersResetClick removed — "应用并重置任务" button merged into unified "应用配置" section
 
         // ── 版本检查相关方法 ─────────────────────────────────────────────────
 
@@ -585,7 +625,13 @@ namespace Notion_Files_Management.Views
 
             // 保存下载信息到按钮 Tag，用于后续点击
             BtnOpenGithub.Tag = info.github;
-            BtnGetDownloadUrl.Tag = info.download_url;
+            BtnManualDownload.Tag = info.download?.manual?.url ?? "";
+            BtnManualDownload.Content = info.download?.manual?.label ?? "手动下载";
+
+            // 自动更新按钮：仅在有 auto 线路时显示
+            bool hasAutoRoutes = info.download?.auto != null && info.download.auto.Length > 0;
+            BtnAutoUpdate.Visibility = hasAutoRoutes ? Visibility.Visible : Visibility.Collapsed;
+            BtnAutoUpdate.Tag = info; // 保存完整版本信息供自动更新使用
         }
 
         /// <summary>
@@ -705,22 +751,221 @@ namespace Notion_Files_Management.Views
         }
 
         /// <summary>
-        /// 点击"获取下载链接"按钮
+        /// 点击"手动下载"按钮 — 打开官网下载页
         /// </summary>
-        private void OnGetDownloadUrlClick(object sender, RoutedEventArgs e)
+        private void OnManualDownloadClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                var downloadUrl = BtnGetDownloadUrl.Tag as string;
+                var downloadUrl = BtnManualDownload.Tag as string;
                 if (!string.IsNullOrEmpty(downloadUrl))
                 {
                     Process.Start(new ProcessStartInfo(downloadUrl) { UseShellExecute = true });
-                    Logger.Info($"[SettingsPage] Opening download URL: {downloadUrl}");
+                    Logger.Info($"[SettingsPage] Opening manual download URL: {downloadUrl}");
                 }
             }
             catch (Exception ex)
             {
-                Logger.Error("[SettingsPage] Failed to open download URL", ex);
+                Logger.Error("[SettingsPage] Failed to open manual download URL", ex);
+            }
+        }
+
+        /// <summary>
+        /// 点击"自动更新"按钮 — 按优先级顺序从 auto 线路下载更新
+        /// </summary>
+        private async void OnAutoUpdateClick(object sender, RoutedEventArgs e)
+        {
+            var info = BtnAutoUpdate.Tag as VersionInfo;
+            if (info?.download?.auto == null || info.download.auto.Length == 0)
+            {
+                ShowInfoBar(InfoBarSeverity.Error, "没有可用的自动更新线路");
+                return;
+            }
+
+            BtnAutoUpdate.IsEnabled = false;
+            BtnAutoUpdate.Content = "下载中...";
+            AutoUpdateProgressBar.Visibility = Visibility.Visible;
+            AutoUpdateProgressBar.IsIndeterminate = false;
+            AutoUpdateProgressBar.Value = 0;
+
+            // 按 priority 排序
+            var routes = info.download.auto.OrderBy(r => r.priority).ToArray();
+
+            string? downloadedPath = null;
+            AutoDownloadEntry? successRoute = null;
+
+            for (int i = 0; i < routes.Length; i++)
+            {
+                var route = routes[i];
+                Logger.Info($"[SettingsPage] Auto-update: trying route '{route.label}' (priority={route.priority}, type={route.type}): {route.url}");
+                BtnAutoUpdate.Content = $"下载中（{route.label}）...";
+
+                try
+                {
+                    // 确定保存路径
+                    string tempDir = Path.Combine(Path.GetTempPath(), "NFM_Update");
+                    if (!Directory.Exists(tempDir))
+                        Directory.CreateDirectory(tempDir);
+                    
+                    string fileName = Path.GetFileName(new Uri(route.url).AbsolutePath);
+                    if (string.IsNullOrEmpty(fileName))
+                        fileName = $"NFM-{info.version}.exe";
+                    string savePath = Path.Combine(tempDir, fileName);
+
+                    // 下载文件（带进度）
+                    using var response = await _downloadHttpClient.GetAsync(route.url, HttpCompletionOption.ResponseHeadersRead);
+                    response.EnsureSuccessStatusCode();
+
+                    long? totalBytes = response.Content.Headers.ContentLength;
+                    long receivedBytes = 0;
+
+                    using var contentStream = await response.Content.ReadAsStreamAsync();
+                    using var fileStream = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+                    
+                    var buffer = new byte[8192];
+                    int bytesRead;
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer, 0, bytesRead);
+                        receivedBytes += bytesRead;
+
+                        if (totalBytes.HasValue && totalBytes.Value > 0)
+                        {
+                            double percent = (double)receivedBytes / totalBytes.Value * 100;
+                            AutoUpdateProgressBar.IsIndeterminate = false;
+                            AutoUpdateProgressBar.Value = percent;
+                        }
+                        else
+                        {
+                            AutoUpdateProgressBar.IsIndeterminate = true;
+                        }
+                    }
+
+                    Logger.Info($"[SettingsPage] Auto-update: downloaded {receivedBytes} bytes from '{route.label}' to {savePath}");
+                    downloadedPath = savePath;
+                    successRoute = route;
+                    break; // 下载成功，跳出循环
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"[SettingsPage] Auto-update route '{route.label}' failed: {ex.Message}");
+                    // 继续尝试下一个线路
+                }
+            }
+
+            AutoUpdateProgressBar.Visibility = Visibility.Collapsed;
+
+            if (!string.IsNullOrEmpty(downloadedPath) && File.Exists(downloadedPath))
+            {
+                bool isExeReplace = string.Equals(successRoute?.type, "exe", StringComparison.OrdinalIgnoreCase);
+
+                if (isExeReplace)
+                {
+                    // ── 裸 exe 模式：生成 bat 脚本延迟替换自身 ──
+                    ShowInfoBar(InfoBarSeverity.Success, "下载完成，即将替换并重启...");
+                    Logger.Info($"[SettingsPage] Auto-update: exe-replace mode, generating update script");
+
+                    try
+                    {
+                        string currentExe = Environment.ProcessPath!;
+                        string batPath = Path.Combine(Path.GetTempPath(), "nfm_update.bat");
+                        string batContent = $@"
+@echo off
+timeout /t 2 /nobreak >nul
+copy /y ""{downloadedPath}"" ""{currentExe}""
+start """" ""{currentExe}""
+del ""%~f0""
+";
+                        File.WriteAllText(batPath, batContent, System.Text.Encoding.Default);
+                        Logger.Info($"[SettingsPage] Auto-update: wrote update script to {batPath}");
+
+                        Process.Start(new ProcessStartInfo(batPath)
+                        {
+                            UseShellExecute = true,
+                            WindowStyle = ProcessWindowStyle.Hidden
+                        });
+                        System.Windows.Application.Current.Shutdown();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error("[SettingsPage] Failed to execute exe-replace update", ex);
+                        ShowInfoBar(InfoBarSeverity.Error, $"替换更新失败：{ex.Message}");
+                    }
+                }
+                else
+                {
+                    // ── 安装包模式（默认）：直接启动安装程序 ──
+                    ShowInfoBar(InfoBarSeverity.Success, "下载完成，即将启动安装程序...");
+                    Logger.Info($"[SettingsPage] Auto-update: launching installer: {downloadedPath}");
+
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(downloadedPath) { UseShellExecute = true });
+                        System.Windows.Application.Current.Shutdown();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error("[SettingsPage] Failed to launch installer", ex);
+                        ShowInfoBar(InfoBarSeverity.Error, $"启动安装程序失败：{ex.Message}");
+                    }
+                }
+            }
+            else
+            {
+                ShowInfoBar(InfoBarSeverity.Error, "所有下载线路均失败，请尝试手动下载");
+            }
+
+            BtnAutoUpdate.Content = "自动更新";
+            BtnAutoUpdate.IsEnabled = true;
+        }
+
+        /// <summary>
+        /// 启动时静默检查版本更新（由 App.xaml.cs 调用）
+        /// 成功时缓存结果，失败时仅记录日志
+        /// </summary>
+        internal static async Task SilentCheckUpdateAsync()
+        {
+            try
+            {
+                var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+
+                string? json = null;
+                // 先尝试 HTTPS
+                try
+                {
+                    var response = await httpClient.GetAsync(VersionEndpointHttps);
+                    response.EnsureSuccessStatusCode();
+                    json = await response.Content.ReadAsStringAsync();
+                }
+                catch
+                {
+                    // 降级到 HTTP
+                    try
+                    {
+                        var response = await httpClient.GetAsync(VersionEndpointHttp);
+                        response.EnsureSuccessStatusCode();
+                        json = await response.Content.ReadAsStringAsync();
+                    }
+                    catch { }
+                }
+
+                if (!string.IsNullOrEmpty(json))
+                {
+                    var info = JsonSerializer.Deserialize<VersionInfo>(json);
+                    if (info != null)
+                    {
+                        CachedVersionInfo = info;
+                        Logger.Info($"[AutoUpdate] Silent check OK: remote={info.version}, local={AppVersion.Current}");
+                    }
+                }
+                else
+                {
+                    Logger.Warn("[AutoUpdate] Silent version check failed: no response from server");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"[AutoUpdate] Silent version check failed: {ex.Message}");
             }
         }
 
@@ -970,6 +1215,12 @@ namespace Notion_Files_Management.Views
             UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
             UpdateImageBackgroundPanelVisibility(material == "Image");
             
+            // 显示/隐藏视频或图片背景功耗警告
+            if (ImagePowerWarningBar != null)
+            {
+                ImagePowerWarningBar.IsOpen = (material == "Image");
+            }
+            
             // 子面板可见性变化后，重新平衡布局（延迟执行，等待布局更新）
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -1130,43 +1381,57 @@ namespace Notion_Files_Management.Views
         }
 
         /// <summary>
-        /// 点击"保存"按钮（仅保存外观设置，不重启）
+        /// 点击"重启应用"按钮 — 显示内嵌确认提示（不保存配置）
         /// </summary>
-        private void OnSaveAppearanceClick(object sender, RoutedEventArgs e)
+        private void OnRestartAppClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                SaveAppearanceSettings();
-
-                Logger.Info("[SettingsPage] Appearance settings saved");
-                System.Windows.MessageBox.Show("外观设置已保存。部分设置需要重启应用才能完全生效。", "保存成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                // 显示内嵌确认提示（非弹窗）
+                if (RestartConfirmBar != null)
+                    RestartConfirmBar.IsOpen = true;
+                if (RestartConfirmButtons != null)
+                    RestartConfirmButtons.Visibility = Visibility.Visible;
             }
             catch (Exception ex)
             {
-                Logger.Error("[SettingsPage] Save appearance settings failed", ex);
-                System.Windows.MessageBox.Show($"保存外观设置失败：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                Logger.Error("[SettingsPage] Show restart confirmation failed", ex);
             }
         }
 
         /// <summary>
-        /// 点击"保存并重启应用"按钮
+        /// 确认重启按钮点击事件
         /// </summary>
-        private void OnSaveAndRestartClick(object sender, RoutedEventArgs e)
+        private void OnConfirmRestartClick(object sender, RoutedEventArgs e)
         {
             try
             {
-                SaveAppearanceSettings();
+                if (RestartConfirmBar != null)
+                    RestartConfirmBar.IsOpen = false;
+                if (RestartConfirmButtons != null)
+                    RestartConfirmButtons.Visibility = Visibility.Collapsed;
 
-                Logger.Info("[SettingsPage] Appearance settings saved, restarting application");
-
-                // 然后重启应用
+                Logger.Info("[SettingsPage] User confirmed restart, restarting application");
                 RestartApplication();
             }
             catch (Exception ex)
             {
-                Logger.Error("[SettingsPage] Save and restart failed", ex);
-                System.Windows.MessageBox.Show($"保存并重启失败：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                Logger.Error("[SettingsPage] Confirmed restart failed", ex);
+                System.Windows.MessageBox.Show($"重启应用失败：{ex.Message}", "错误", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             }
+        }
+
+        /// <summary>
+        /// 取消重启按钮点击事件
+        /// </summary>
+        private void OnCancelRestartClick(object sender, RoutedEventArgs e)
+        {
+            if (RestartConfirmBar != null)
+                RestartConfirmBar.IsOpen = false;
+            if (RestartConfirmButtons != null)
+                RestartConfirmButtons.Visibility = Visibility.Collapsed;
+            
+            Logger.Info("[SettingsPage] User cancelled restart");
         }
 
         /// <summary>

@@ -4,6 +4,12 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="上传">
 
+	<Page.Resources>
+		<SolidColorBrush x:Key="StatusCompletedBrush" Color="#4CAF50"/>
+		<SolidColorBrush x:Key="StatusErrorBrush"     Color="#EF5350"/>
+		<SolidColorBrush x:Key="StatusWaitingBrush"    Color="#78909C"/>
+	</Page.Resources>
+
 	<Grid>
 		<!-- 主页面 -->
 		<Grid Margin="30">
@@ -24,12 +30,9 @@
 								   Icon="{ui:SymbolIcon Symbol=Add24}"
 								   Click="BtnOpenUploadDialog_Click" />
 
-					<ui:TextBlock Text="活动上传任务"
+						<ui:TextBlock Text="活动上传任务"
                                       Appearance="Tertiary"
                                       Margin="0,20,0,8"/>
-						<ui:TextBlock Text="提示：对于每个上传任务，每上传一个分片（15MB）才会更新一次上传进度"
-              Appearance="Tertiary"
-              Margin="0,20,0,8"/>
 
 						<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                                 BorderThickness="1"
@@ -38,69 +41,147 @@
 							<ListView x:Name="UploadTaskListView"
                                       ItemsSource="{Binding DisplayUploads}"
                                       MinHeight="200"
-                                      MaxHeight="450"
+                                      MaxHeight="520"
                                       Background="Transparent"
-                                      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+                                      Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                      HorizontalContentAlignment="Stretch"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+								<ListView.ItemContainerStyle>
+									<Style TargetType="ListViewItem">
+										<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+										<Setter Property="Padding" Value="0"/>
+										<Setter Property="Margin" Value="0"/>
+									</Style>
+								</ListView.ItemContainerStyle>
 								<ListView.ItemTemplate>
 									<DataTemplate>
-										<Grid Margin="0,8">
-											<Grid.ColumnDefinitions>
-												<ColumnDefinition Width="260"/>
-												<ColumnDefinition Width="*"/>
-												<ColumnDefinition Width="170"/>
-											</Grid.ColumnDefinitions>
-
-											<!-- 左：文件名/状态 -->
-											<StackPanel VerticalAlignment="Center">
-												<ui:TextBlock Text="{Binding FileName}"
-                                                              FontWeight="SemiBold"
-                                                              TextTrimming="CharacterEllipsis"/>
-												<ui:TextBlock Text="{Binding StatusText}"
-                                                              FontSize="11"
-                                                              Appearance="Tertiary"/>
-											</StackPanel>
-
-											<!-- 中：进度条 + 已上传/总量 -->
-											<StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="20,0">
-												<ProgressBar Value="{Binding Progress}" Maximum="100" Height="4" Margin="0,0,0,5"/>
-
-												<Grid>
+										<Border CornerRadius="8"
+										        Padding="14,10"
+										        Margin="4,3"
+										        Background="{DynamicResource ControlFillColorDefaultBrush}">
+											<StackPanel>
+												<!-- 第一行: 状态图标 + 文件名（左）  百分比 + 速度（右） -->
+												<Grid Margin="0,0,0,8">
 													<Grid.ColumnDefinitions>
-														<ColumnDefinition Width="Auto"/>
+														<ColumnDefinition Width="*"/>
 														<ColumnDefinition Width="Auto"/>
 													</Grid.ColumnDefinitions>
 
-													<ui:TextBlock Grid.Column="0"
-                                                                  Text="{Binding UploadedMB, StringFormat={}{0:0.0} MB}"
-                                                                  FontSize="10"
-                                                                  Appearance="Tertiary"/>
+													<StackPanel Orientation="Horizontal"
+													            VerticalAlignment="Center"
+													            Grid.Column="0">
+														<ui:SymbolIcon FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center">
+															<ui:SymbolIcon.Style>
+																<Style TargetType="ui:SymbolIcon">
+																	<Setter Property="Symbol" Value="ArrowUpload24"/>
+																	<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}"/>
+																	<Style.Triggers>
+																		<DataTrigger Binding="{Binding Status}" Value="completed">
+																			<Setter Property="Symbol" Value="CheckmarkCircle24"/>
+																			<Setter Property="Foreground" Value="{StaticResource StatusCompletedBrush}"/>
+																		</DataTrigger>
+																		<DataTrigger Binding="{Binding Status}" Value="error">
+																			<Setter Property="Symbol" Value="DismissCircle24"/>
+																			<Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+																		</DataTrigger>
+																		<DataTrigger Binding="{Binding Status}" Value="waiting">
+																			<Setter Property="Symbol" Value="Clock24"/>
+																			<Setter Property="Foreground" Value="{StaticResource StatusWaitingBrush}"/>
+																		</DataTrigger>
+																	</Style.Triggers>
+																</Style>
+															</ui:SymbolIcon.Style>
+														</ui:SymbolIcon>
 
-													<ui:TextBlock Grid.Column="1"
-                                                                  Text="{Binding TotalMB, StringFormat={}/ {0:0.0} MB}"
-                                                                  Margin="6,0,0,0"
-                                                                  FontSize="10"
-                                                                  Appearance="Tertiary"/>
+														<TextBlock Text="{Binding FileName}"
+														           FontWeight="SemiBold"
+														           FontSize="13"
+														           TextTrimming="CharacterEllipsis"
+														           VerticalAlignment="Center"/>
+													</StackPanel>
+
+													<StackPanel Orientation="Horizontal"
+													            Grid.Column="1"
+													            VerticalAlignment="Center">
+														<TextBlock Text="{Binding Progress, StringFormat={}{0:0}%}"
+														           FontSize="14"
+														           FontWeight="Bold"
+														           Margin="12,0,12,0"
+														           VerticalAlignment="Center">
+															<TextBlock.Style>
+																<Style TargetType="TextBlock">
+																	<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}"/>
+																	<Style.Triggers>
+																		<DataTrigger Binding="{Binding Status}" Value="completed">
+																			<Setter Property="Foreground" Value="{StaticResource StatusCompletedBrush}"/>
+																		</DataTrigger>
+																		<DataTrigger Binding="{Binding Status}" Value="error">
+																			<Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+																		</DataTrigger>
+																	</Style.Triggers>
+																</Style>
+															</TextBlock.Style>
+														</TextBlock>
+
+														<TextBlock Text="{Binding SmoothedSpeedMBps, StringFormat={}{0:0.0} MB/s}"
+														           FontSize="12"
+														           VerticalAlignment="Center"
+														           Foreground="{DynamicResource SystemAccentColorBrush}"/>
+													</StackPanel>
+												</Grid>
+
+												<!-- 第二行: 全宽进度条 -->
+												<ProgressBar Value="{Binding Progress}"
+												             Maximum="100"
+												             Height="8"
+												             Margin="0,0,0,6"
+												             HorizontalAlignment="Stretch">
+													<ProgressBar.Style>
+														<Style TargetType="ProgressBar">
+															<Setter Property="Foreground" Value="{DynamicResource SystemAccentColorBrush}"/>
+															<Style.Triggers>
+																<DataTrigger Binding="{Binding Status}" Value="completed">
+																	<Setter Property="Foreground" Value="{StaticResource StatusCompletedBrush}"/>
+																</DataTrigger>
+																<DataTrigger Binding="{Binding Status}" Value="error">
+																	<Setter Property="Foreground" Value="{StaticResource StatusErrorBrush}"/>
+																</DataTrigger>
+																<DataTrigger Binding="{Binding Status}" Value="waiting">
+																	<Setter Property="Foreground" Value="{StaticResource StatusWaitingBrush}"/>
+																</DataTrigger>
+															</Style.Triggers>
+														</Style>
+													</ProgressBar.Style>
+												</ProgressBar>
+
+												<!-- 第三行: 大小详情（左）+ 剩余时间（右） -->
+												<Grid>
+													<Grid.ColumnDefinitions>
+														<ColumnDefinition Width="*"/>
+														<ColumnDefinition Width="Auto"/>
+													</Grid.ColumnDefinitions>
+
+													<StackPanel Orientation="Horizontal" Grid.Column="0">
+														<TextBlock Text="{Binding UploadedMB, StringFormat={}{0:0.0} MB}"
+														           FontSize="11"
+														           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+														<TextBlock Text="{Binding TotalMB, StringFormat={} / {0:0.0} MB}"
+														           FontSize="11"
+														           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+														<TextBlock Text="{Binding StatusText, StringFormat={} · {0}}"
+														           FontSize="11"
+														           Margin="4,0,0,0"
+														           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+													</StackPanel>
+
+													<TextBlock Grid.Column="1"
+													           Text="{Binding ETASeconds, StringFormat=剩余 {0}s}"
+													           FontSize="11"
+													           Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
 												</Grid>
 											</StackPanel>
-
-											<!-- 右：百分比/速度/ETA（速度显示 EMA 平滑值） -->
-											<StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-												<ui:TextBlock Text="{Binding Progress, StringFormat={}{0:0}%}"
-                                                              HorizontalAlignment="Right"
-                                                              FontSize="12"
-                                                              FontWeight="SemiBold"
-                                                              Foreground="{DynamicResource SystemAccentColorBrush}"/>
-
-												<ui:TextBlock Text="{Binding SmoothedSpeedMBps, StringFormat={}{0:0.0} MB/s}"
-                                                              HorizontalAlignment="Right"
-                                                              Foreground="{DynamicResource SystemAccentColorBrush}"/>
-
-												<ui:TextBlock Text="{Binding ETASeconds, StringFormat=剩余时间: {0}s}"
-                                                              FontSize="11"
-                                                              Appearance="Tertiary"
-                                                              HorizontalAlignment="Right"/>
-											</StackPanel>
-										</Grid>
+										</Border>
 									</DataTemplate>
 								</ListView.ItemTemplate>
 							</ListView>
@@ -111,10 +192,9 @@
 			</StackPanel>
 		</Grid>
 
-		<!-- 模态遮罩 -->
+		<!-- ========== 模态遮罩（保持不变） ========== -->
 		<Grid x:Name="ModalOverlay" Background="#99000000" Visibility="Collapsed">
 
-			<!-- 模态窗口1 -->
 			<ui:Card x:Name="ModalStep1" Background="#ff222329" Width="700" VerticalAlignment="Center" Visibility="Collapsed">
 				<StackPanel Margin="14">
 
@@ -122,7 +202,6 @@
                                   FontTypography="Subtitle"
                                   Margin="0,0,0,12"/>
 
-					<!-- 选择文件 + 单/多选 -->
 					<Grid Margin="0,0,0,12">
 						<Grid.ColumnDefinitions>
 							<ColumnDefinition Width="*"/>
@@ -150,7 +229,6 @@
 						</StackPanel>
 					</Grid>
 
-					<!-- 文件路径列表（滚动） -->
 					<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="8"
@@ -173,13 +251,11 @@
 						</ListView>
 					</Border>
 
-					<!-- 并发已移动到设置页 -->
 					<ui:TextBlock Text="上传并发数由【设置】页统一管理"
 								  Appearance="Tertiary"
 								  FontSize="12"
 								  Margin="0,0,0,14"/>
 
-					<!-- PageId -->
 					<ui:TextBlock Text="Notion Page ID"
                                   Appearance="Tertiary"
                                   Margin="0,0,0,6"/>
@@ -195,7 +271,6 @@
 							 Margin="0,0,0,14"
 							 Foreground="#FFEF5350"/>
 
-					<!-- 底部 -->
 					<Grid>
 						<ui:TextBlock x:Name="ModalHint"
                                       Text=""

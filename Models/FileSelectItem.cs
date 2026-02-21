@@ -23,6 +23,7 @@ namespace Notion_Files_Management.Models
         public string? expiry_time { get; set; }
         public double size_mb { get; set; }
         public string? block_id { get; set; }
+        public string? block_type { get; set; }
         public string? created_time { get; set; }
 
         /// <summary>

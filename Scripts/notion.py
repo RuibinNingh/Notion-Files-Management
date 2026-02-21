@@ -24,6 +24,12 @@ class Notion:
         "formula", "unique_id", "button",
     })
 
+    # =========================================================================
+    # 可下载的媒体块类型 (v1.4.2-Status+)
+    # 这些块类型的结构相同: block[block_type][hosting_type].url
+    # =========================================================================
+    MEDIA_BLOCK_TYPES = frozenset({"file", "image", "pdf", "audio", "video"})
+
     def query_page(self, page_id, fetch_all=False):
         all_blocks = []
         cursor = None#分页游标
@@ -80,6 +86,9 @@ class Notion:
 
     def get_download_url(self, body):
         """
+        从 blocks 列表中提取所有可下载文件的信息。
+        支持的块类型 (v1.4.2-Status): file, image, pdf, audio, video
+
         下载链接的格式:
         [
             {
@@ -89,6 +98,7 @@ class Notion:
                 "expiry_time": "2024-10-01T12:00:00.000Z",
                 "size_mb": 2.5,
                 "block_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                "block_type": "file",
                 "created_time": "2026-02-18T12:00:00.000Z"
             }
         ]
@@ -101,21 +111,34 @@ class Notion:
         created_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
         for block in body:
-            if block.get("type") == "file":
-                file_info = block["file"]
-                original_name = file_info.get("name", "unknown")
+            block_type = block.get("type")
+
+            if block_type in self.MEDIA_BLOCK_TYPES:
+                media_info = block.get(block_type, {})
                 block_id = block.get("id", "")
 
-                if file_info["type"] == "file":
-                    url = file_info["file"]["url"]
-                    expiry_time = file_info["file"].get("expiry_time")
-                else:
-                    url = file_info["external"]["url"]
+                # 提取 URL 和过期时间
+                hosting_type = media_info.get("type")
+                if hosting_type == "file":
+                    url = media_info.get("file", {}).get("url")
+                    expiry_time = media_info.get("file", {}).get("expiry_time")
+                elif hosting_type == "external":
+                    url = media_info.get("external", {}).get("url")
                     expiry_time = None
+                else:
+                    url = None
+                    expiry_time = None
+
+                if not url:
+                    continue
+
+                # 提取文件名: file 块有 name 字段，其他媒体块从 URL 推断
+                original_name = media_info.get("name") or self._filename_from_url(url) or f"unknown_{block_type}"
 
                 size_mb = self._get_remote_file_size(url)
 
-                captions = file_info.get("caption", [])
+                # caption 作为显示名
+                captions = media_info.get("caption", [])
                 caption_text = "".join([t.get("plain_text", "") for t in captions]).strip()
                 real_name = caption_text if caption_text else original_name
 
@@ -126,20 +149,148 @@ class Notion:
                     "expiry_time": expiry_time,
                     "size_mb": size_mb,
                     "block_id": block_id,
+                    "block_type": block_type,
                     "created_time": created_time,
                 })
 
+            # 递归处理子块
             if block.get("has_children") and "children" in block:
                 child_downloads = self.get_download_url(block["children"])
                 download_list.extend(child_downloads)
 
         return download_list
 
+    def get_page_object(self, page_id: str) -> dict | None:
+        """
+        获取页面对象（含 icon、cover、properties）。
+        使用 GET /v1/pages/{page_id}
+
+        返回: 页面对象 dict 或 None（失败时）
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                res = requests.get(
+                    f"{self.url}/pages/{page_id}",
+                    headers=self.default_headers,
+                    timeout=10
+                )
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[get_page_object] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                res.raise_for_status()
+                return res.json()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                else:
+                    PythonLogger.error(f"[get_page_object] page_id={page_id} 失败: {e}")
+                    return None
+        return None
+
+    def extract_page_level_files(self, page_obj: dict) -> list[dict]:
+        """
+        从页面对象中提取页面级文件：icon、cover、files 类型属性。(v1.4.2-Status)
+
+        返回格式与 get_download_url 一致的列表。
+        """
+        if not page_obj:
+            return []
+
+        created_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        result = []
+
+        # 1) icon
+        icon = page_obj.get("icon")
+        if icon:
+            icon_url, icon_expiry = self._extract_hosted_url(icon)
+            if icon_url:
+                fname = self._filename_from_url(icon_url) or "page_icon"
+                result.append({
+                    "name": fname,
+                    "real_name": f"[icon] {fname}",
+                    "url": icon_url,
+                    "expiry_time": icon_expiry,
+                    "size_mb": self._get_remote_file_size(icon_url),
+                    "block_id": "",
+                    "block_type": "icon",
+                    "created_time": created_time,
+                })
+
+        # 2) cover
+        cover = page_obj.get("cover")
+        if cover:
+            cover_url, cover_expiry = self._extract_hosted_url(cover)
+            if cover_url:
+                fname = self._filename_from_url(cover_url) or "page_cover"
+                result.append({
+                    "name": fname,
+                    "real_name": f"[cover] {fname}",
+                    "url": cover_url,
+                    "expiry_time": cover_expiry,
+                    "size_mb": self._get_remote_file_size(cover_url),
+                    "block_id": "",
+                    "block_type": "cover",
+                    "created_time": created_time,
+                })
+
+        # 3) files 类型属性
+        properties = page_obj.get("properties", {})
+        for prop_name, prop_val in properties.items():
+            if prop_val.get("type") != "files":
+                continue
+            files_arr = prop_val.get("files", [])
+            for file_obj in files_arr:
+                file_url, file_expiry = self._extract_hosted_url(file_obj)
+                if not file_url:
+                    continue
+                fname = file_obj.get("name") or self._filename_from_url(file_url) or "property_file"
+                result.append({
+                    "name": fname,
+                    "real_name": f"[{prop_name}] {fname}",
+                    "url": file_url,
+                    "expiry_time": file_expiry,
+                    "size_mb": self._get_remote_file_size(file_url),
+                    "block_id": "",
+                    "block_type": "property_file",
+                    "created_time": created_time,
+                })
+
+        return result
+
+    @staticmethod
+    def _extract_hosted_url(obj: dict) -> tuple[str | None, str | None]:
+        """从 Notion 文件对象中提取 URL 和过期时间。支持 file/external 两种 hosting。"""
+        hosting = obj.get("type")
+        if hosting == "file":
+            inner = obj.get("file", {})
+            return inner.get("url"), inner.get("expiry_time")
+        elif hosting == "external":
+            return obj.get("external", {}).get("url"), None
+        return None, None
+
+    @staticmethod
+    def _filename_from_url(url: str) -> str:
+        """从 URL 中提取文件名（去掉查询参数）。"""
+        try:
+            from urllib.parse import urlparse, unquote
+            path = urlparse(url).path
+            name = unquote(path.split("/")[-1])
+            # 去掉 Notion 特有的 UUID 前缀 (格式: uuid/filename)
+            if name:
+                return name
+        except Exception:
+            pass
+        return ""
+
     def refresh_file_url(self, block_id: str) -> dict | None:
         """
-        通过 block_id 重新获取单个文件块的最新下载链接。
+        通过 block_id 重新获取单个媒体块的最新下载链接。
         用于下载过程中链接过期时自动刷新。
-        
+        支持: file, image, pdf, audio, video 块类型 (v1.4.2-Status)
+
         返回: {"url": "...", "expiry_time": "..."} 或 None（失败时）
         """
         max_retries = 3
@@ -160,20 +311,26 @@ class Notion:
                 res.raise_for_status()
                 block = res.json()
 
-                if block.get("type") != "file":
-                    PythonLogger.warning(f"[refresh_file_url] block {block_id} type={block.get('type')}，不是 file 类型")
+                block_type = block.get("type")
+                if block_type not in self.MEDIA_BLOCK_TYPES:
+                    PythonLogger.warning(f"[refresh_file_url] block {block_id} type={block_type}，不是媒体类型")
                     return None
 
-                file_info = block["file"]
-                if file_info["type"] == "file":
-                    new_url = file_info["file"]["url"]
-                    new_expiry = file_info["file"].get("expiry_time")
-                else:
-                    # external 类型没有过期问题
-                    new_url = file_info["external"]["url"]
-                    new_expiry = None
+                media_info = block.get(block_type, {})
+                hosting_type = media_info.get("type")
 
-                PythonLogger.info(f"[refresh_file_url] block_id={block_id} 刷新成功，new_expiry={new_expiry}")
+                if hosting_type == "file":
+                    new_url = media_info.get("file", {}).get("url")
+                    new_expiry = media_info.get("file", {}).get("expiry_time")
+                elif hosting_type == "external":
+                    # external 类型没有过期问题
+                    new_url = media_info.get("external", {}).get("url")
+                    new_expiry = None
+                else:
+                    PythonLogger.warning(f"[refresh_file_url] block {block_id} 未知 hosting type={hosting_type}")
+                    return None
+
+                PythonLogger.info(f"[refresh_file_url] block_id={block_id} type={block_type} 刷新成功，new_expiry={new_expiry}")
                 return {
                     "url": new_url,
                     "expiry_time": new_expiry,

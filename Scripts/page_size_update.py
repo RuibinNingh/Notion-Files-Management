@@ -325,17 +325,26 @@ class PageSizeUpdateTask:
 
         return all_blocks
 
+    # 可下载的媒体块类型 (与 notion.py MEDIA_BLOCK_TYPES 保持一致)
+    _MEDIA_BLOCK_TYPES = frozenset({"file", "image", "pdf", "audio", "video"})
+
     @staticmethod
     def _extract_file_urls(blocks: list) -> list[str]:
-        """从 blocks 列表中递归提取所有文件 URL。"""
+        """从 blocks 列表中递归提取所有媒体文件 URL。
+        支持: file, image, pdf, audio, video 块类型 (v1.4.2-Status)
+        """
         urls = []
         for block in blocks:
-            if block.get("type") == "file":
-                file_info = block.get("file", {})
-                if file_info.get("type") == "file":
-                    url = file_info.get("file", {}).get("url")
-                elif file_info.get("type") == "external":
-                    url = file_info.get("external", {}).get("url")
+            block_type = block.get("type")
+
+            if block_type in PageSizeUpdateTask._MEDIA_BLOCK_TYPES:
+                media_info = block.get(block_type, {})
+                hosting_type = media_info.get("type")
+
+                if hosting_type == "file":
+                    url = media_info.get("file", {}).get("url")
+                elif hosting_type == "external":
+                    url = media_info.get("external", {}).get("url")
                 else:
                     url = None
                 if url:
@@ -438,15 +447,60 @@ class PageSizeUpdateTask:
 
     @staticmethod
     def _probe_file_size(url: str) -> float:
-        """HEAD 请求获取单个文件大小 (GB)。无速率限制。"""
-        try:
-            response = requests.head(url, allow_redirects=True, timeout=10)
-            size_bytes = response.headers.get("content-length")
-            if size_bytes:
-                return int(size_bytes) / (1024 * 1024 * 1024)
-        except Exception as e:
-            PythonLogger.warning(f"[PageSizeUpdate] HEAD 获取大小失败: {e}")
+        """
+        探测单个文件大小 (GB)。无 Notion API 速率限制。
+        策略: HEAD Content-Length → Range GET Content-Range（与 download.py 一致）
+        """
+        # 策略 1: HEAD 请求获取 Content-Length
+        size_bytes = PageSizeUpdateTask._probe_head_content_length(url)
+        if size_bytes is not None and size_bytes > 0:
+            return size_bytes / (1024 * 1024 * 1024)
+
+        # 策略 2: Range GET 请求解析 Content-Range
+        size_bytes = PageSizeUpdateTask._probe_range_total_size(url)
+        if size_bytes is not None and size_bytes > 0:
+            return size_bytes / (1024 * 1024 * 1024)
+
+        PythonLogger.warning(f"[PageSizeUpdate] 无法获取文件大小 (HEAD+Range 均失败): {url[:80]}...")
         return 0.0
+
+    @staticmethod
+    def _probe_head_content_length(url: str, timeout: float = 10) -> int | None:
+        """HEAD 请求获取 Content-Length，返回字节数或 None。"""
+        try:
+            response = requests.head(url, allow_redirects=True, timeout=timeout)
+            cl = response.headers.get("content-length")
+            if cl:
+                try:
+                    return int(cl)
+                except ValueError:
+                    return None
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _probe_range_total_size(url: str, timeout: float = 10) -> int | None:
+        """Range GET (bytes=0-0) 解析 Content-Range 获取总大小，返回字节数或 None。"""
+        try:
+            response = requests.get(
+                url,
+                headers={"Range": "bytes=0-0"},
+                allow_redirects=True,
+                timeout=timeout,
+                stream=True,
+            )
+            cr = response.headers.get("content-range")
+            # 格式: "bytes 0-0/123456789"
+            if cr and "/" in cr:
+                tail = cr.split("/")[-1].strip()
+                if tail.isdigit():
+                    return int(tail)
+            # 关闭连接，避免资源泄漏
+            response.close()
+        except Exception:
+            pass
+        return None
 
     def _update_page_size(self, page_id: str, page_title: str, size_gb: float):
         """更新单个页面的大小属性。使用 Notion API，受速率限制。"""

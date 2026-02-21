@@ -76,28 +76,12 @@
             </ComboBox>
 
             <ui:TextBlock Text="说明：并发数由设置页统一管理，下载/上传页不再单独配置。" Appearance="Tertiary" FontSize="12" Margin="0,8,0,0"/>
-
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-              <ui:Button x:Name="BtnApplyWorkersReset"
-                     Style="{StaticResource BluePrimaryUiButton}"
-                     Content="应用并重置任务"
-                     Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
-                     Click="OnApplyWorkersResetClick" />
-            </StackPanel>
           </StackPanel>
         </ui:Card>
 
         <ui:TextBlock 
           Text="数据将存储在: AppData\Roaming\NotionFilesManagement\config.json" 
           Appearance="Tertiary" FontSize="12" Margin="0,15,0,0"/>
-
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-          <ui:Button x:Name="BtnSave"
-                 Style="{StaticResource BluePrimaryUiButton}"
-                 Content="保存配置"
-                 Icon="{ui:SymbolIcon Symbol=Save24}"
-                 Click="OnSaveClick" />
-        </StackPanel>
       </StackPanel>
 
       <!-- ── 节区块 3：主题色 ── -->
@@ -122,8 +106,17 @@
                       Margin="0,0,0,8">
               <ComboBoxItem Content="云母材质" Tag="Mica"/>
               <ComboBoxItem Content="亚克力材质" Tag="Acrylic"/>
-              <ComboBoxItem Content="图片" Tag="Image"/>
+              <ComboBoxItem Content="视频或图片" Tag="Image"/>
             </ComboBox>
+
+            <!-- 视频或图片背景功耗警告 -->
+            <ui:InfoBar x:Name="ImagePowerWarningBar" 
+                        Title="性能提示"
+                        Message="选择分辨率较高的视频可能会显著增大功耗，笔记本电脑慎用（耗电快）"
+                        Severity="Warning"
+                        IsOpen="False"
+                        IsClosable="False"
+                        Margin="0,0,0,8"/>
 
             <!-- 亚克力材质不透明度设置 -->
             <StackPanel x:Name="AcrylicOpacityPanel" Visibility="Collapsed">
@@ -180,7 +173,7 @@
                              MinWidth="45" TextAlignment="Right"/>
               </Grid>
 
-              <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <ui:TextBlock Text="透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
               <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
@@ -195,29 +188,70 @@
                              MinWidth="40" TextAlignment="Right"/>
               </Grid>
 
-              <ui:TextBlock Text="说明：支持 PNG、JPG、BMP、GIF 图片和 MP4 视频文件作为背景。不透明度控制背景的可见程度，建议设置在 0.1-0.5 之间以确保界面文字可读。" 
-                   Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
-            </StackPanel>
-
-            <!-- 外观保存按钮 -->
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-              <ui:Button x:Name="BtnSaveAppearance"
-                     Style="{StaticResource BluePrimaryUiButton}"
-                     Content="保存"
-                     Icon="{ui:SymbolIcon Symbol=Save24}"
-                     Click="OnSaveAppearanceClick"
-                     Margin="0,0,8,0"/>
-              <ui:Button x:Name="BtnSaveAndRestart"
-                     Style="{StaticResource BluePrimaryUiButton}"
-                     Content="保存并重启应用"
-                     Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
-                     Click="OnSaveAndRestartClick"/>
+            <!-- 外观设置说明 -->
+            <ui:TextBlock Text="说明：支持 PNG、JPG、BMP、GIF 图片和 MP4 视频文件作为背景。不透明度控制背景的可见程度，建议设置在 0.1-0.5 之间以确保界面文字可读。" 
+                 Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
             </StackPanel>
           </StackPanel>
         </ui:Card>
       </StackPanel>
 
-      <!-- ── 节区块 5：关于 ── -->
+      <!-- ── 节区块 5：应用配置 ── -->
+      <StackPanel x:Name="SectionAppConfig">
+        <ui:TextBlock Text="应用配置" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+        <ui:Card Padding="15">
+          <StackPanel>
+            <ui:TextBlock Text="配置需要重启才能生效，重启前请保存您的配置" 
+                 Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,0">
+              <ui:Button x:Name="BtnSaveAllConfig"
+                     Style="{StaticResource BluePrimaryUiButton}"
+                     Content="保存配置"
+                     Icon="{ui:SymbolIcon Symbol=Save24}"
+                     Click="OnSaveAllConfigClick"
+                     Margin="0,0,8,0"/>
+              <ui:Button x:Name="BtnRestartApp"
+                     Content="重启应用"
+                     Icon="{ui:SymbolIcon Symbol=ArrowClockwise24}"
+                     Click="OnRestartAppClick"/>
+            </StackPanel>
+
+            <!-- 保存结果反馈提示（非弹窗，内嵌式） -->
+            <ui:InfoBar x:Name="SaveResultInfoBar"
+                        Title=""
+                        Message=""
+                        Severity="Success"
+                        IsOpen="False"
+                        IsClosable="True"
+                        Margin="0,8,0,0"/>
+
+            <!-- 重启确认提示（非弹窗，内嵌式） -->
+            <ui:InfoBar x:Name="RestartConfirmBar"
+                        Title="确认重启"
+                        Message="你确定要重启应用吗？你的任务可能会丢失。请检查是否有需要保存的配置，未保存的配置不会生效！"
+                        Severity="Warning"
+                        IsOpen="False"
+                        IsClosable="True"
+                        Margin="0,8,0,0"/>
+            <StackPanel x:Name="RestartConfirmButtons" 
+                        Orientation="Horizontal" 
+                        HorizontalAlignment="Right"
+                        Visibility="Collapsed"
+                        Margin="0,4,0,0">
+              <ui:Button Content="确认重启"
+                         Appearance="Danger"
+                         Click="OnConfirmRestartClick"
+                         Margin="0,0,8,0"/>
+              <ui:Button Content="取消"
+                         Appearance="Secondary"
+                         Click="OnCancelRestartClick"/>
+            </StackPanel>
+          </StackPanel>
+        </ui:Card>
+      </StackPanel>
+
+      <!-- ── 节区块 6：关于 ── -->
       <StackPanel x:Name="SectionAbout">
         <ui:TextBlock Text="关于" FontTypography="Subtitle" Margin="0,0,0,15" Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
         <ui:Card Padding="15">
@@ -257,15 +291,23 @@
                   <ui:TextBlock Grid.Row="2" Grid.Column="0" Text="更新内容：" Margin="0,0,0,6" Appearance="Tertiary" VerticalAlignment="Top"/>
                   <StackPanel Grid.Row="2" Grid.Column="1" x:Name="ChangelogPanel" Margin="0,0,0,6" HorizontalAlignment="Stretch"/>
                 </Grid>
-                <StackPanel x:Name="DownloadButtonPanel" Orientation="Horizontal" HorizontalAlignment="Right" Visibility="Collapsed">
-                  <ui:Button x:Name="BtnOpenGithub" Content="从 GitHub 下载"
-                             Icon="{ui:SymbolIcon Symbol=Open24}"
-                             Click="OnOpenGithubClick" Margin="0,0,8,0"/>
-                  <ui:Button x:Name="BtnGetDownloadUrl"
-                             Style="{StaticResource BluePrimaryUiButton}"
-                             Content="获取下载链接"
-                             Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
-                             Click="OnGetDownloadUrlClick"/>
+                <StackPanel x:Name="DownloadButtonPanel" Visibility="Collapsed">
+                  <ProgressBar x:Name="AutoUpdateProgressBar" Visibility="Collapsed" Margin="0,0,0,8" Minimum="0" Maximum="100"/>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button x:Name="BtnOpenGithub" Content="从 GitHub 下载"
+                               Icon="{ui:SymbolIcon Symbol=Open24}"
+                               Click="OnOpenGithubClick" Margin="0,0,8,0"/>
+                    <ui:Button x:Name="BtnManualDownload"
+                               Content="手动下载"
+                               Icon="{ui:SymbolIcon Symbol=Globe24}"
+                               Click="OnManualDownloadClick" Margin="0,0,8,0"/>
+                    <ui:Button x:Name="BtnAutoUpdate"
+                               Style="{StaticResource BluePrimaryUiButton}"
+                               Content="自动更新"
+                               Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+                               Click="OnAutoUpdateClick"
+                               Visibility="Collapsed"/>
+                  </StackPanel>
                 </StackPanel>
               </StackPanel>
             </Border>

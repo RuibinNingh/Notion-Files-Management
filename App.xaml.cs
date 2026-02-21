@@ -1,9 +1,11 @@
-﻿﻿using System;
+using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using Python.Runtime;
 using Notion_Files_Management.Utils;
+using Notion_Files_Management.Views;
 using Wpf.Ui.Appearance;
 
 namespace Notion_Files_Management
@@ -68,6 +70,19 @@ namespace Notion_Files_Management
 				sys.path.append(scriptsPath);
 				// 下面可以在这个using里调用Python函数了
 			}
+
+			// 启动时静默检查版本更新（火后即忘，失败仅写日志）
+			_ = Task.Run(async () =>
+			{
+				try
+				{
+					await SettingsPage.SilentCheckUpdateAsync();
+				}
+				catch (Exception ex)
+				{
+					Logger.Warn($"[App] Silent update check failed: {ex.Message}");
+				}
+			});
 		}
 
 		protected override void OnExit(ExitEventArgs e)

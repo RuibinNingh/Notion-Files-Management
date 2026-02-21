@@ -56,5 +56,84 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- ═══ 版本更新提醒横幅（液态玻璃风格，顶部渐入） ═══ -->
+        <Border x:Name="UpdateBanner"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Stretch"
+                Margin="16,12,16,0"
+                CornerRadius="12"
+                Padding="20,14,20,14"
+                Opacity="0"
+                IsHitTestVisible="False"
+                Visibility="Collapsed">
+
+            <!-- 液态玻璃背景 -->
+            <Border.Background>
+                <SolidColorBrush Color="#20FFFFFF"/>
+            </Border.Background>
+            <Border.BorderBrush>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#30FFFFFF" Offset="0"/>
+                    <GradientStop Color="#10FFFFFF" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.BorderBrush>
+            <Border.BorderThickness>
+                <Thickness>1</Thickness>
+            </Border.BorderThickness>
+            <Border.Effect>
+                <DropShadowEffect Color="#000000"
+                                  BlurRadius="24"
+                                  ShadowDepth="2"
+                                  Opacity="0.25"
+                                  Direction="270"/>
+            </Border.Effect>
+
+            <!-- 渐入 + 下滑动画 -->
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="BannerTranslate" Y="-18"/>
+            </Border.RenderTransform>
+
+            <!-- 横幅内容 -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 图标 -->
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="ArrowSync24"
+                               FontSize="22"
+                               Foreground="{DynamicResource SystemAccentColorLight2Brush}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,14,0"/>
+
+                <!-- 文字 -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="BannerTitle"
+                               Text="发现新版本"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    <TextBlock x:Name="BannerSubtitle"
+                               Text=""
+                               FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <!-- 按钮 -->
+                <ui:Button Grid.Column="2"
+                           x:Name="BtnGoSettings"
+                           Appearance="Primary"
+                           Content="转到设置更新"
+                           Icon="{ui:SymbolIcon Settings24}"
+                           VerticalAlignment="Center"
+                           Margin="14,0,0,0"
+                           Click="OnGoSettingsClick"/>
+            </Grid>
+        </Border>
+
     </Grid>
 </Page>
