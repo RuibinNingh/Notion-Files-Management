@@ -56,84 +56,157 @@
             </StackPanel>
         </StackPanel>
 
-        <!-- ═══ 版本更新提醒横幅（液态玻璃风格，顶部渐入） ═══ -->
-        <Border x:Name="UpdateBanner"
-                VerticalAlignment="Top"
-                HorizontalAlignment="Stretch"
-                Margin="16,12,16,0"
-                CornerRadius="12"
-                Padding="20,14,20,14"
-                Opacity="0"
-                IsHitTestVisible="False"
-                Visibility="Collapsed">
+        <!-- ═══ 顶部提醒横幅容器（自动向上排版） ═══ -->
+        <StackPanel VerticalAlignment="Top"
+                    HorizontalAlignment="Stretch"
+                    Margin="16,12,16,0">
 
-            <!-- 液态玻璃背景 -->
-            <Border.Background>
-                <SolidColorBrush Color="#20FFFFFF"/>
-            </Border.Background>
-            <Border.BorderBrush>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#30FFFFFF" Offset="0"/>
-                    <GradientStop Color="#10FFFFFF" Offset="1"/>
-                </LinearGradientBrush>
-            </Border.BorderBrush>
-            <Border.BorderThickness>
-                <Thickness>1</Thickness>
-            </Border.BorderThickness>
-            <Border.Effect>
-                <DropShadowEffect Color="#000000"
-                                  BlurRadius="24"
-                                  ShadowDepth="2"
-                                  Opacity="0.25"
-                                  Direction="270"/>
-            </Border.Effect>
+            <!-- ═══ 版本更新提醒横幅（液态玻璃风格，顶部渐入） ═══ -->
+            <Border x:Name="UpdateBanner"
+                    HorizontalAlignment="Stretch"
+                    CornerRadius="12"
+                    Padding="20,14,20,14"
+                    Opacity="0"
+                    IsHitTestVisible="False"
+                    Visibility="Collapsed"
+                    Margin="0,0,0,8">
 
-            <!-- 渐入 + 下滑动画 -->
-            <Border.RenderTransform>
-                <TranslateTransform x:Name="BannerTranslate" Y="-18"/>
-            </Border.RenderTransform>
+                <!-- 液态玻璃背景 -->
+                <Border.Background>
+                    <SolidColorBrush Color="#20FFFFFF"/>
+                </Border.Background>
+                <Border.BorderBrush>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#30FFFFFF" Offset="0"/>
+                        <GradientStop Color="#10FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.BorderBrush>
+                <Border.BorderThickness>
+                    <Thickness>1</Thickness>
+                </Border.BorderThickness>
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000"
+                                      BlurRadius="24"
+                                      ShadowDepth="2"
+                                      Opacity="0.25"
+                                      Direction="270"/>
+                </Border.Effect>
 
-            <!-- 横幅内容 -->
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+                <!-- 渐入 + 下滑动画 -->
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="BannerTranslate" Y="-18"/>
+                </Border.RenderTransform>
 
-                <!-- 图标 -->
-                <ui:SymbolIcon Grid.Column="0"
-                               Symbol="ArrowSync24"
-                               FontSize="22"
-                               Foreground="{DynamicResource SystemAccentColorLight2Brush}"
+                <!-- 横幅内容 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 图标 -->
+                    <ui:SymbolIcon Grid.Column="0"
+                                   Symbol="ArrowSync24"
+                                   FontSize="22"
+                                   Foreground="{DynamicResource SystemAccentColorLight2Brush}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,14,0"/>
+
+                    <!-- 文字 -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock x:Name="BannerTitle"
+                                   Text="发现新版本"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                        <TextBlock x:Name="BannerSubtitle"
+                                   Text=""
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Margin="0,2,0,0"/>
+                    </StackPanel>
+
+                    <!-- 按钮 -->
+                    <ui:Button Grid.Column="2"
+                               x:Name="BtnGoSettings"
+                               Appearance="Primary"
+                               Content="转到设置更新"
+                               Icon="{ui:SymbolIcon Settings24}"
                                VerticalAlignment="Center"
-                               Margin="0,0,14,0"/>
+                               Margin="14,0,0,0"
+                               Click="OnGoSettingsClick"/>
+                </Grid>
+            </Border>
 
-                <!-- 文字 -->
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock x:Name="BannerTitle"
-                               Text="发现新版本"
+            <!-- ═══ 公告未读提醒横幅（液态玻璃风格，与版本横幅同风格） ═══ -->
+            <Border x:Name="NoticeBanner"
+                    HorizontalAlignment="Stretch"
+                    CornerRadius="12"
+                    Padding="20,14,20,14"
+                    Opacity="0"
+                    IsHitTestVisible="False"
+                    Visibility="Collapsed"
+                    Margin="0,0,0,8">
+
+                <Border.Background>
+                    <SolidColorBrush Color="#20FFFFFF"/>
+                </Border.Background>
+                <Border.BorderBrush>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#30FFFFFF" Offset="0"/>
+                        <GradientStop Color="#10FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.BorderBrush>
+                <Border.BorderThickness>
+                    <Thickness>1</Thickness>
+                </Border.BorderThickness>
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000"
+                                      BlurRadius="24"
+                                      ShadowDepth="2"
+                                      Opacity="0.25"
+                                      Direction="270"/>
+                </Border.Effect>
+
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="NoticeBannerTranslate" Y="-18"/>
+                </Border.RenderTransform>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ui:SymbolIcon Grid.Column="0"
+                                   Symbol="Megaphone24"
+                                   FontSize="22"
+                                   Foreground="{DynamicResource SystemAccentColorLight2Brush}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,14,0"/>
+
+                    <TextBlock Grid.Column="1"
+                               x:Name="NoticeBannerText"
+                               Text=""
                                FontSize="14"
                                FontWeight="SemiBold"
+                               VerticalAlignment="Center"
                                Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-                    <TextBlock x:Name="BannerSubtitle"
-                               Text=""
-                               FontSize="12"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                               Margin="0,2,0,0"/>
-                </StackPanel>
 
-                <!-- 按钮 -->
-                <ui:Button Grid.Column="2"
-                           x:Name="BtnGoSettings"
-                           Appearance="Primary"
-                           Content="转到设置更新"
-                           Icon="{ui:SymbolIcon Settings24}"
-                           VerticalAlignment="Center"
-                           Margin="14,0,0,0"
-                           Click="OnGoSettingsClick"/>
-            </Grid>
-        </Border>
+                    <ui:Button Grid.Column="2"
+                               x:Name="BtnGoNotice"
+                               Appearance="Primary"
+                               Content="查看公告"
+                               Icon="{ui:SymbolIcon Megaphone24}"
+                               VerticalAlignment="Center"
+                               Margin="14,0,0,0"
+                               Click="OnGoNoticeClick"/>
+                </Grid>
+            </Border>
+
+        </StackPanel>
 
     </Grid>
 </Page>

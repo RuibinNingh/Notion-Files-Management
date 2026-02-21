@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
@@ -12,6 +13,11 @@ namespace Notion_Files_Management
 {
 	public partial class MainWindow : FluentWindow
 	{
+		private static readonly HttpClient _bgHttpClient = new HttpClient
+		{
+			Timeout = TimeSpan.FromSeconds(30)
+		};
+
 		public MainWindow()
 		{
 			InitializeComponent();
@@ -47,15 +53,19 @@ namespace Notion_Files_Management
 			try
 			{
 				ConfigManager.Load();
-				string material = ConfigManager.Current?.BackgroundMaterial ?? "Mica";
+				string material = ConfigManager.Current?.BackgroundMaterial ?? "AutoPush";
 				if (string.IsNullOrWhiteSpace(material) || 
-				    (material != "Mica" && material != "Acrylic" && material != "Image"))
-					material = "Mica";
+				    (material != "Mica" && material != "Acrylic" && material != "Image" && material != "AutoPush"))
+					material = "AutoPush";
 
 				// 先清理之前的背景图片/视频状态
 				CleanupBackgroundMedia();
 
-				if (material == "Image")
+				if (material == "AutoPush")
+				{
+					_ = ApplyAutoPushBackgroundAsync();
+				}
+				else if (material == "Image")
 				{
 					ApplyImageBackground();
 				}
@@ -80,6 +90,190 @@ namespace Notion_Files_Management
 			{
 				Utils.Logger.Error("[MainWindow] Apply background material failed", ex);
 			}
+		}
+
+		/// <summary>
+		/// 应用自动推送背景（异步：检查缓存→下载→应用）
+		/// </summary>
+		private async System.Threading.Tasks.Task ApplyAutoPushBackgroundAsync()
+		{
+			try
+			{
+				string src = ConfigManager.Current?.AutoPushBackgroundSrc ?? "";
+				string name = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+				double transparency = ConfigManager.Current?.AutoPushTransparency ?? 0.3;
+				if (transparency < 0.0) transparency = 0.0;
+				if (transparency > 1.0) transparency = 1.0;
+
+				// 如果没有配置 src，尝试从远端获取默认
+				if (string.IsNullOrWhiteSpace(src))
+				{
+					Utils.Logger.Info("[MainWindow] AutoPush: No src configured, fetching default from server...");
+					try
+					{
+						string json = "";
+						try { json = await _bgHttpClient.GetStringAsync("https://nfm.ruibin-ningh.top/background/config.json"); }
+						catch { json = await _bgHttpClient.GetStringAsync("http://nfm.ruibin-ningh.top/background/config.json"); }
+
+						var config = System.Text.Json.JsonSerializer.Deserialize<AutoPushBgConfig>(json);
+						if (config?.@default != null)
+						{
+							src = config.@default.src;
+							name = config.@default.name;
+							// 保存到配置以便下次使用
+							ConfigManager.Current.AutoPushBackgroundSrc = src;
+							ConfigManager.Current.AutoPushBackgroundName = name;
+							ConfigManager.Save();
+						}
+					}
+					catch (Exception fetchEx)
+					{
+						Utils.Logger.Warn($"[MainWindow] AutoPush: Failed to fetch config: {fetchEx.Message}");
+						// 回退到 Mica
+						Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; });
+						return;
+					}
+				}
+
+				if (string.IsNullOrWhiteSpace(src))
+				{
+					Utils.Logger.Warn("[MainWindow] AutoPush: src still empty after fetch, falling back to Mica");
+					Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; });
+					return;
+				}
+
+				// 检查本地缓存
+				string cacheDir = GetBgCacheDir();
+				string fileName = Path.GetFileName(src);
+				string cachedPath = Path.Combine(cacheDir, fileName);
+
+				if (!File.Exists(cachedPath))
+				{
+					Utils.Logger.Info($"[MainWindow] AutoPush: Downloading {src} → {cachedPath}");
+					try
+					{
+						string fullUrl;
+						try
+						{
+							fullUrl = "https://nfm.ruibin-ningh.top" + src;
+							var testBytes = await _bgHttpClient.GetByteArrayAsync(fullUrl);
+							await File.WriteAllBytesAsync(cachedPath, testBytes);
+						}
+						catch
+						{
+							fullUrl = "http://nfm.ruibin-ningh.top" + src;
+							var testBytes = await _bgHttpClient.GetByteArrayAsync(fullUrl);
+							await File.WriteAllBytesAsync(cachedPath, testBytes);
+						}
+					}
+					catch (Exception dlEx)
+					{
+						Utils.Logger.Error($"[MainWindow] AutoPush: Download failed: {dlEx.Message}");
+						Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; });
+						return;
+					}
+				}
+
+				// 应用缓存的文件
+				Dispatcher.Invoke(() =>
+				{
+					try
+					{
+						ApplyAutoPushFile(cachedPath, transparency);
+					}
+					catch (Exception applyEx)
+					{
+						Utils.Logger.Error("[MainWindow] AutoPush: Apply failed", applyEx);
+						WindowBackdropType = WindowBackdropType.Mica;
+					}
+				});
+			}
+			catch (Exception ex)
+			{
+				Utils.Logger.Error("[MainWindow] ApplyAutoPushBackgroundAsync failed", ex);
+				try { Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; }); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// 应用自动推送的本地缓存文件（在 UI 线程调用）
+		/// </summary>
+		private void ApplyAutoPushFile(string filePath, double transparency)
+		{
+			string ext = Path.GetExtension(filePath).ToLowerInvariant();
+			bool isVideo = ext == ".mp4";
+			bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".gif" || ext == ".webp";
+
+			if (!isVideo && !isImage)
+			{
+				Utils.Logger.Warn($"[MainWindow] AutoPush: Unsupported file format: {ext}");
+				WindowBackdropType = WindowBackdropType.Mica;
+				return;
+			}
+
+			// 透明度：值越大越透明，所以 opacity = 1 - transparency
+			double opacity = 1.0 - transparency;
+			if (opacity < 0.0) opacity = 0.0;
+			if (opacity > 1.0) opacity = 1.0;
+
+			WindowBackdropType = WindowBackdropType.None;
+
+			if (isImage)
+			{
+				var bitmap = new BitmapImage();
+				bitmap.BeginInit();
+				bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
+				bitmap.CacheOption = BitmapCacheOption.OnLoad;
+				bitmap.EndInit();
+				bitmap.Freeze();
+
+				BackgroundImage.Source = bitmap;
+				BackgroundImage.Opacity = opacity;
+				BackgroundImage.Effect = null;
+				BackgroundImage.Visibility = Visibility.Visible;
+				BackgroundVideo.Visibility = Visibility.Collapsed;
+			}
+			else // isVideo
+			{
+				BackgroundVideo.Source = new Uri(filePath, UriKind.Absolute);
+				BackgroundVideo.Opacity = opacity;
+				BackgroundVideo.Effect = null;
+				BackgroundVideo.Visibility = Visibility.Visible;
+				BackgroundImage.Visibility = Visibility.Collapsed;
+
+				BackgroundVideo.MediaEnded += OnBackgroundVideoEnded;
+				BackgroundVideo.Play();
+			}
+
+			BackgroundOverlay.Opacity = transparency;
+			BackgroundMediaLayer.Visibility = Visibility.Visible;
+
+			Utils.Logger.Info($"[MainWindow] AutoPush applied: {filePath}, transparency={transparency}");
+		}
+
+		/// <summary>
+		/// 获取背景缓存目录
+		/// </summary>
+		private static string GetBgCacheDir()
+		{
+			string dir = Path.Combine(
+				Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+				"NotionFilesManagement", "background_cache");
+			if (!Directory.Exists(dir))
+				Directory.CreateDirectory(dir);
+			return dir;
+		}
+
+		// 简易数据模型供 MainWindow 反序列化远端配置
+		private sealed class AutoPushBgConfig
+		{
+			public AutoPushBgPreset? @default { get; set; }
+			public AutoPushBgPreset[] list { get; set; } = Array.Empty<AutoPushBgPreset>();
+		}
+		private sealed class AutoPushBgPreset
+		{
+			public string name { get; set; } = "";
+			public string src { get; set; } = "";
 		}
 
 		/// <summary>

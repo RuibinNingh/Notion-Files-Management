@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using Notion_Files_Management.Services;
 
 namespace Notion_Files_Management.Views
 {
@@ -23,6 +24,11 @@ namespace Notion_Files_Management.Views
         /// 避免在同一次应用生命周期中重复弹出（用户关闭后不再显示）
         /// </summary>
         private static bool _bannerDismissed;
+
+        /// <summary>
+        /// 公告未读横幅是否已关闭
+        /// </summary>
+        private static bool _noticeBannerDismissed;
 
         public DashboardPage()
         {
@@ -50,6 +56,9 @@ namespace Notion_Files_Management.Views
             _versionPollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _versionPollTimer.Tick += OnVersionPollTick;
             _versionPollTimer.Start();
+
+            // 异步检查公告未读数
+            CheckNoticeUnread();
         }
 
         private void OnPageUnloaded(object sender, RoutedEventArgs e)
@@ -127,6 +136,75 @@ namespace Notion_Files_Management.Views
 
             UpdateBanner.BeginAnimation(OpacityProperty, fadeIn);
             BannerTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideDown);
+        }
+
+        // ═══════════════════ 公告未读提醒 ═══════════════════
+
+        /// <summary>
+        /// 异步检查公告未读数，有未读则显示提醒横幅
+        /// </summary>
+        private async void CheckNoticeUnread()
+        {
+            if (_noticeBannerDismissed) return;
+
+            try
+            {
+                // 尝试获取公告索引（可能已被 App 启动时预加载到缓存）
+                var index = NoticeService.CachedIndex ?? await NoticeService.FetchIndexAsync();
+                if (index == null) return;
+
+                int unread = NoticeService.GetUnreadCount(index);
+                if (unread > 0)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        NoticeBannerText.Text = $"您有 {unread} 条未读公告";
+                        ShowNoticeBannerWithAnimation();
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Warn($"[DashboardPage] CheckNoticeUnread failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 渐入 + 下滑动画显示公告横幅
+        /// </summary>
+        private void ShowNoticeBannerWithAnimation()
+        {
+            NoticeBanner.Visibility = Visibility.Visible;
+            NoticeBanner.IsHitTestVisible = true;
+
+            var duration = new Duration(TimeSpan.FromMilliseconds(520));
+            var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+            var fadeIn = new DoubleAnimation(0, 1, duration) { EasingFunction = easing };
+            var slideDown = new DoubleAnimation(-18, 0, duration) { EasingFunction = easing };
+
+            NoticeBanner.BeginAnimation(OpacityProperty, fadeIn);
+            NoticeBannerTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, slideDown);
+        }
+
+        /// <summary>
+        /// 点击"查看公告"按钮 — 导航到公告页面
+        /// </summary>
+        private void OnGoNoticeClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _noticeBannerDismissed = true;
+
+                if (System.Windows.Application.Current.MainWindow is MainWindow mw)
+                {
+                    mw.RootNavigation.Navigate(typeof(NoticePage));
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("[DashboardPage] Failed to navigate to NoticePage", ex);
+            }
         }
 
         // ═══════════════════ 版本比较（复用 SettingsPage 的逻辑） ═══════════════════

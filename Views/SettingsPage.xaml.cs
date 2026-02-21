@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
@@ -20,6 +21,12 @@ namespace Notion_Files_Management.Views
         // 版本检查相关常量
         private const string VersionEndpointHttps = "https://nfm.ruibin-ningh.top/version.json";
         private const string VersionEndpointHttp = "http://nfm.ruibin-ningh.top/version.json";
+
+        // 自动推送背景配置端点
+        private const string BgConfigEndpointHttps = "https://nfm.ruibin-ningh.top/background/config.json";
+        private const string BgConfigEndpointHttp  = "http://nfm.ruibin-ningh.top/background/config.json";
+        private const string BgBaseUrlHttps = "https://nfm.ruibin-ningh.top";
+        private const string BgBaseUrlHttp  = "http://nfm.ruibin-ningh.top";
 
         // 使用静态 HttpClient 避免 socket 资源泄漏
         private static readonly HttpClient _httpClient = new HttpClient
@@ -67,6 +74,38 @@ namespace Notion_Files_Management.Views
             public string type { get; set; } = "installer";
         }
 
+        // ── 自动推送背景配置数据模型 ─────────────────────────────────────
+        internal sealed class BgConfigResponse
+        {
+            public BgPresetItem? @default { get; set; }
+            public BgPresetItem[] list { get; set; } = Array.Empty<BgPresetItem>();
+        }
+
+        internal sealed class BgPresetItem
+        {
+            public string name { get; set; } = "";
+            public string src { get; set; } = "";
+        }
+
+        /// <summary>
+        /// 当前加载的背景配置（供预设选择使用）
+        /// </summary>
+        private BgConfigResponse? _bgConfig;
+
+        /// <summary>
+        /// 背景配置 JSON 本地缓存文件路径
+        /// </summary>
+        private static readonly string _bgConfigCachePath = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "NotionFilesManagement", "background_cache", "config_cache.json");
+
+        /// <summary>
+        /// 缩略图本地缓存目录
+        /// </summary>
+        private static readonly string _thumbCacheDir = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "NotionFilesManagement", "background_cache", "thumbs");
+
         /// <summary>
         /// 静态缓存：启动时静默检查的版本信息（供 SettingsPage 使用）
         /// </summary>
@@ -98,6 +137,16 @@ namespace Notion_Files_Management.Views
         /// 运行时发现的最近祖先 ScrollViewer（来自 NavigationView 内部模板）
         /// </summary>
         private ScrollViewer? _ancestorScrollViewer = null;
+
+        /// <summary>
+        /// 自动更新会话单例引用（跨页面持久化下载进度）
+        /// </summary>
+        private readonly AutoUpdateSession _autoUpdateSession = AutoUpdateSession.Instance;
+
+        /// <summary>
+        /// 自动更新进度轮询定时器（页面可见时从 Session 同步进度到 UI）
+        /// </summary>
+        private DispatcherTimer? _autoUpdatePollTimer;
 
         public SettingsPage()
         {
@@ -165,6 +214,15 @@ namespace Notion_Files_Management.Views
                         Logger.Error("[SettingsPage] Failed to render cached version info", ex);
                     }
                 }
+
+                // ── 恢复自动更新下载状态 ──
+                RestoreAutoUpdateState();
+            };
+
+            // 页面卸载时停止轮询定时器（页面不可见时不需要更新 UI）
+            Unloaded += (s, e) =>
+            {
+                StopAutoUpdatePolling();
             };
             
             // 监听窗口大小变化
@@ -771,6 +829,139 @@ namespace Notion_Files_Management.Views
         }
 
         /// <summary>
+        /// 恢复自动更新下载状态（页面 Loaded 时调用）
+        /// 如果 Session 中有正在进行的下载，恢复进度条和按钮状态并启动轮询
+        /// </summary>
+        private void RestoreAutoUpdateState()
+        {
+            try
+            {
+                if (_autoUpdateSession.IsDownloading)
+                {
+                    Logger.Info("[SettingsPage] Restoring auto-update download state from session");
+
+                    // 确保版本信息面板和下载按钮面板可见
+                    VersionInfoPanel.Visibility = Visibility.Visible;
+                    DownloadButtonPanel.Visibility = Visibility.Visible;
+
+                    // 恢复按钮状态
+                    BtnAutoUpdate.IsEnabled = false;
+                    BtnAutoUpdate.Content = _autoUpdateSession.StatusText;
+                    BtnAutoUpdate.Visibility = Visibility.Visible;
+
+                    // 恢复进度条状态
+                    AutoUpdateProgressBar.Visibility = Visibility.Visible;
+                    if (_autoUpdateSession.ProgressPercent < 0)
+                    {
+                        AutoUpdateProgressBar.IsIndeterminate = true;
+                    }
+                    else
+                    {
+                        AutoUpdateProgressBar.IsIndeterminate = false;
+                        AutoUpdateProgressBar.Value = _autoUpdateSession.ProgressPercent;
+                    }
+
+                    // 启动轮询定时器同步进度
+                    StartAutoUpdatePolling();
+                }
+                else if (_autoUpdateSession.HasFailed)
+                {
+                    // 下载已失败：显示错误信息
+                    VersionInfoPanel.Visibility = Visibility.Visible;
+                    DownloadButtonPanel.Visibility = Visibility.Visible;
+                    BtnAutoUpdate.Visibility = Visibility.Visible;
+                    BtnAutoUpdate.IsEnabled = true;
+                    BtnAutoUpdate.Content = "自动更新";
+                    AutoUpdateProgressBar.Visibility = Visibility.Collapsed;
+                    ShowInfoBar(InfoBarSeverity.Error, _autoUpdateSession.ErrorMessage ?? "所有下载线路均失败，请尝试手动下载");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Failed to restore auto-update state", ex);
+            }
+        }
+
+        /// <summary>
+        /// 启动自动更新进度轮询定时器（200ms 间隔从 Session 同步进度到 UI）
+        /// </summary>
+        private void StartAutoUpdatePolling()
+        {
+            StopAutoUpdatePolling(); // 确保不重复
+
+            _autoUpdatePollTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(200)
+            };
+            _autoUpdatePollTimer.Tick += OnAutoUpdatePollTick;
+            _autoUpdatePollTimer.Start();
+
+            Logger.Info("[SettingsPage] Auto-update poll timer started");
+        }
+
+        /// <summary>
+        /// 停止自动更新进度轮询定时器
+        /// </summary>
+        private void StopAutoUpdatePolling()
+        {
+            if (_autoUpdatePollTimer != null)
+            {
+                _autoUpdatePollTimer.Stop();
+                _autoUpdatePollTimer.Tick -= OnAutoUpdatePollTick;
+                _autoUpdatePollTimer = null;
+                Logger.Info("[SettingsPage] Auto-update poll timer stopped");
+            }
+        }
+
+        /// <summary>
+        /// 自动更新进度轮询回调：从 Session 读取状态并更新当前页面 UI
+        /// </summary>
+        private void OnAutoUpdatePollTick(object? sender, EventArgs e)
+        {
+            try
+            {
+                if (_autoUpdateSession.IsDownloading)
+                {
+                    // 同步进度
+                    BtnAutoUpdate.Content = _autoUpdateSession.StatusText;
+                    if (_autoUpdateSession.ProgressPercent < 0)
+                    {
+                        AutoUpdateProgressBar.IsIndeterminate = true;
+                    }
+                    else
+                    {
+                        AutoUpdateProgressBar.IsIndeterminate = false;
+                        AutoUpdateProgressBar.Value = _autoUpdateSession.ProgressPercent;
+                    }
+                }
+                else
+                {
+                    // 下载已结束（成功或失败）
+                    StopAutoUpdatePolling();
+
+                    AutoUpdateProgressBar.Visibility = Visibility.Collapsed;
+                    BtnAutoUpdate.Content = "自动更新";
+                    BtnAutoUpdate.IsEnabled = true;
+
+                    if (_autoUpdateSession.IsCompleted)
+                    {
+                        // 下载成功后的安装/替换逻辑由 OnAutoUpdateClick 处理
+                        // 这里只需确保 UI 状态正确
+                    }
+                    else if (_autoUpdateSession.HasFailed)
+                    {
+                        ShowInfoBar(InfoBarSeverity.Error, _autoUpdateSession.ErrorMessage ?? "所有下载线路均失败，请尝试手动下载");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Auto-update poll tick error", ex);
+                StopAutoUpdatePolling();
+            }
+        }
+
+        /// <summary>
         /// 点击"自动更新"按钮 — 按优先级顺序从 auto 线路下载更新
         /// </summary>
         private async void OnAutoUpdateClick(object sender, RoutedEventArgs e)
@@ -782,11 +973,20 @@ namespace Notion_Files_Management.Views
                 return;
             }
 
+            // ── 初始化 Session 状态 ──
+            _autoUpdateSession.Reset();
+            _autoUpdateSession.IsDownloading = true;
+            _autoUpdateSession.StatusText = "下载中...";
+            _autoUpdateSession.ProgressPercent = 0;
+
             BtnAutoUpdate.IsEnabled = false;
             BtnAutoUpdate.Content = "下载中...";
             AutoUpdateProgressBar.Visibility = Visibility.Visible;
             AutoUpdateProgressBar.IsIndeterminate = false;
             AutoUpdateProgressBar.Value = 0;
+
+            // 启动轮询定时器（支持跨页面恢复进度）
+            StartAutoUpdatePolling();
 
             // 按 priority 排序
             var routes = info.download.auto.OrderBy(r => r.priority).ToArray();
@@ -798,7 +998,10 @@ namespace Notion_Files_Management.Views
             {
                 var route = routes[i];
                 Logger.Info($"[SettingsPage] Auto-update: trying route '{route.label}' (priority={route.priority}, type={route.type}): {route.url}");
-                BtnAutoUpdate.Content = $"下载中（{route.label}）...";
+                
+                string statusText = $"下载中（{route.label}）...";
+                BtnAutoUpdate.Content = statusText;
+                _autoUpdateSession.StatusText = statusText;
 
                 try
                 {
@@ -834,10 +1037,12 @@ namespace Notion_Files_Management.Views
                             double percent = (double)receivedBytes / totalBytes.Value * 100;
                             AutoUpdateProgressBar.IsIndeterminate = false;
                             AutoUpdateProgressBar.Value = percent;
+                            _autoUpdateSession.ProgressPercent = percent;
                         }
                         else
                         {
                             AutoUpdateProgressBar.IsIndeterminate = true;
+                            _autoUpdateSession.ProgressPercent = -1; // 不确定进度
                         }
                     }
 
@@ -853,10 +1058,18 @@ namespace Notion_Files_Management.Views
                 }
             }
 
+            // ── 下载结束，停止轮询 ──
+            _autoUpdateSession.IsDownloading = false;
+            StopAutoUpdatePolling();
+
             AutoUpdateProgressBar.Visibility = Visibility.Collapsed;
 
             if (!string.IsNullOrEmpty(downloadedPath) && File.Exists(downloadedPath))
             {
+                _autoUpdateSession.IsCompleted = true;
+                _autoUpdateSession.DownloadedFilePath = downloadedPath;
+                _autoUpdateSession.SuccessRouteType = successRoute?.type;
+
                 bool isExeReplace = string.Equals(successRoute?.type, "exe", StringComparison.OrdinalIgnoreCase);
 
                 if (isExeReplace)
@@ -912,6 +1125,8 @@ del ""%~f0""
             }
             else
             {
+                _autoUpdateSession.HasFailed = true;
+                _autoUpdateSession.ErrorMessage = "所有下载线路均失败，请尝试手动下载";
                 ShowInfoBar(InfoBarSeverity.Error, "所有下载线路均失败，请尝试手动下载");
             }
 
@@ -1073,10 +1288,10 @@ del ""%~f0""
         {
             try
             {
-                string material = ConfigManager.Current?.BackgroundMaterial ?? "Mica";
+                string material = ConfigManager.Current?.BackgroundMaterial ?? "AutoPush";
                 if (string.IsNullOrWhiteSpace(material) || 
-                    (material != "Mica" && material != "Acrylic" && material != "Image"))
-                    material = "Mica";
+                    (material != "Mica" && material != "Acrylic" && material != "Image" && material != "AutoPush"))
+                    material = "AutoPush";
 
                 // 设置下拉框选择
                 if (BackgroundMaterialCombo != null)
@@ -1122,12 +1337,35 @@ del ""%~f0""
                 if (imgOpacity > 1.0) imgOpacity = 1.0;
                 if (ImageOpacitySlider != null)
                 {
-                    ImageOpacitySlider.Value = imgOpacity;
-                    UpdateImageOpacityDisplay(imgOpacity);
+                    // UI 显示"不透明度"= 遮挡程度 = 1 - 壁纸可见度
+                    ImageOpacitySlider.Value = 1.0 - imgOpacity;
+                    UpdateImageOpacityDisplay(1.0 - imgOpacity);
+                }
+
+                // 加载自动推送设置
+                double apTransparency = ConfigManager.Current?.AutoPushTransparency ?? 0.3;
+                if (apTransparency < 0.0) apTransparency = 0.0;
+                if (apTransparency > 1.0) apTransparency = 1.0;
+                if (AutoPushTransparencySlider != null)
+                {
+                    AutoPushTransparencySlider.Value = apTransparency;
+                    UpdateAutoPushTransparencyDisplay(apTransparency);
+                }
+
+                string apName = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+                if (AutoPushCurrentName != null)
+                {
+                    AutoPushCurrentName.Text = string.IsNullOrEmpty(apName) ? "（服务端默认）" : apName;
                 }
 
                 // 根据选择的材质显示/隐藏对应面板
                 UpdateBackgroundPanelVisibility(material);
+
+                // 如果选中 AutoPush，自动拉取远端配置
+                if (material == "AutoPush")
+                {
+                    _ = FetchBgConfigAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -1145,9 +1383,9 @@ del ""%~f0""
                 // 保存材质类型
                 if (BackgroundMaterialCombo?.SelectedItem is ComboBoxItem selectedItem)
                 {
-                    string material = selectedItem.Tag?.ToString() ?? "Mica";
-                    if (material != "Mica" && material != "Acrylic" && material != "Image")
-                        material = "Mica";
+                    string material = selectedItem.Tag?.ToString() ?? "AutoPush";
+                    if (material != "Mica" && material != "Acrylic" && material != "Image" && material != "AutoPush")
+                        material = "AutoPush";
                     ConfigManager.Current.BackgroundMaterial = material;
                 }
 
@@ -1174,11 +1412,22 @@ del ""%~f0""
                 }
                 if (ImageOpacitySlider != null)
                 {
-                    double imgOpacity = ImageOpacitySlider.Value;
-                    if (imgOpacity < 0.0) imgOpacity = 0.0;
-                    if (imgOpacity > 1.0) imgOpacity = 1.0;
-                    ConfigManager.Current.BackgroundImageOpacity = imgOpacity;
+                    // 滑条显示"不透明度"（遮挡程度），存储转回壁纸可见度 = 1 - slider
+                    double sliderVal = ImageOpacitySlider.Value;
+                    if (sliderVal < 0.0) sliderVal = 0.0;
+                    if (sliderVal > 1.0) sliderVal = 1.0;
+                    ConfigManager.Current.BackgroundImageOpacity = 1.0 - sliderVal;
                 }
+
+                // 保存自动推送背景设置
+                if (AutoPushTransparencySlider != null)
+                {
+                    double t = AutoPushTransparencySlider.Value;
+                    if (t < 0.0) t = 0.0;
+                    if (t > 1.0) t = 1.0;
+                    ConfigManager.Current.AutoPushTransparency = t;
+                }
+                // AutoPushBackgroundName / Src 在选择预设时已写入 ConfigManager.Current
             }
             catch (Exception ex)
             {
@@ -1195,9 +1444,15 @@ del ""%~f0""
             {
                 if (BackgroundMaterialCombo?.SelectedItem is ComboBoxItem selectedItem)
                 {
-                    string material = selectedItem.Tag?.ToString() ?? "Mica";
+                    string material = selectedItem.Tag?.ToString() ?? "AutoPush";
                     UpdateBackgroundPanelVisibility(material);
                     
+                    // 选中 AutoPush 时自动拉取远端配置
+                    if (material == "AutoPush" && _bgConfig == null)
+                    {
+                        _ = FetchBgConfigAsync();
+                    }
+
                     Logger.Info($"[SettingsPage] Background material UI changed to: {material} (not saved yet)");
                 }
             }
@@ -1212,6 +1467,12 @@ del ""%~f0""
         /// </summary>
         private void UpdateBackgroundPanelVisibility(string material)
         {
+            // 自动推送面板
+            if (AutoPushPanel != null)
+            {
+                AutoPushPanel.Visibility = (material == "AutoPush") ? Visibility.Visible : Visibility.Collapsed;
+            }
+
             UpdateAcrylicOpacityPanelVisibility(material == "Acrylic");
             UpdateImageBackgroundPanelVisibility(material == "Image");
             
@@ -1276,6 +1537,574 @@ del ""%~f0""
             if (ImageBackgroundPanel != null)
             {
                 ImageBackgroundPanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        // ── 自动推送背景相关方法 ─────────────────────────────────────────
+
+        /// <summary>
+        /// 获取背景缓存目录
+        /// </summary>
+        private static string GetBgCacheDir()
+        {
+            string dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "NotionFilesManagement", "background_cache");
+            if (!System.IO.Directory.Exists(dir))
+                System.IO.Directory.CreateDirectory(dir);
+            return dir;
+        }
+
+        /// <summary>
+        /// 从服务器获取背景配置（优先读取本地缓存，后台静默刷新）
+        /// </summary>
+        private async Task FetchBgConfigAsync()
+        {
+            try
+            {
+                // ── 第 1 步：尝试从本地磁盘缓存加载 ──
+                bool loadedFromCache = false;
+                if (_bgConfig == null && System.IO.File.Exists(_bgConfigCachePath))
+                {
+                    try
+                    {
+                        string cachedJson = await Task.Run(() => System.IO.File.ReadAllText(_bgConfigCachePath));
+                        var cachedConfig = JsonSerializer.Deserialize<BgConfigResponse>(cachedJson);
+                        if (cachedConfig != null)
+                        {
+                            _bgConfig = cachedConfig;
+                            loadedFromCache = true;
+                            Logger.Info($"[SettingsPage] Bg config loaded from cache: default={cachedConfig.@default?.name}, list count={cachedConfig.list?.Length ?? 0}");
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (BtnSwitchPreset != null) BtnSwitchPreset.IsEnabled = true;
+
+                                string currentName = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+                                if (string.IsNullOrEmpty(currentName) && cachedConfig.@default != null)
+                                {
+                                    currentName = cachedConfig.@default.name;
+                                    ConfigManager.Current.AutoPushBackgroundName = cachedConfig.@default.name;
+                                    ConfigManager.Current.AutoPushBackgroundSrc = cachedConfig.@default.src;
+                                }
+                                if (AutoPushCurrentName != null)
+                                {
+                                    AutoPushCurrentName.Text = string.IsNullOrEmpty(currentName) ? "（服务端默认）" : currentName;
+                                }
+                            });
+                        }
+                    }
+                    catch (Exception cacheEx)
+                    {
+                        Logger.Warn($"[SettingsPage] Bg config cache read failed: {cacheEx.Message}");
+                    }
+                }
+
+                // 如果已经有内存中的配置（含缓存加载的），跳过网络请求的 Loading UI
+                if (_bgConfig != null && loadedFromCache)
+                {
+                    // 后台静默刷新（不显示 Loading）
+                    _ = RefreshBgConfigFromNetworkAsync();
+                    return;
+                }
+
+                // ── 第 2 步：无缓存时，从网络获取（显示 Loading） ──
+                Dispatcher.Invoke(() =>
+                {
+                    if (AutoPushLoadingBar != null) AutoPushLoadingBar.IsOpen = true;
+                    if (AutoPushErrorBar != null) AutoPushErrorBar.IsOpen = false;
+                    if (BtnSwitchPreset != null) BtnSwitchPreset.IsEnabled = false;
+                });
+
+                await FetchAndApplyBgConfigFromNetworkAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] FetchBgConfigAsync failed", ex);
+                Dispatcher.Invoke(() =>
+                {
+                    if (AutoPushLoadingBar != null) AutoPushLoadingBar.IsOpen = false;
+                    if (AutoPushErrorBar != null && _bgConfig == null) AutoPushErrorBar.IsOpen = true;
+                });
+            }
+        }
+
+        /// <summary>
+        /// 后台静默从网络刷新配置（不影响 UI Loading 状态）
+        /// </summary>
+        private async Task RefreshBgConfigFromNetworkAsync()
+        {
+            try
+            {
+                string json = "";
+                try
+                {
+                    json = await _httpClient.GetStringAsync(BgConfigEndpointHttps);
+                }
+                catch
+                {
+                    Logger.Info("[SettingsPage] HTTPS bg config refresh failed, falling back to HTTP");
+                    json = await _httpClient.GetStringAsync(BgConfigEndpointHttp);
+                }
+
+                var config = JsonSerializer.Deserialize<BgConfigResponse>(json);
+                if (config == null) return;
+
+                _bgConfig = config;
+
+                // 写入本地缓存
+                SaveBgConfigCache(json);
+
+                Logger.Info($"[SettingsPage] Bg config silently refreshed: default={config.@default?.name}, list count={config.list?.Length ?? 0}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"[SettingsPage] Bg config silent refresh failed (using cache): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 从网络获取配置并应用到 UI（首次加载时使用，带 Loading 状态）
+        /// </summary>
+        private async Task FetchAndApplyBgConfigFromNetworkAsync()
+        {
+            try
+            {
+                string json = "";
+                try
+                {
+                    json = await _httpClient.GetStringAsync(BgConfigEndpointHttps);
+                }
+                catch
+                {
+                    Logger.Info("[SettingsPage] HTTPS bg config failed, falling back to HTTP");
+                    json = await _httpClient.GetStringAsync(BgConfigEndpointHttp);
+                }
+
+                var config = JsonSerializer.Deserialize<BgConfigResponse>(json);
+                if (config == null)
+                    throw new Exception("Deserialized config is null");
+
+                _bgConfig = config;
+
+                // 写入本地缓存
+                SaveBgConfigCache(json);
+
+                Dispatcher.Invoke(() =>
+                {
+                    if (AutoPushLoadingBar != null) AutoPushLoadingBar.IsOpen = false;
+                    if (BtnSwitchPreset != null) BtnSwitchPreset.IsEnabled = true;
+
+                    // 如果当前没有选中名称，使用默认
+                    string currentName = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+                    if (string.IsNullOrEmpty(currentName) && config.@default != null)
+                    {
+                        currentName = config.@default.name;
+                        ConfigManager.Current.AutoPushBackgroundName = config.@default.name;
+                        ConfigManager.Current.AutoPushBackgroundSrc = config.@default.src;
+                    }
+                    if (AutoPushCurrentName != null)
+                    {
+                        AutoPushCurrentName.Text = string.IsNullOrEmpty(currentName) ? "（服务端默认）" : currentName;
+                    }
+
+                    Logger.Info($"[SettingsPage] Bg config loaded from network: default={config.@default?.name}, list count={config.list?.Length ?? 0}");
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Fetch bg config from network failed", ex);
+                Dispatcher.Invoke(() =>
+                {
+                    if (AutoPushLoadingBar != null) AutoPushLoadingBar.IsOpen = false;
+                    if (AutoPushErrorBar != null) AutoPushErrorBar.IsOpen = true;
+                });
+            }
+        }
+
+        /// <summary>
+        /// 将背景配置 JSON 保存到本地缓存
+        /// </summary>
+        private static void SaveBgConfigCache(string json)
+        {
+            try
+            {
+                string dir = System.IO.Path.GetDirectoryName(_bgConfigCachePath)!;
+                if (!System.IO.Directory.Exists(dir))
+                    System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(_bgConfigCachePath, json);
+                Logger.Info("[SettingsPage] Bg config cache saved to disk");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"[SettingsPage] Failed to save bg config cache: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 点击"切换预设"按钮 — 展开/收起预设选择面板
+        /// </summary>
+        private void OnSwitchPresetClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (PresetSelectionPanel == null) return;
+
+                if (PresetSelectionPanel.Visibility == Visibility.Visible)
+                {
+                    PresetSelectionPanel.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                if (_bgConfig == null)
+                {
+                    Logger.Warn("[SettingsPage] Bg config not loaded yet, cannot show presets");
+                    return;
+                }
+
+                BuildPresetCards();
+                PresetSelectionPanel.Visibility = Visibility.Visible;
+
+                // 重新平衡布局
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var window = Window.GetWindow(this);
+                    double windowWidth = window?.ActualWidth ?? ActualWidth;
+                    DistributeSections(windowWidth);
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Switch preset click failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 构建预设卡片列表（带预览图）
+        /// </summary>
+        private void BuildPresetCards()
+        {
+            if (PresetItemsPanel == null || _bgConfig == null) return;
+            PresetItemsPanel.Children.Clear();
+
+            // 收集所有预设项：默认 + 列表
+            var allPresets = new System.Collections.Generic.List<BgPresetItem>();
+            if (_bgConfig.@default != null)
+                allPresets.Add(_bgConfig.@default);
+            if (_bgConfig.list != null)
+                allPresets.AddRange(_bgConfig.list);
+
+            string currentName = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+
+            foreach (var preset in allPresets)
+            {
+                bool isSelected = preset.name == currentName;
+                string fullUrl;
+                try { fullUrl = BgBaseUrlHttps + preset.src; }
+                catch { fullUrl = BgBaseUrlHttp + preset.src; }
+
+                // 根据后缀判断类型
+                string ext = System.IO.Path.GetExtension(preset.src).ToLowerInvariant();
+                bool isVideo = ext == ".mp4";
+                string typeLabel = isVideo ? "🎬 视频" : "🖼️ 图片";
+
+                // 卡片容器
+                var card = new Border
+                {
+                    Width = 140,
+                    Margin = new Thickness(4),
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(isSelected ? 2 : 1),
+                    BorderBrush = isSelected 
+                        ? (Brush)FindResource("SystemAccentColorPrimaryBrush") 
+                        : new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF)),
+                    Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+                    Padding = new Thickness(4),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Tag = preset // 将预设信息存入 Tag
+                };
+
+                var stack = new StackPanel();
+
+                // 预览图（图片模式下加载缩略图，视频则显示占位符）
+                if (!isVideo)
+                {
+                    var img = new System.Windows.Controls.Image
+                    {
+                        Height = 80,
+                        Stretch = Stretch.UniformToFill,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 4)
+                    };
+                    // 异步加载缩略图
+                    _ = LoadThumbnailAsync(img, fullUrl);
+                    stack.Children.Add(img);
+                }
+                else
+                {
+                    var placeholder = new Border
+                    {
+                        Height = 80,
+                        Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0x88, 0x88, 0xFF)),
+                        CornerRadius = new CornerRadius(4),
+                        Margin = new Thickness(0, 0, 0, 4),
+                        Child = new System.Windows.Controls.TextBlock
+                        {
+                            Text = "🎬",
+                            FontSize = 28,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        }
+                    };
+                    stack.Children.Add(placeholder);
+                }
+
+                // 名称 + 类型标签
+                var nameBlock = new System.Windows.Controls.TextBlock
+                {
+                    Text = preset.name,
+                    FontWeight = isSelected ? FontWeights.Bold : FontWeights.Normal,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    Foreground = (Brush)FindResource("TextFillColorPrimaryBrush")
+                };
+                stack.Children.Add(nameBlock);
+
+                var typeBlock = new System.Windows.Controls.TextBlock
+                {
+                    Text = typeLabel,
+                    FontSize = 11,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Foreground = (Brush)FindResource("TextFillColorTertiaryBrush")
+                };
+                stack.Children.Add(typeBlock);
+
+                if (isSelected)
+                {
+                    var checkMark = new System.Windows.Controls.TextBlock
+                    {
+                        Text = "✓ 已选中",
+                        FontSize = 11,
+                        Foreground = (Brush)FindResource("SystemAccentColorPrimaryBrush"),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness(0, 2, 0, 0)
+                    };
+                    stack.Children.Add(checkMark);
+                }
+
+                card.Child = stack;
+                card.MouseLeftButtonDown += OnPresetCardClicked;
+                PresetItemsPanel.Children.Add(card);
+            }
+        }
+
+        /// <summary>
+        /// 异步加载缩略图到 Image 控件（优先从本地磁盘缓存加载）
+        /// </summary>
+        private async Task LoadThumbnailAsync(System.Windows.Controls.Image imgCtrl, string url)
+        {
+            try
+            {
+                // 确定缩略图缓存文件路径
+                string thumbFileName = GenerateThumbCacheFileName(url);
+                string thumbPath = System.IO.Path.Combine(_thumbCacheDir, thumbFileName);
+
+                byte[]? bytes = null;
+
+                // 优先从磁盘缓存加载
+                if (System.IO.File.Exists(thumbPath))
+                {
+                    try
+                    {
+                        bytes = await Task.Run(() => System.IO.File.ReadAllBytes(thumbPath));
+                    }
+                    catch (Exception cacheReadEx)
+                    {
+                        Logger.Warn($"[SettingsPage] Thumb cache read failed: {cacheReadEx.Message}");
+                        bytes = null;
+                    }
+                }
+
+                // 缓存未命中，从网络下载
+                if (bytes == null || bytes.Length == 0)
+                {
+                    bytes = await _httpClient.GetByteArrayAsync(url);
+
+                    // 写入磁盘缓存
+                    try
+                    {
+                        if (!System.IO.Directory.Exists(_thumbCacheDir))
+                            System.IO.Directory.CreateDirectory(_thumbCacheDir);
+                        await Task.Run(() => System.IO.File.WriteAllBytes(thumbPath, bytes));
+                    }
+                    catch (Exception cacheWriteEx)
+                    {
+                        Logger.Warn($"[SettingsPage] Thumb cache write failed: {cacheWriteEx.Message}");
+                    }
+                }
+
+                Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.StreamSource = new System.IO.MemoryStream(bytes);
+                        bitmap.DecodePixelHeight = 160; // 缩略图
+                        bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                        bitmap.EndInit();
+                        bitmap.Freeze();
+                        imgCtrl.Source = bitmap;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn($"[SettingsPage] Thumbnail decode failed: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"[SettingsPage] Thumbnail load failed: {url} → {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 根据 URL 生成缩略图缓存文件名（使用 URL 的文件名部分，确保唯一性）
+        /// </summary>
+        private static string GenerateThumbCacheFileName(string url)
+        {
+            try
+            {
+                // 提取 URL 中的文件名部分，加上路径哈希前缀确保唯一
+                var uri = new Uri(url);
+                string pathPart = uri.AbsolutePath.TrimStart('/').Replace("/", "_");
+                // 过滤非法文件名字符
+                foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+                    pathPart = pathPart.Replace(c, '_');
+                return "thumb_" + pathPart;
+            }
+            catch
+            {
+                // 降级：使用哈希
+                int hash = url.GetHashCode();
+                return $"thumb_{hash:X8}.dat";
+            }
+        }
+
+        /// <summary>
+        /// 预设卡片点击事件 — 选中预设（就地更新样式，不重建卡片）
+        /// </summary>
+        private void OnPresetCardClicked(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            try
+            {
+                if (sender is Border card && card.Tag is BgPresetItem preset)
+                {
+                    // 更新配置
+                    ConfigManager.Current.AutoPushBackgroundName = preset.name;
+                    ConfigManager.Current.AutoPushBackgroundSrc = preset.src;
+
+                    if (AutoPushCurrentName != null)
+                        AutoPushCurrentName.Text = preset.name;
+
+                    Logger.Info($"[SettingsPage] AutoPush preset selected: {preset.name} ({preset.src})");
+
+                    // 就地更新所有卡片的选中/未选中样式（不重建，避免重新加载缩略图）
+                    UpdatePresetCardSelectionStyles(preset.name);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] Preset card click failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 就地更新预设卡片的选中/未选中样式
+        /// </summary>
+        private void UpdatePresetCardSelectionStyles(string selectedName)
+        {
+            if (PresetItemsPanel == null) return;
+
+            var accentBrush = (Brush)FindResource("SystemAccentColorPrimaryBrush");
+            var normalBorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF));
+            var accentForeground = (Brush)FindResource("SystemAccentColorPrimaryBrush");
+            var primaryText = (Brush)FindResource("TextFillColorPrimaryBrush");
+
+            foreach (var child in PresetItemsPanel.Children)
+            {
+                if (child is not Border cardBorder || cardBorder.Tag is not BgPresetItem presetItem)
+                    continue;
+
+                bool isSelected = presetItem.name == selectedName;
+
+                // 更新边框
+                cardBorder.BorderThickness = new Thickness(isSelected ? 2 : 1);
+                cardBorder.BorderBrush = isSelected ? accentBrush : normalBorderBrush;
+
+                // 更新内部文本样式
+                if (cardBorder.Child is StackPanel stack)
+                {
+                    // 移除旧的 "✓ 已选中" 标签（如果有）
+                    var existingCheck = stack.Children.OfType<System.Windows.Controls.TextBlock>()
+                        .FirstOrDefault(t => t.Text == "✓ 已选中");
+                    if (existingCheck != null)
+                        stack.Children.Remove(existingCheck);
+
+                    // 更新名称文本的粗体
+                    foreach (var stackChild in stack.Children)
+                    {
+                        if (stackChild is System.Windows.Controls.TextBlock tb)
+                        {
+                            // 名称行（非类型标签，非"✓ 已选中"）
+                            if (tb.Text == presetItem.name)
+                            {
+                                tb.FontWeight = isSelected ? FontWeights.Bold : FontWeights.Normal;
+                            }
+                        }
+                    }
+
+                    // 添加 "✓ 已选中" 标签
+                    if (isSelected)
+                    {
+                        var checkMark = new System.Windows.Controls.TextBlock
+                        {
+                            Text = "✓ 已选中",
+                            FontSize = 11,
+                            Foreground = accentForeground,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 2, 0, 0)
+                        };
+                        stack.Children.Add(checkMark);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 自动推送背景透明度滑动条值变化事件处理
+        /// </summary>
+        private void OnAutoPushTransparencyChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            try
+            {
+                UpdateAutoPushTransparencyDisplay(e.NewValue);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[SettingsPage] AutoPush transparency change failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 更新自动推送不透明度显示文本
+        /// </summary>
+        private void UpdateAutoPushTransparencyDisplay(double value)
+        {
+            if (AutoPushTransparencyValue != null)
+            {
+                int percentage = (int)(value * 100);
+                AutoPushTransparencyValue.Text = $"{percentage}%";
             }
         }
 

@@ -104,6 +104,7 @@
             <ComboBox x:Name="BackgroundMaterialCombo" 
                       SelectionChanged="OnBackgroundMaterialChanged"
                       Margin="0,0,0,8">
+              <ComboBoxItem Content="自动推送图片" Tag="AutoPush"/>
               <ComboBoxItem Content="云母材质" Tag="Mica"/>
               <ComboBoxItem Content="亚克力材质" Tag="Acrylic"/>
               <ComboBoxItem Content="视频或图片" Tag="Image"/>
@@ -117,6 +118,73 @@
                         IsOpen="False"
                         IsClosable="False"
                         Margin="0,0,0,8"/>
+
+            <!-- 自动推送图片设置面板 -->
+            <StackPanel x:Name="AutoPushPanel" Visibility="Collapsed">
+              <!-- 加载提示 -->
+              <ui:InfoBar x:Name="AutoPushLoadingBar" 
+                          Title="加载中"
+                          Message="正在从服务器获取背景配置..."
+                          Severity="Informational"
+                          IsOpen="False"
+                          IsClosable="False"
+                          Margin="0,0,0,8"/>
+
+              <!-- 加载失败提示 -->
+              <ui:InfoBar x:Name="AutoPushErrorBar" 
+                          Title="加载失败"
+                          Message="无法获取背景配置，请检查网络连接。"
+                          Severity="Error"
+                          IsOpen="False"
+                          IsClosable="True"
+                          Margin="0,0,0,8"/>
+
+              <!-- 当前背景名称 -->
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ui:TextBlock Text="当前背景：" Grid.Column="0" Appearance="Tertiary" VerticalAlignment="Center"/>
+                <ui:TextBlock x:Name="AutoPushCurrentName" Grid.Column="1" Text="（加载中...）" 
+                             FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                <ui:Button x:Name="BtnSwitchPreset" Grid.Column="2" Content="切换预设"
+                           Icon="{ui:SymbolIcon Symbol=ImageMultiple24}"
+                           Click="OnSwitchPresetClick" IsEnabled="False"/>
+              </Grid>
+
+              <!-- 不透明度 -->
+              <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Slider x:Name="AutoPushTransparencySlider" Grid.Column="0"
+                        Minimum="0.0" Maximum="1.0" TickFrequency="0.05"
+                        IsSnapToTickEnabled="True" ValueChanged="OnAutoPushTransparencyChanged"
+                        Margin="0,0,12,0"/>
+                <ui:TextBlock x:Name="AutoPushTransparencyValue" Grid.Column="1"
+                             Text="30%" VerticalAlignment="Center"
+                             MinWidth="40" TextAlignment="Right"/>
+              </Grid>
+
+              <!-- 预设选择面板（默认隐藏，点击"切换预设"后展开） -->
+              <Border x:Name="PresetSelectionPanel" Visibility="Collapsed"
+                      BorderThickness="1" BorderBrush="#33FFFFFF" CornerRadius="8"
+                      Padding="8" Margin="0,0,0,8">
+                <StackPanel>
+                  <ui:TextBlock Text="选择预设背景" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                  <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
+                    <WrapPanel x:Name="PresetItemsPanel" Orientation="Horizontal"/>
+                  </ScrollViewer>
+                </StackPanel>
+              </Border>
+
+              <ui:TextBlock Text="说明：自动推送图片由服务端配置，程序启动时自动下载并缓存。切换预设后需保存配置并重启。" 
+                   Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            </StackPanel>
 
             <!-- 亚克力材质不透明度设置 -->
             <StackPanel x:Name="AcrylicOpacityPanel" Visibility="Collapsed">
@@ -173,7 +241,7 @@
                              MinWidth="45" TextAlignment="Right"/>
               </Grid>
 
-              <ui:TextBlock Text="透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
+              <ui:TextBlock Text="不透明度" Margin="0,0,0,8" Appearance="Tertiary"/>
               <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
@@ -184,12 +252,12 @@
                         IsSnapToTickEnabled="True" ValueChanged="OnImageOpacityChanged"
                         Margin="0,0,12,0"/>
                 <ui:TextBlock x:Name="ImageOpacityValue" Grid.Column="1"
-                             Text="30%" VerticalAlignment="Center"
+                             Text="70%" VerticalAlignment="Center"
                              MinWidth="40" TextAlignment="Right"/>
               </Grid>
 
             <!-- 外观设置说明 -->
-            <ui:TextBlock Text="说明：支持 PNG、JPG、BMP、GIF 图片和 MP4 视频文件作为背景。不透明度控制背景的可见程度，建议设置在 0.1-0.5 之间以确保界面文字可读。" 
+            <ui:TextBlock Text="说明：支持 PNG、JPG、BMP、GIF 图片和 MP4 视频文件作为背景。不透明度越高壁纸越暗，建议设置在 50%-90% 之间以确保界面文字可读。" 
                  Appearance="Tertiary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
             </StackPanel>
           </StackPanel>

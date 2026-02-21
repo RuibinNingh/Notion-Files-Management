@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using Python.Runtime;
 using Notion_Files_Management.Utils;
+using Notion_Files_Management.Services;
 using Notion_Files_Management.Views;
 using Wpf.Ui.Appearance;
 
@@ -81,6 +82,19 @@ namespace Notion_Files_Management
 				catch (Exception ex)
 				{
 					Logger.Warn($"[App] Silent update check failed: {ex.Message}");
+				}
+			});
+
+			// 启动时静默预加载公告索引（火后即忘，供主页未读提醒使用）
+			_ = Task.Run(async () =>
+			{
+				try
+				{
+					await NoticeService.FetchIndexAsync();
+				}
+				catch (Exception ex)
+				{
+					Logger.Warn($"[App] Silent notice index fetch failed: {ex.Message}");
 				}
 			});
 		}

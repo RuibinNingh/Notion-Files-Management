@@ -206,7 +206,8 @@
                                 <Border BorderThickness="1"
                                         BorderBrush="#22000000"
                                         CornerRadius="8"
-                                        Padding="12">
+                                        Padding="12"
+                                        Margin="0,0,0,10">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
@@ -233,6 +234,63 @@
                                                    MinWidth="96"
                                                    Click="ReportError_Click"/>
                                     </Grid>
+                                </Border>
+
+                                <!-- 清除一切缓存 (v1.5.0-Status) -->
+                                <Border BorderThickness="1"
+                                        BorderBrush="#22000000"
+                                        CornerRadius="8"
+                                        Padding="12">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <ui:SymbolIcon Symbol="Delete24"
+                                                           FontSize="22"
+                                                           Margin="0,2,14,0"/>
+
+                                            <StackPanel Grid.Column="1">
+                                                <ui:TextBlock Text="清除一切缓存"
+                                                              FontWeight="SemiBold"/>
+                                                <ui:TextBlock Text="清除应用的所有缓存数据，包括配置文件、公告缓存、背景图片缓存和日志文件。"
+                                                              Appearance="Tertiary"
+                                                              TextWrapping="Wrap"
+                                                              Margin="0,4,0,0"/>
+                                            </StackPanel>
+
+                                            <ui:Button x:Name="BtnClearAllCache" Grid.Column="2"
+                                                       Content="清除"
+                                                       Appearance="Danger"
+                                                       MinWidth="96"
+                                                       Click="ClearAllCache_Click"/>
+                                        </Grid>
+
+                                        <!-- 清除缓存确认提示（内嵌式） -->
+                                        <ui:InfoBar x:Name="ClearCacheConfirmBar"
+                                                    Title="⚠ 危险操作"
+                                                    Message="此操作将清除所有缓存数据（配置、公告缓存、背景缓存、日志），可能导致不可逆的数据损失！确定继续？"
+                                                    Severity="Error"
+                                                    IsOpen="False"
+                                                    IsClosable="True"
+                                                    Margin="0,8,0,0"/>
+                                        <StackPanel x:Name="ClearCacheConfirmButtons"
+                                                    Orientation="Horizontal"
+                                                    HorizontalAlignment="Right"
+                                                    Visibility="Collapsed"
+                                                    Margin="0,4,0,0">
+                                            <ui:Button Content="确认清除"
+                                                       Appearance="Danger"
+                                                       Click="ConfirmClearAllCache_Click"
+                                                       Margin="0,0,8,0"/>
+                                            <ui:Button Content="取消"
+                                                       Appearance="Secondary"
+                                                       Click="CancelClearAllCache_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
                                 </Border>
                             </StackPanel>
                         </Border>

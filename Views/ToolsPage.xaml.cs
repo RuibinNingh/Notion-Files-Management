@@ -277,6 +277,112 @@ namespace Notion_Files_Management.Views
             }
         }
 
+        // ── 清除一切缓存 (v1.5.0-Status) ────────────────────────────────
+
+        /// <summary>
+        /// 点击"清除"按钮 — 显示危险操作确认
+        /// </summary>
+        private void ClearAllCache_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (ClearCacheConfirmBar != null)
+                    ClearCacheConfirmBar.IsOpen = true;
+                if (ClearCacheConfirmButtons != null)
+                    ClearCacheConfirmButtons.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[ToolsPage] Show clear cache confirm failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// 确认清除一切缓存
+        /// </summary>
+        private void ConfirmClearAllCache_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (ClearCacheConfirmBar != null)
+                    ClearCacheConfirmBar.IsOpen = false;
+                if (ClearCacheConfirmButtons != null)
+                    ClearCacheConfirmButtons.Visibility = Visibility.Collapsed;
+
+                string appDataDir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "NotionFilesManagement");
+
+                int deletedCount = 0;
+                var errors = new System.Collections.Generic.List<string>();
+
+                if (System.IO.Directory.Exists(appDataDir))
+                {
+                    // 清除子目录：background_cache、notices_cache、logs 等
+                    foreach (var dir in System.IO.Directory.GetDirectories(appDataDir))
+                    {
+                        try
+                        {
+                            System.IO.Directory.Delete(dir, recursive: true);
+                            deletedCount++;
+                            Logger.Info($"[ToolsPage] Deleted cache dir: {dir}");
+                        }
+                        catch (Exception dirEx)
+                        {
+                            errors.Add($"{System.IO.Path.GetFileName(dir)}: {dirEx.Message}");
+                            Logger.Warn($"[ToolsPage] Failed to delete dir {dir}: {dirEx.Message}");
+                        }
+                    }
+
+                    // 清除文件：config.json、read_ids.json 等
+                    foreach (var file in System.IO.Directory.GetFiles(appDataDir))
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(file);
+                            deletedCount++;
+                            Logger.Info($"[ToolsPage] Deleted cache file: {file}");
+                        }
+                        catch (Exception fileEx)
+                        {
+                            errors.Add($"{System.IO.Path.GetFileName(file)}: {fileEx.Message}");
+                            Logger.Warn($"[ToolsPage] Failed to delete file {file}: {fileEx.Message}");
+                        }
+                    }
+                }
+
+                if (errors.Count == 0)
+                {
+                    MessageBox.Show($"已成功清除所有缓存（{deletedCount} 项）。\n\n建议重启应用以使更改完全生效。",
+                        "清除完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    MessageBox.Show($"已清除 {deletedCount} 项缓存，但有 {errors.Count} 项失败：\n\n{string.Join("\n", errors)}\n\n部分文件可能正在使用中，建议重启后再试。",
+                        "部分清除", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                Logger.Info($"[ToolsPage] Clear all cache complete: {deletedCount} deleted, {errors.Count} errors");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("[ToolsPage] Clear all cache failed", ex);
+                MessageBox.Show($"清除缓存失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// 取消清除缓存
+        /// </summary>
+        private void CancelClearAllCache_Click(object sender, RoutedEventArgs e)
+        {
+            if (ClearCacheConfirmBar != null)
+                ClearCacheConfirmBar.IsOpen = false;
+            if (ClearCacheConfirmButtons != null)
+                ClearCacheConfirmButtons.Visibility = Visibility.Collapsed;
+            Logger.Info("[ToolsPage] User cancelled clear all cache");
+        }
+
         // =================================================================
         // Migration (v1.3.0-Status)
         // =================================================================

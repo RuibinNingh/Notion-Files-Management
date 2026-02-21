@@ -84,6 +84,7 @@
 
 			<ui:NavigationView.MenuItems>
 				<ui:NavigationViewItem Content="主页" Icon="{ui:SymbolIcon Home24}" TargetPageType="{x:Type views:DashboardPage}" />
+				<ui:NavigationViewItem Content="公告" Icon="{ui:SymbolIcon Megaphone24}" TargetPageType="{x:Type views:NoticePage}" />
 				<ui:NavigationViewItem Content="上传" Icon="{ui:SymbolIcon ArrowUpload24}" TargetPageType="{x:Type views:UploadPage}" />
 				<ui:NavigationViewItem Content="下载" Icon="{ui:SymbolIcon ArrowDownload24}" TargetPageType="{x:Type views:DownloadPage}" />
 				<ui:NavigationViewItem Content="工具箱" Icon="{ui:SymbolIcon Toolbox24}" TargetPageType="{x:Type views:ToolsPage}" />

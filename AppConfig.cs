@@ -21,10 +21,27 @@ namespace Notion_Files_Management
 		public string ThemeAccentColor { get; set; } = DefaultThemeAccentColor;
 
 		/// <summary>
-		/// 背景材质类型，可选值："Mica"（云母）、"Acrylic"（亚克力）或 "Image"（图片/视频）
-		/// 默认值："Mica"
+		/// 背景材质类型，可选值："Mica"（云母）、"Acrylic"（亚克力）、"AutoPush"（自动推送图片）或 "Image"（图片/视频）
+		/// 默认值："AutoPush"
 		/// </summary>
-		public string BackgroundMaterial { get; set; } = "Mica";
+		public string BackgroundMaterial { get; set; } = "AutoPush";
+
+		/// <summary>
+		/// 自动推送背景 — 当前选中的预设名称（如 "春节"）
+		/// 空字符串表示使用服务端默认
+		/// </summary>
+		public string AutoPushBackgroundName { get; set; } = "";
+
+		/// <summary>
+		/// 自动推送背景 — 当前选中预设的相对路径（如 "/background/春节.jpg"）
+		/// </summary>
+		public string AutoPushBackgroundSrc { get; set; } = "";
+
+		/// <summary>
+		/// 自动推送背景 — 透明度，范围 0.0-1.0
+		/// 默认值：0.3（越大越透明）
+		/// </summary>
+		public double AutoPushTransparency { get; set; } = 0.3;
 
 		/// <summary>
 		/// 亚克力材质不透明度，范围 0.0-1.0
