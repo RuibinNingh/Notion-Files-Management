@@ -113,7 +113,7 @@ namespace Notion_Files_Management.Views
             }
         }
 
-        private void CloseModal_Click(object sender, RoutedEventArgs e)
+        private async void CloseModal_Click(object sender, RoutedEventArgs e)
         {
             Logger.Info("Close download dialog (cancel probe if running)");
             _getListCts?.Cancel();
@@ -124,6 +124,13 @@ namespace Notion_Files_Management.Views
 
             BtnConfirmId.IsEnabled = true;
             BtnConfirmId.Content = "获取列表";
+
+            // 通知 Python 后端取消正在运行的探测线程
+            if (_svc.IsReady)
+            {
+                try { await _svc.CancelDownloadListProbeAsync(); }
+                catch (Exception ex) { Logger.Warn($"Cancel probe failed: {ex.Message}"); }
+            }
         }
 
         private void BackToStep1_Click(object sender, RoutedEventArgs e)

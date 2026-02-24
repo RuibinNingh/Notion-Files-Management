@@ -120,6 +120,7 @@ namespace Notion_Files_Management.Views
 
             if (dlg.ShowDialog() == true)
             {
+                _session.SelectedFolderPath = null;
                 SelectedUploadFiles.Clear();
                 foreach (var f in dlg.FileNames)
                     SelectedUploadFiles.Add(f);
@@ -131,7 +132,54 @@ namespace Notion_Files_Management.Views
         private void ClearUploadFiles_Click(object sender, RoutedEventArgs e)
         {
             SelectedUploadFiles.Clear();
+            _session.SelectedFolderPath = null;
             ModalHint.Text = "已清空";
+        }
+
+        // ========== UI: select folder ==========
+        private void SelectUploadFolder_Click(object sender, RoutedEventArgs e)
+        {
+            // WPF 没有内置文件夹选择器，使用 OpenFileDialog 模拟
+            var dlg = new OpenFileDialog
+            {
+                Title = "请选择要上传的文件夹（进入目标文件夹后点“打开”即可）",
+                CheckFileExists = false,
+                CheckPathExists = true,
+                FileName = "选择此文件夹",
+                Filter = "文件夹|*.folder"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                string? dir = Path.GetDirectoryName(dlg.FileName);
+                if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+                    return;
+
+                _session.SelectedFolderPath = dir;
+
+                // 枚举文件夹内容显示给用户预览
+                SelectedUploadFiles.Clear();
+                var basePath = dir;
+                int fileCount = 0;
+                int folderCount = 0;
+
+                foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                {
+                    string relative = Path.GetRelativePath(basePath, file);
+                    SelectedUploadFiles.Add(relative);
+                    fileCount++;
+                }
+
+                foreach (var subDir in Directory.EnumerateDirectories(dir, "*", SearchOption.TopDirectoryOnly))
+                {
+                    folderCount++;
+                }
+
+                string hint = $"📁 {Path.GetFileName(dir)} — {fileCount} 个文件";
+                if (folderCount > 0)
+                    hint += $"，{folderCount} 个子文件夹（将创建子页面）";
+                ModalHint.Text = hint;
+            }
         }
 
         // ========== Core: confirm start upload ==========
@@ -139,7 +187,7 @@ namespace Notion_Files_Management.Views
         {
             if (SelectedUploadFiles.Count == 0)
             {
-                MessageBox.Show("请先选择至少一个文件。");
+                MessageBox.Show("请先选择至少一个文件或文件夹。");
                 return;
             }
 
@@ -165,62 +213,108 @@ namespace Notion_Files_Management.Views
             BtnConfirmStart.IsEnabled = false;
             ModalHint.Text = "正在创建上传任务…";
 
+            bool isFolderMode = !string.IsNullOrEmpty(_session.SelectedFolderPath)
+                                && Directory.Exists(_session.SelectedFolderPath);
+
             try
             {
-                // Snapshot list (avoid enumerating ObservableCollection from other threads)
-                var filePaths = SelectedUploadFiles.ToList();
-
-                Logger.Info($"Start upload. pageId={pageId}, files={filePaths.Count}");
-
-                // 保存 PageId 到 session（使用规范化后的格式）
                 _session.PageId = pageId;
 
-                string ret = await _svc.StartUploadAsync(pageId, filePaths, CancellationToken.None);
-
-                // Close modal
-                ModalOverlay.Visibility = Visibility.Collapsed;
-                ModalStep1.Visibility = Visibility.Collapsed;
-
-                // Add tasks to UI immediately (EMA init)
-                foreach (var path in filePaths)
+                if (isFolderMode)
                 {
-                    if (DisplayUploads.Any(x => string.Equals(x.FilePath, path, StringComparison.OrdinalIgnoreCase)))
-                        continue;
+                    // ——— 文件夹上传模式 ———
+                    string folderPath = _session.SelectedFolderPath!;
+                    Logger.Info($"Start folder upload. pageId={pageId}, folder={folderPath}");
 
-                    DisplayUploads.Add(new UploadTaskStatus
+                    ModalHint.Text = "正在扫描文件夹并创建页面…";
+
+                    var (files, pages, failed, msg) =
+                        await _svc.UploadFolderAsync(pageId, folderPath, CancellationToken.None);
+
+                    // Close modal
+                    ModalOverlay.Visibility = Visibility.Collapsed;
+                    ModalStep1.Visibility = Visibility.Collapsed;
+
+                    // 预填充 UI 任务列表：枚举文件夹中的所有文件
+                    foreach (var filePath in Directory.EnumerateFiles(folderPath, "*", SearchOption.AllDirectories))
                     {
-                        FilePath = path,
-                        FileName = Path.GetFileName(path),
-                        Status = "waiting",
-                        Stage = "waiting",
-                        Progress = 0,
-                        UploadedMB = 0,
-                        TotalMB = GuessSizeMB(path),
-                        SmoothedSpeedMBps = 0,
-                        ETASeconds = 0,
-                        Error = null
-                    });
+                        if (DisplayUploads.Any(x => string.Equals(x.FilePath, filePath, StringComparison.OrdinalIgnoreCase)))
+                            continue;
 
-                    _session.SpeedEma[path] = 0.0;
+                        DisplayUploads.Add(new UploadTaskStatus
+                        {
+                            FilePath = filePath,
+                            FileName = Path.GetFileName(filePath),
+                            Status = "waiting",
+                            Stage = "waiting",
+                            Progress = 0,
+                            UploadedMB = 0,
+                            TotalMB = GuessSizeMB(filePath),
+                            SmoothedSpeedMBps = 0,
+                            ETASeconds = 0,
+                            Error = null
+                        });
+                        _session.SpeedEma[filePath] = 0.0;
+                    }
+
+                    if (!_statusTimer.IsEnabled)
+                        _statusTimer.Start();
+                    _session.HasActiveUploads = true;
+                    _session.SelectedFolderPath = null;
+
+                    // 显示结果摘要
+                    if (failed > 0)
+                        MessageBox.Show(msg);
                 }
+                else
+                {
+                    // ——— 普通文件上传模式 ———
+                    var filePaths = SelectedUploadFiles.ToList();
+                    Logger.Info($"Start upload. pageId={pageId}, files={filePaths.Count}");
 
-                if (!_statusTimer.IsEnabled)
-                    _statusTimer.Start();
+                    string ret = await _svc.StartUploadAsync(pageId, filePaths, CancellationToken.None);
 
-                _session.HasActiveUploads = true;
+                    // Close modal
+                    ModalOverlay.Visibility = Visibility.Collapsed;
+                    ModalStep1.Visibility = Visibility.Collapsed;
 
-                if (!string.IsNullOrWhiteSpace(ret))
-                    // Only show message box when response indicates an unexpected error.
-                    if (!Notion_Files_Management.Utils.UiHelpers.IsSuccessResponse(ret))
-                        MessageBox.Show(ret);
+                    // Add tasks to UI immediately (EMA init)
+                    foreach (var path in filePaths)
+                    {
+                        if (DisplayUploads.Any(x => string.Equals(x.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        DisplayUploads.Add(new UploadTaskStatus
+                        {
+                            FilePath = path,
+                            FileName = Path.GetFileName(path),
+                            Status = "waiting",
+                            Stage = "waiting",
+                            Progress = 0,
+                            UploadedMB = 0,
+                            TotalMB = GuessSizeMB(path),
+                            SmoothedSpeedMBps = 0,
+                            ETASeconds = 0,
+                            Error = null
+                        });
+
+                        _session.SpeedEma[path] = 0.0;
+                    }
+
+                    if (!_statusTimer.IsEnabled)
+                        _statusTimer.Start();
+                    _session.HasActiveUploads = true;
+
+                    if (!string.IsNullOrWhiteSpace(ret))
+                        if (!Notion_Files_Management.Utils.UiHelpers.IsSuccessResponse(ret))
+                            MessageBox.Show(ret);
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show("启动上传失败: " + ex.Message);
                 Logger.Error("Start upload failed", ex);
             }
-
-            // response classification moved to Utils.UiHelpers
             finally
             {
                 BtnConfirmStart.IsEnabled = true;
@@ -341,6 +435,7 @@ namespace Notion_Files_Management.Views
                         DisplayUploads.Clear();
                         SelectedUploadFiles.Clear();
                         _session.SpeedEma.Clear();
+                        _session.SelectedFolderPath = null;
                         ModalHint.Text = "";
                     }
                     catch { }

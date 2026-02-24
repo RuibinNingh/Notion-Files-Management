@@ -1,120 +1,127 @@
-﻿<div align="center">
-<img src="https://github.com/RuibinNingh/Notion-Files-Management/blob/main/icon.png?raw=true" alt="Notion Files Management Icon" width="120" />
+<div align="center">
+
+<br />
+
+<img src="https://github.com/RuibinNingh/Notion-Files-Management/blob/main/icon.png?raw=true" alt="Notion Files Management" width="96" />
+
+<br />
 
 # Notion Files Management
 
-一个用于 **下载 / 上传 / 工具箱** 的 Notion 文件管理桌面工具
+**把 Notion 里的文件，真正变成你的文件。**
 
-<p>
-  <a href="#功能特性">功能特性</a> ·
-  <a href="#页面说明">页面说明</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#配置说明">配置说明</a> ·
-  <a href="#常见问题">常见问题</a>
-</p>
+批量下载 · 批量上传 · 页面工具箱 · 自动更新
+
+<br />
+
+[![Windows](https://img.shields.io/badge/Windows_10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/RuibinNingh/Notion-Files-Management/releases)
+[![Release](https://img.shields.io/github/v/release/RuibinNingh/Notion-Files-Management?style=flat-square&color=22c55e&label=最新版本)](https://github.com/RuibinNingh/Notion-Files-Management/releases)
+[![License](https://img.shields.io/badge/License-MIT-f59e0b?style=flat-square)](LICENSE)
+
+<br />
 
 </div>
 
 ---
 
-## 功能特性
+## 为什么需要它？
 
-- **下载页面**
-  - 输入 PageID 获取目标内容
-  - 支持自动格式化 PageID（32 位 hex → UUID 带连字符）
-  - PageID 不合规时给出提示并阻止执行
-- **上传页面**
-  - 选择文件并上传到指定 Notion 页面（PageID 校验同上）
-- **工具箱页面**
-  - 常用工具入口（例如：ID 处理/调试/批量操作等，按项目实际补充）
-- **统一的 PageID 处理**
-  - 支持输入 **32 位 hex / 标准 UUID / Notion 页面 URL**
-  - 自动提取并规范化为 `8-4-4-4-12` 格式
+Notion 的 Web 界面不支持批量下载文件，下载链接也会在一小时后过期。这个工具解决了这些问题：
+
+- 一次性取回页面里所有图片、视频、音频、PDF
+- 把本地素材批量推送到 Notion，自动匹配正确的块类型
+- 统计页面体积、迁移数据库、批量处理标题——常见繁琐操作全部自动化
 
 ---
 
-## 页面说明
+## 功能一览
 
-### 下载（Download）
-- 目标：从 Notion 页面拉取内容并保存到本地（按实际逻辑补充）
-- PageID 输入支持：
-  - `2fc644ead11a80109665e5fbaba0fd58` → `2fc644ea-d11a-8010-9665-e5fbaba0fd58`
-  - 直接粘贴 Notion 页面 URL（会自动提取 ID）
-
-### 上传（Upload）
-- 目标：选择本地文件并上传到指定 Notion 页面
-- 提交前会强校验 PageID 合规
-
-### 工具箱（Toolbox）
-- 目标：提供常用辅助功能（按项目实际补充）
+| 功能 | 说明 |
+|------|------|
+| **📥 批量下载** | 获取页面全部文件，探测大小，勾选下载；支持 file / image / pdf / audio / video 及页面封面、图标 |
+| **📤 批量上传** | 拖入本地文件即可上传，自动识别类型挂载为对应 Notion 块（图片→`image`，视频→`video`，以此类推） |
+| **🔗 链接自动刷新** | 下载途中遇到过期链接，后台静默刷新后继续，无需任何手动操作 |
+| **📊 页面大小查询** | 逐文件探测并汇总页面总占用，实时显示进度 |
+| **🔄 页面大小自动更新** | 批量扫描数据库，将每个页面的文件总大小写入指定数字属性 |
+| **↔️ 数据源迁移** | 按属性映射，把一个数据库的属性值批量同步到另一个 |
+| **✂️ 批量去除后缀** | 一键去除数据库所有页面标题的指定后缀 |
+| **🎨 外观自定义** | 主题色、云母 / 亚克力 / 自定义壁纸背景，支持图片和视频 |
 
 ---
 
 ## 快速开始
 
-1. 启动应用
-2. 进入 **下载 / 上传 / 工具箱** 任意页面
-3. 在 PageID 输入框：
-   - 可输入 32 位 hex / 标准 UUID / Notion URL
-   - 程序会自动格式化并提示错误
-4. 按页面操作按钮执行对应任务
+### 第一步 — 创建 Notion Integration
+
+1. 打开 [notion.so/my-integrations](https://www.notion.so/my-integrations)，点击 **New integration**
+2. 填写名称，选择关联的工作区，保存
+3. 复制页面上的 **Internal Integration Secret**（以 `secret_` 开头）
+
+### 第二步 — 授权目标页面
+
+在你要操作的 Notion 页面右上角，点击 **···** → **Connections** → 选择刚才创建的 Integration。
+
+> 子页面会自动继承父页面的授权，通常只需在顶层页面操作一次。
+
+### 第三步 — 配置应用
+
+打开应用，进入 **设置**，粘贴 Token，点击 **保存配置**。
+
+### 第四步 — 找到页面 ID
+
+从浏览器地址栏复制页面链接，直接粘贴到应用的输入框即可，应用会自动解析。
+
+```
+https://www.notion.so/myworkspace/My-Page-2fc644ead11a80109665e5fbaba0fd58
+                                             ↑ 末尾这段 32 位字符就是页面 ID
+```
 
 ---
 
-## 配置说明
+## 下载
 
-> 具体字段以项目实际 `config.json` / 设置页为准；这里给出常见示例结构，按你们工程补全。
+前往 [Releases](https://github.com/RuibinNingh/Notion-Files-Management/releases) 下载最新版本。
 
-- Notion Token（建议放在本地配置，不要提交到 git）
-- API BaseUrl（默认 `https://api.notion.com`，若项目支持可配置）
-- 并发/重试参数（如果项目支持）
+解压后直接运行 `Notion-Files-Management.exe`，无需安装 .NET 或 Python。
 
----
-
-## PageID 规则与示例
-
-### 合规输入（任意一种即可）
-- **32 位 hex（无连字符）**
-  - `2fc644ead11a80109665e5fbaba0fd58`
-- **标准 UUID（带连字符）**
-  - `2fc644ea-d11a-8010-9665-e5fbaba0fd58`
-- **Notion 页面 URL**
-  - `https://www.notion.so/.../Some-Title-2fc644ead11a80109665e5fbaba0fd58`
-
-### 不合规示例
-- 长度不足/超出
-- 含非十六进制字符（例如 `g-z`、中文空格等）
+**系统要求**：Windows 10 / 11，64 位
 
 ---
 
 ## 常见问题
 
-### 1) 我输入了 PageID 但提示不合规？
-- 请确认：
-  - 去掉连字符后是否 **恰好 32 位**
-  - 是否仅包含 `0-9a-fA-F`
-- 你也可以直接粘贴 Notion 页面 URL，让程序自动提取
+**提示「没有权限」**
+> 确认 Integration 已添加到目标页面（见「第二步」）。子页面需要从父页面继承，或单独添加。
 
-### 2) Token/权限不足导致失败？
-- 确认 Token 有访问目标页面的权限
-- 确认 Integration 已被添加到页面（Share / Invite）
+**文件下载到一半失败了**
+> Notion 的下载链接有效期约一小时。应用会在后台自动刷新过期链接并重试，通常无需干预。如持续失败，请检查网络连接。
+
+**上传速度很慢**
+> Notion API 有速率限制（约 3 次/秒）。应用已内置限流策略，批量上传大量文件时速度受此约束，属正常现象。
+
+**如何查看运行日志**
+> 打开 **工具箱** → **查看日志文件**，可直接在文件资源管理器中打开日志目录（位于 `%LocalAppData%\NotionFilesManagement\logs\`）。
 
 ---
 
-## 开发与构建（可选）
+## Star History
 
-> 按你们实际技术栈填写（.NET / WPF / WinUI / Electron 等）。
-
-- IDE：Visual Studio / Rider
-- 构建：`Release` 模式
-- 打包：见 `AI/HANDOVER_GUIDE.md`
+<a href="https://star-history.com/#RuibinNingh/Notion-Files-Management&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=RuibinNingh/Notion-Files-Management&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=RuibinNingh/Notion-Files-Management&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=RuibinNingh/Notion-Files-Management&type=Date" />
+  </picture>
+</a>
 
 ---
 
 ## License
 
-MIT License
+MIT © 2026 [Ruibin_Ningh](https://github.com/RuibinNingh) & Zyx_2012
 
-Copyright (c) 2026 Ruibin_Ningh (GitHub: RuibinNingh) and Zyx_2012 (GitHub: Zyx-2012)
+---
 
-See [LICENSE](LICENSE) file for details.
+<div align="center">
+<sub>如果这个工具对你有用，欢迎 Star ⭐ 或提交 Issue / PR。</sub>
+</div>

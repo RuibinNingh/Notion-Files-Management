@@ -11,11 +11,10 @@
 	</Page.Resources>
 
 	<Grid>
-		<Grid Margin="30" VerticalAlignment="Top">
+		<Grid Margin="30">
 			<Grid.RowDefinitions>
 				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="Auto"/>
-				<RowDefinition Height="Auto"/>
+				<RowDefinition Height="*"/>
 			</Grid.RowDefinitions>
 
 			<!-- 顶部标题 -->
@@ -28,25 +27,35 @@
 			</StackPanel>
 
 			<!-- 中间卡片 -->
-			<ui:Card Grid.Row="1" Padding="20">
-				<StackPanel>
+			<ui:Card Grid.Row="1" Padding="20"
+					 VerticalAlignment="Stretch" VerticalContentAlignment="Stretch">
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+					</Grid.RowDefinitions>
+
 					<ui:Button x:Name="BtnOpenDownloadDialog"
+							   Grid.Row="0"
 							   Style="{StaticResource BluePrimaryUiButton}"
 							   Content="下载新文件"
 							   Icon="{ui:SymbolIcon Symbol=Add24}"
 							   Click="BtnOpenDownloadDialog_Click" />
 
-					<ui:TextBlock Text="活动下载任务"
+					<ui:TextBlock Grid.Row="1"
+							  Text="活动下载任务"
 							  Appearance="Tertiary"
 							  Margin="0,20,0,8"/>
 
-					<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+					<Border Grid.Row="2"
+							VerticalAlignment="Stretch"
+							BorderBrush="{DynamicResource ControlElevationBorderBrush}"
 							BorderThickness="1"
 							CornerRadius="8">
 						<ListView x:Name="DownloadTaskListView"
 								     ItemsSource="{Binding DisplayTasks}"
 								     MinHeight="200"
-								     MaxHeight="520"
 								     Background="Transparent"
 								     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
 								     HorizontalContentAlignment="Stretch"
@@ -191,10 +200,8 @@
 							</ListView.ItemTemplate>
 						</ListView>
 					</Border>
-				</StackPanel>
+				</Grid>
 			</ui:Card>
-
-			<Grid Grid.Row="2" />
 		</Grid>
 
 		<!-- ========== 模态层（保持不变） ========== -->

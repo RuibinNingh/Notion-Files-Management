@@ -78,7 +78,7 @@ class Download:
         def _on_done(url: str, size_mb: float | None, err: str | None, attempts: int):
             with self.probe_lock:
                 st = self.probe_tasks.get(probe_id)
-                if not st:
+                if not st or st["status"] == "cancelled":
                     return
                 st["results"][url] = {"size_mb": size_mb, "error": err, "attempts": attempts}
                 st["done"] += 1
@@ -107,11 +107,11 @@ class Download:
 
         # probe 全结束后关闭池（不阻塞调用方）
         def _shutdown_pool_when_done():
-            # 轮询探测完成
+            # 轮询探测完成或取消
             while True:
                 with self.probe_lock:
                     st = self.probe_tasks.get(probe_id)
-                    if not st or st["status"] == "done":
+                    if not st or st["status"] in ("done", "cancelled"):
                         break
                 time.sleep(0.05)
             pool.shutdown(wait=False)
@@ -119,6 +119,20 @@ class Download:
         threading.Thread(target=_shutdown_pool_when_done, daemon=True).start()
 
         return probe_id
+
+    def cancel_probe(self, probe_id: int) -> bool:
+        """
+        取消指定 probe 任务：标记为 cancelled，让正在运行的线程尽快退出。
+        返回 True 表示找到了对应的 probe 并标记成功。
+        """
+        with self.probe_lock:
+            st = self.probe_tasks.get(probe_id)
+            if not st:
+                return False
+            st["status"] = "cancelled"
+            st["ended_mono"] = time.monotonic()
+            self._dbg("cancel_probe", f"probe_id={probe_id} cancelled")
+            return True
 
     def get_probe_progress(self, probe_id: int) -> dict:
         """

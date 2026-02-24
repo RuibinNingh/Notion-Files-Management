@@ -160,6 +160,57 @@ class Notion:
 
         return download_list
 
+    def get_download_url_no_recurse(self, blocks):
+        """
+        从 blocks 列表中提取可下载文件信息，但不递归子块、不做内联大小探测。
+        用于流式扫描场景：快速发现链接，大小后续由 probe 机制补充。
+        """
+        download_list = []
+        if not blocks:
+            return download_list
+
+        created_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        for block in blocks:
+            block_type = block.get("type")
+
+            if block_type in self.MEDIA_BLOCK_TYPES:
+                media_info = block.get(block_type, {})
+                block_id = block.get("id", "")
+
+                hosting_type = media_info.get("type")
+                if hosting_type == "file":
+                    url = media_info.get("file", {}).get("url")
+                    expiry_time = media_info.get("file", {}).get("expiry_time")
+                elif hosting_type == "external":
+                    url = media_info.get("external", {}).get("url")
+                    expiry_time = None
+                else:
+                    url = None
+                    expiry_time = None
+
+                if not url:
+                    continue
+
+                original_name = media_info.get("name") or self._filename_from_url(url) or f"unknown_{block_type}"
+
+                captions = media_info.get("caption", [])
+                caption_text = "".join([t.get("plain_text", "") for t in captions]).strip()
+                real_name = caption_text if caption_text else original_name
+
+                download_list.append({
+                    "name": original_name,
+                    "real_name": real_name,
+                    "url": url,
+                    "expiry_time": expiry_time,
+                    "size_mb": 0,  # 不做内联探测，留给 probe
+                    "block_id": block_id,
+                    "block_type": block_type,
+                    "created_time": created_time,
+                })
+
+        return download_list
+
     def get_page_object(self, page_id: str) -> dict | None:
         """
         获取页面对象（含 icon、cover、properties）。
@@ -491,6 +542,65 @@ class Notion:
             cursor = data.get("next_cursor")
 
         return all_pages
+
+    def create_child_page(self, parent_page_id: str, title: str) -> dict:
+        """
+        在指定页面下创建子页面。
+        使用 POST /v1/pages，parent 为 page_id。
+
+        参数:
+            parent_page_id: 父页面 ID
+            title: 子页面标题
+
+        返回: 创建的页面对象（dict），包含 id 字段
+        """
+        max_retries = 4
+        body = {
+            "parent": {
+                "type": "page_id",
+                "page_id": parent_page_id,
+            },
+            "properties": {
+                "title": [
+                    {
+                        "text": {
+                            "content": title
+                        }
+                    }
+                ]
+            },
+        }
+
+        for attempt in range(max_retries):
+            try:
+                res = requests.post(
+                    f"{self.url}/pages",
+                    headers={**self.default_headers, "Content-Type": "application/json"},
+                    json=body,
+                    timeout=30
+                )
+
+                if res.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[create_child_page] 触发限制({res.status_code})，第 {attempt+1} 次重试，等待 {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+
+                res.raise_for_status()
+                result = res.json()
+                PythonLogger.info(f"[create_child_page] 创建成功: parent={parent_page_id}, title='{title}', new_page_id={result.get('id')}")
+                return result
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    PythonLogger.warning(f"[create_child_page] 异常: {e}，等待 {wait_time}s 后重试...")
+                    time.sleep(wait_time)
+                else:
+                    PythonLogger.error(f"[create_child_page] 失败: {e}")
+                    raise
+
+        raise RuntimeError("create_child_page: 未知错误")
 
     def create_page_in_database(self, data_source_id: str, properties: dict, children: list | None = None) -> dict:
         """

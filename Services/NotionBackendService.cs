@@ -34,6 +34,11 @@ namespace Notion_Files_Management.Services
             IReadOnlyList<FileSelectItem> Items);
 
         /// <summary>
+        /// 流式扫描状态（v1.5.2-Status）
+        /// </summary>
+        public sealed record ScanStatus(string Status, int Discovered, bool Done, string? Error, int ProbeId, int TotalUrls, int FilesProbed, bool ProbingDone);
+
+        /// <summary>
         /// Ensure python backend is initialized using persisted user config.
         /// </summary>
         public async Task<(bool ok, string error)> EnsureBackendReadyFromConfigAsync()
@@ -78,6 +83,112 @@ namespace Notion_Files_Management.Services
                     try { st = ret["status"]?.ToString() ?? ""; } catch { }
 
                     return (pid, tot, st, m);
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// 取消下载列表的大小探测任务（前端点击"取消"时调用）。
+        /// </summary>
+        public async Task CancelDownloadListProbeAsync()
+        {
+            try
+            {
+                await _backend.RunPython(py =>
+                {
+                    dynamic pyMain = py;
+                    pyMain.cancel_download_list_probe();
+                    return 0;
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"CancelDownloadListProbeAsync failed (non-fatal): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 启动流式扫描（v1.5.1-Status.6）：后台线程递归扫描页面，即时追加文件到 download_list。
+        /// </summary>
+        public async Task<(string status, string msg)> StartDownloadListStreamingAsync(string pageId, int probeWorkers, CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.start_download_list_streaming"))
+                {
+                    dynamic ret = pyMain.start_download_list_streaming(pageId, probeWorkers);
+                    string st = ret["status"]?.ToString() ?? "";
+                    string m = ret["msg"]?.ToString() ?? "";
+                    return (st, m);
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// 取消流式扫描和探测（v1.5.2-Status）
+        /// </summary>
+        public async Task CancelDownloadListStreamingAsync(CancellationToken token)
+        {
+            await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                pyMain.cancel_download_list_streaming();
+                return true;
+            }, token);
+        }
+
+        /// <summary>
+        /// 获取流式扫描状态（v1.5.1-Status.6）
+        /// </summary>
+        public async Task<ScanStatus> GetDownloadListScanStatusAsync(CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.get_download_list_scan_status"))
+                {
+                    dynamic ret = pyMain.get_download_list_scan_status();
+                    string st = ret["status"]?.ToString() ?? "";
+                    int disc = PyConvert.ToInt(ret["discovered"], 0);
+                    bool done = false;
+                    try
+                    {
+                        var d = ret["done"];
+                        if (d != null) done = d.ToString().Equals("True", StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch { }
+                    string? err = null;
+                    try
+                    {
+                        var e = ret["error"];
+                        if (e != null)
+                        {
+                            var s = e.ToString();
+                            if (!string.IsNullOrWhiteSpace(s) && !string.Equals(s, "None", StringComparison.OrdinalIgnoreCase))
+                                err = s;
+                        }
+                    }
+                    catch { }
+                    int pid = 0;
+                    try
+                    {
+                        var p = ret["probe_id"];
+                        if (p != null && !string.Equals(p.ToString(), "None", StringComparison.OrdinalIgnoreCase))
+                            pid = PyConvert.ToInt(p, 0);
+                    }
+                    catch { }
+                    int tu = PyConvert.ToInt(ret["total_urls"], 0);
+                    int fp = 0;
+                    try { fp = PyConvert.ToInt(ret["files_probed"], 0); } catch { }
+                    bool probingDone = false;
+                    try
+                    {
+                        var pd = ret["probing_done"];
+                        if (pd != null) probingDone = pd.ToString().Equals("True", StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch { }
+                    return new ScanStatus(st, disc, done, err, pid, tu, fp, probingDone);
                 }
             }, token);
         }
@@ -205,6 +316,9 @@ namespace Notion_Files_Management.Services
                 // No files or backend decided not to start probe.
                 return new DownloadListFetchResult(probeId, total, status, msg, Array.Empty<FileSelectItem>());
             }
+
+            // 文件列表已获取，立即报告一次初始进度，让 UI 从"查询列表"切换到"探测中"
+            progress?.Report(new ProbeProgress("probing", 0.0, 0, total, "", ""));
 
             // Give backend a short time to register probe.
             await Task.Delay(200, token);
@@ -352,6 +466,30 @@ namespace Notion_Files_Management.Services
 
                     var r = pyMain.upload_notion_files(pageId, pyFiles);
                     return r?.ToString() ?? "";
+                }
+            }, token);
+        }
+
+        /// <summary>
+        /// 上传整个文件夹到 Notion 页面。子文件夹会创建子页面。
+        /// 返回 (filesQueued, pagesCreated, failed, message)。
+        /// </summary>
+        public async Task<(int files, int pages, int failed, string msg)> UploadFolderAsync(
+            string pageId, string folderPath, CancellationToken token)
+        {
+            return await _backend.RunPython(py =>
+            {
+                dynamic pyMain = py;
+                using (Logger.Time("Py:Main.upload_folder"))
+                {
+                    dynamic r = pyMain.upload_folder(pageId, folderPath);
+                    int files = 0, pages = 0, failed = 0;
+                    string msg = "";
+                    try { files = PyConvert.ToInt(r["files"], 0); } catch { }
+                    try { pages = PyConvert.ToInt(r["pages_created"], 0); } catch { }
+                    try { failed = PyConvert.ToInt(r["failed"], 0); } catch { }
+                    try { msg = r["msg"]?.ToString() ?? ""; } catch { }
+                    return (files, pages, failed, msg);
                 }
             }, token);
         }
@@ -712,6 +850,7 @@ namespace Notion_Files_Management.Services
         public sealed record PageSizeUpdateProgress(
             string Status, int Total, int LinkQueried, int SizeUpdated,
             int Failed, double Percent, string CurrentPage, int CurrentFiles,
+            int FilesDiscovered, int FilesProbed,
             IReadOnlyList<string> Errors);
 
         public async Task<PageSizeUpdateProgress> GetPageSizeUpdateProgressAsync(CancellationToken token)
@@ -732,6 +871,8 @@ namespace Notion_Files_Management.Services
                     string currentPage = "";
                     try { currentPage = ret["current_page"]?.ToString() ?? ""; } catch { }
                     int currentFiles = PyConvert.ToInt(ret["current_files"], 0);
+                    int filesDiscovered = PyConvert.ToInt(ret["files_discovered"], 0);
+                    int filesProbed = PyConvert.ToInt(ret["files_probed"], 0);
 
                     var errors = new List<string>();
                     try
@@ -749,7 +890,8 @@ namespace Notion_Files_Management.Services
 
                     return new PageSizeUpdateProgress(
                         status, total, linkQueried, sizeUpdated,
-                        failed, percent, currentPage, currentFiles, errors);
+                        failed, percent, currentPage, currentFiles,
+                        filesDiscovered, filesProbed, errors);
                 }
             }, token);
         }

@@ -23,6 +23,9 @@ namespace Notion_Files_Management.Services
         // 持久化状态
         public string PageId { get; set; } = "";
 
+        // 选中的文件夹路径（文件夹上传模式）
+        public string? SelectedFolderPath { get; set; } = null;
+
         // 是否有活跃的上传任务（用于决定是否恢复轮询）
         public bool HasActiveUploads { get; set; } = false;
 

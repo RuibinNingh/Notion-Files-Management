@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Notion_Files_Management.Models;
 using Notion_Files_Management.Services;
 using Notion_Files_Management.Utils;
@@ -46,6 +47,14 @@ namespace Notion_Files_Management.Views
         private readonly List<CheckBox> _suEmptyCheckboxes = new();
         private readonly List<CheckBox> _suSetCheckboxes = new();
 
+        // Timer state for single page query
+        private Stopwatch? _queryStopwatch;
+        private DispatcherTimer? _queryElapsedTimer;
+
+        // Timer state for auto-update
+        private Stopwatch? _suStopwatch;
+        private DispatcherTimer? _suElapsedTimer;
+
         public ToolsPage()
         {
             InitializeComponent();
@@ -61,10 +70,7 @@ namespace Notion_Files_Management.Views
         private void OpenSizeUpdateChoice_Click(object sender, RoutedEventArgs e)
         {
             ModalOverlay.Visibility = Visibility.Visible;
-            ModalStep1.Visibility = Visibility.Collapsed;
-            ModalStep2.Visibility = Visibility.Collapsed;
-            HideAllMigrateSteps();
-            HideAllSizeUpdateSteps();
+            HideAllModalSteps();
             SizeUpdateChoice.Visibility = Visibility.Visible;
         }
 
@@ -85,9 +91,8 @@ namespace Notion_Files_Management.Views
         private void OpenStep1()
         {
             ModalOverlay.Visibility = Visibility.Visible;
+            HideAllModalSteps();
             ModalStep1.Visibility = Visibility.Visible;
-            ModalStep2.Visibility = Visibility.Collapsed;
-            HideAllMigrateSteps();
             PageIdInput.Text = "";
             BtnStartQuery.IsEnabled = true;
 
@@ -109,10 +114,18 @@ namespace Notion_Files_Management.Views
             ModalStep2.Visibility = Visibility.Visible;
 
             ProbeProgressBar.Value = 0;
+            ProbeProgressBar.IsIndeterminate = true;
+            ProbeTitle.Text = "正在扫描页面文件";
             ProbeStatusText.Text = "准备开始…";
+            ProbeElapsedText.Text = "";
             PageInfoItems.Clear();
             StatFileCount.Text = "0";
             StatTotalGb.Text = "0";
+            StatProbingHint.Visibility = Visibility.Collapsed;
+            BtnCancelQuery.IsEnabled = true;
+
+            // Start elapsed timer
+            StartQueryElapsedTimer();
         }
 
         private void CloseModal_Click(object sender, RoutedEventArgs e)
@@ -121,18 +134,30 @@ namespace Notion_Files_Management.Views
             _migCts?.Cancel();
             _suffixCts?.Cancel();
             _suCts?.Cancel();
+            StopQueryElapsedTimer();
+            StopSuElapsedTimer();
             ModalOverlay.Visibility = Visibility.Collapsed;
-            ModalStep1.Visibility = Visibility.Collapsed;
-            ModalStep2.Visibility = Visibility.Collapsed;
-            HideAllMigrateSteps();
-            HideAllSizeUpdateSteps();
+            HideAllModalSteps();
         }
 
         private void BackToStep1_Click(object sender, RoutedEventArgs e)
         {
             _cts?.Cancel();
+            StopQueryElapsedTimer();
             ModalStep2.Visibility = Visibility.Collapsed;
             ModalStep1.Visibility = Visibility.Visible;
+        }
+
+        private void CancelQuery_Click(object sender, RoutedEventArgs e)
+        {
+            _cts?.Cancel();
+            BtnCancelQuery.IsEnabled = false;
+            StopQueryElapsedTimer();
+            ProbeStatusText.Text = "已取消。";
+            ProbeTitle.Text = "已取消";
+            ProbeProgressBar.IsIndeterminate = false;
+            // 通知 Python 后台线程停止扫描和探测
+            _ = _svc.CancelDownloadListStreamingAsync(CancellationToken.None);
         }
 
         // ===== Core (Page Info) =====
@@ -165,67 +190,283 @@ namespace Notion_Files_Management.Views
             BtnStartQuery.IsEnabled = false;
             OpenStep2();
 
-            int notFoundCount = 0;
-            var progress = new Progress<NotionBackendService.ProbeProgress>(p =>
-            {
-                if (token.IsCancellationRequested || reqId != _reqId)
-                    return;
-
-                ProbeProgressBar.Value = p.Percent;
-
-                ProbeStatusText.Text = string.Equals(p.Status, "not_found", StringComparison.OrdinalIgnoreCase)
-                    ? $"准备探测任务…（{++notFoundCount}）"
-                    : $"探测中 {p.Percent:0}%（{p.Done}/{Math.Max(1, p.Total)}）";
-            });
+            ProbeStatusText.Text = "正在扫描页面文件（实时发现文件）…";
 
             try
             {
-                Logger.Info($"ToolsPage start page info. pageId={pageId}");
-                var ret = await _svc.FetchDownloadListWithProbeAsync(pageId, progress, token);
+                Logger.Info($"ToolsPage start page info (streaming). pageId={pageId}");
+
+                // 读取探测线程数
+                int probeWorkers = 8;
+                try
+                {
+                    if (int.TryParse(ProbeWorkersInput.Text?.Trim(), out int w) && w >= 1 && w <= 64)
+                        probeWorkers = w;
+                }
+                catch { }
+
+                // ── Phase 1: 启动流式扫描（后台线程递归发现文件） ──
+                var (startStatus, startMsg) = await _svc.StartDownloadListStreamingAsync(pageId, probeWorkers, token);
+                Logger.Info($"start_download_list_streaming => status={startStatus}, msg={startMsg}");
 
                 token.ThrowIfCancellationRequested();
-                if (reqId != _reqId)
-                    return;
+                if (reqId != _reqId) return;
 
-                if (ret.ProbeId <= 0 || ret.Items.Count == 0)
+                // ── Phase 2: 轮询扫描进度，实时渲染新发现的文件 ──
+                var urlToItem = new Dictionary<string, PageInfoItem>(StringComparer.Ordinal);
+                int lastDiscovered = 0;
+
+                while (true)
                 {
-                    MessageBox.Show(string.IsNullOrWhiteSpace(ret.Msg) ? "获取列表失败或页面无文件。" : ret.Msg);
+                    token.ThrowIfCancellationRequested();
+                    if (reqId != _reqId) return;
+
+                    var scan = await _svc.GetDownloadListScanStatusAsync(token);
+
+                    // 有新文件被发现或探测有更新 → 增量同步到 UI
+                    if (scan.Discovered > lastDiscovered || scan.FilesProbed > 0)
+                    {
+                        try
+                        {
+                            bool stillProbing = await SyncDownloadListToUI(urlToItem, token);
+                            lastDiscovered = scan.Discovered;
+                            UpdateProbeSizeStats(isStillProbing: stillProbing);
+                        }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex)
+                        {
+                            Logger.Warn($"Incremental list read failed (non-fatal): {ex.Message}");
+                        }
+                    }
+
+                    int probedCount = scan.FilesProbed;
+                    ProbeStatusText.Text = scan.Done
+                        ? $"扫描完成，共发现 {scan.Discovered} 个文件（已探测 {probedCount}）"
+                        : $"正在扫描页面…已发现 {scan.Discovered} 个文件（已探测 {probedCount}）";
+                    StatFileCount.Text = PageInfoItems.Count.ToString();
+
+                    if (scan.Done)
+                    {
+                        if (string.Equals(scan.Status, "error", StringComparison.OrdinalIgnoreCase))
+                            throw new Exception(scan.Error ?? "扫描失败");
+                        break;
+                    }
+
+                    await Task.Delay(300, token);
+                }
+
+                // ── Phase 3: 扫描完成，读取最终列表确保没有遗漏 ──
+                token.ThrowIfCancellationRequested();
+                if (reqId != _reqId) return;
+
+                try
+                {
+                    await SyncDownloadListToUI(urlToItem, token);
+                    UpdateProbeSizeStats(isStillProbing: true);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"Final scan list read failed (non-fatal): {ex.Message}");
+                }
+
+                if (PageInfoItems.Count == 0)
+                {
+                    MessageBox.Show("该页面没有发现任何文件。");
                     BackToStep1_Click(null!, null!);
                     return;
                 }
 
-                // Render list
-                PageInfoItems.Clear();
-                foreach (var it in ret.Items.OrderByDescending(x => x.size_mb))
+                // ── Phase 4: 轮询流式探测（_probe_consumer）进度，实时更新大小 ──
+                // 不再使用传统 start_probe_sizes 重复探测，直接轮询 probing_done 状态。
+                // _probe_consumer 在扫描期间就已并行探测，此处只是等它把剩余队列处理完。
                 {
-                    string realName = string.IsNullOrWhiteSpace(it.real_name) ? "(未命名文件)" : it.real_name!;
-                    PageInfoItems.Add(new PageInfoItem
+                    var scanInit = await _svc.GetDownloadListScanStatusAsync(token);
+                    int totalUrls = scanInit.TotalUrls;
+
+                    if (totalUrls == 0)
                     {
-                        RealName = realName,
-                        Url = it.url ?? "",
-                        SizeGb = (it.size_mb <= 0 ? 0.0 : it.size_mb / 1024.0)
-                    });
+                        // 没有可探测的文件，直接结束
+                        foreach (var kv in urlToItem) kv.Value.IsProbing = false;
+                        UpdateProbeSizeStats(isStillProbing: false);
+                        ProbeProgressBar.IsIndeterminate = false;
+                        ProbeProgressBar.Value = 100;
+                        ProbeStatusText.Text = "查询完成。";
+                    }
+                    else
+                    {
+                        ProbeTitle.Text = "正在探测文件大小";
+                        ProbeProgressBar.IsIndeterminate = false;
+                        ProbeProgressBar.Value = 0;
+                        StatProbingHint.Visibility = Visibility.Visible;
+
+                        while (true)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            if (reqId != _reqId) return;
+
+                            var scan = await _svc.GetDownloadListScanStatusAsync(token);
+                            int probed = scan.FilesProbed;
+                            int total  = Math.Max(1, scan.TotalUrls > 0 ? scan.TotalUrls : totalUrls);
+                            double pct = Math.Min(100.0, probed * 100.0 / total);
+
+                            ProbeProgressBar.Value = pct;
+                            ProbeStatusText.Text = scan.ProbingDone
+                                ? "探测完成。"
+                                : $"探测中 {pct:0}%（{probed}/{total}）";
+
+                            try
+                            {
+                                bool stillProbing = await SyncDownloadListToUI(urlToItem, token);
+                                UpdateProbeSizeStats(isStillProbing: !scan.ProbingDone && stillProbing);
+                            }
+                            catch (OperationCanceledException) { throw; }
+                            catch (Exception ex) { Logger.Warn($"Phase4 list read failed (non-fatal): {ex.Message}"); }
+
+                            if (scan.ProbingDone) break;
+
+                            await Task.Delay(350, token);
+                        }
+
+                        // ── Phase 5: 最终读取，确保所有大小已更新 ──
+                        token.ThrowIfCancellationRequested();
+                        if (reqId != _reqId) return;
+
+                        var finalItems = await _svc.ReadDownloadListAsync(token);
+                        foreach (var it in finalItems)
+                        {
+                            if (!string.IsNullOrEmpty(it.url) && urlToItem.TryGetValue(it.url, out var uiItem))
+                            {
+                                uiItem.SizeGb = it.size_mb > 0 ? it.size_mb / 1024.0 : 0.0;
+                                uiItem.IsProbing = false;
+                            }
+                        }
+                    }
                 }
 
-                StatFileCount.Text = PageInfoItems.Count.ToString();
-                StatTotalGb.Text = Math.Round(PageInfoItems.Sum(x => x.SizeGb), 3).ToString("0.###");
+                // 按大小降序重排列表
+                var sorted = PageInfoItems.OrderByDescending(x => x.SizeGb).ToList();
+                PageInfoItems.Clear();
+                foreach (var item in sorted)
+                    PageInfoItems.Add(item);
+
+                UpdateProbeSizeStats(isStillProbing: false);
+                ProbeProgressBar.IsIndeterminate = false;
                 ProbeProgressBar.Value = 100;
-                ProbeStatusText.Text = "探测完成。";
+                ProbeTitle.Text = "查询完成";
+                ProbeStatusText.Text = "查询完成。";
+                BtnCancelQuery.IsEnabled = false;
+                StopQueryElapsedTimer();
             }
             catch (OperationCanceledException)
             {
                 ProbeStatusText.Text = "已取消。";
+                StopQueryElapsedTimer();
             }
             catch (Exception ex)
             {
                 MessageBox.Show("获取页面信息失败：" + ex.Message);
                 Logger.Error("ToolsPage StartQuery failed", ex);
+                StopQueryElapsedTimer();
                 BackToStep1_Click(null!, null!);
             }
             finally
             {
                 BtnStartQuery.IsEnabled = true;
             }
+        }
+
+        /// <summary>
+        /// 更新统计栏的总大小和探测提示
+        /// </summary>
+        private void UpdateProbeSizeStats(bool isStillProbing)
+        {
+            StatFileCount.Text = PageInfoItems.Count.ToString();
+            double totalGb = PageInfoItems.Sum(x => x.SizeGb);
+            StatTotalGb.Text = Math.Round(totalGb, 3).ToString("0.000") + " GB";
+            StatProbingHint.Visibility = isStillProbing ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// 从后端读取 download_list 并增量同步到 PageInfoItems UI 集合。
+        /// 新文件添加到集合，已有文件更新大小（如果已探测完成）。
+        /// 返回是否仍有文件在探测中。
+        /// </summary>
+        private async Task<bool> SyncDownloadListToUI(
+            Dictionary<string, PageInfoItem> urlToItem,
+            CancellationToken token)
+        {
+            var items = await _svc.ReadDownloadListAsync(token);
+            foreach (var it in items)
+            {
+                string url = it.url ?? "";
+                if (string.IsNullOrEmpty(url)) continue;
+
+                if (!urlToItem.ContainsKey(url))
+                {
+                    bool hasSize = it.size_mb > 0;
+                    var item = new PageInfoItem
+                    {
+                        RealName = string.IsNullOrWhiteSpace(it.real_name) ? "(未命名文件)" : it.real_name!,
+                        Url = url,
+                        SizeGb = hasSize ? it.size_mb / 1024.0 : 0.0,
+                        IsProbing = !hasSize
+                    };
+                    PageInfoItems.Add(item);
+                    urlToItem[url] = item;
+                }
+                else if (urlToItem.TryGetValue(url, out var existingItem))
+                {
+                    if (it.size_mb > 0 && existingItem.IsProbing)
+                    {
+                        existingItem.SizeGb = it.size_mb / 1024.0;
+                        existingItem.IsProbing = false;
+                    }
+                }
+            }
+            return PageInfoItems.Any(x => x.IsProbing);
+        }
+
+        // ── Reusable elapsed timer helpers ────────────────────────────────
+
+        private void StartElapsedTimer(ref Stopwatch? stopwatch, ref DispatcherTimer? timer, TextBlock target)
+        {
+            StopElapsedTimer(ref stopwatch, ref timer, target);
+            stopwatch = Stopwatch.StartNew();
+            var sw = stopwatch; // capture for closure
+            timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            timer.Tick += (_, _) =>
+            {
+                if (sw != null)
+                    target.Text = $"⏱ 用时 {FormatElapsed(sw.Elapsed)}";
+            };
+            timer.Start();
+        }
+
+        private void StopElapsedTimer(ref Stopwatch? stopwatch, ref DispatcherTimer? timer, TextBlock target)
+        {
+            stopwatch?.Stop();
+            if (timer != null)
+            {
+                timer.Stop();
+                timer = null;
+            }
+            if (stopwatch != null)
+            {
+                target.Text = $"⏱ 总用时 {FormatElapsed(stopwatch.Elapsed)}";
+            }
+        }
+
+        private void StartQueryElapsedTimer() => StartElapsedTimer(ref _queryStopwatch, ref _queryElapsedTimer, ProbeElapsedText);
+        private void StopQueryElapsedTimer() => StopElapsedTimer(ref _queryStopwatch, ref _queryElapsedTimer, ProbeElapsedText);
+        private void StartSuElapsedTimer() => StartElapsedTimer(ref _suStopwatch, ref _suElapsedTimer, SuElapsedText);
+        private void StopSuElapsedTimer() => StopElapsedTimer(ref _suStopwatch, ref _suElapsedTimer, SuElapsedText);
+
+        private static string FormatElapsed(TimeSpan ts)
+        {
+            if (ts.TotalHours >= 1)
+                return $"{(int)ts.TotalHours}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+            return $"{ts.Minutes:D2}:{ts.Seconds:D2}";
         }
 
         private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
@@ -404,12 +645,22 @@ namespace Notion_Files_Management.Views
             SizeUpdateStep3.Visibility = Visibility.Collapsed;
         }
 
-        private void OpenMigrateModal_Click(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// 隐藏所有模态步骤面板（包括 PageInfo / Migrate / Suffix / SizeUpdate）。
+        /// 用于打开新模态前统一清理。
+        /// </summary>
+        private void HideAllModalSteps()
         {
-            ModalOverlay.Visibility = Visibility.Visible;
             ModalStep1.Visibility = Visibility.Collapsed;
             ModalStep2.Visibility = Visibility.Collapsed;
             HideAllMigrateSteps();
+            HideAllSizeUpdateSteps();
+        }
+
+        private void OpenMigrateModal_Click(object sender, RoutedEventArgs e)
+        {
+            ModalOverlay.Visibility = Visibility.Visible;
+            HideAllModalSteps();
             MigrateStep1.Visibility = Visibility.Visible;
 
             MigSourceIdInput.Text = "";
@@ -786,9 +1037,7 @@ namespace Notion_Files_Management.Views
         private void OpenBatchSuffixModal_Click(object sender, RoutedEventArgs e)
         {
             ModalOverlay.Visibility = Visibility.Visible;
-            ModalStep1.Visibility = Visibility.Collapsed;
-            ModalStep2.Visibility = Visibility.Collapsed;
-            HideAllMigrateSteps();
+            HideAllModalSteps();
             SuffixStep1.Visibility = Visibility.Visible;
 
             SuffixDsIdInput.Text = "";
@@ -969,10 +1218,7 @@ namespace Notion_Files_Management.Views
         private void OpenSizeUpdateStep1()
         {
             ModalOverlay.Visibility = Visibility.Visible;
-            HideAllMigrateSteps();
-            HideAllSizeUpdateSteps();
-            ModalStep1.Visibility = Visibility.Collapsed;
-            ModalStep2.Visibility = Visibility.Collapsed;
+            HideAllModalSteps();
             SizeUpdateStep1.Visibility = Visibility.Visible;
 
             SuDsIdInput.Text = "";
@@ -1257,12 +1503,18 @@ namespace Notion_Files_Management.Views
                 SizeUpdateStep3.Visibility = Visibility.Visible;
                 SuProgressBar.Value = 0;
                 SuProgressStatus.Text = "正在扫描页面文件链接…";
+                SuElapsedText.Text = "";
                 SuStatTotal.Text = selectedIds.Count.ToString();
                 SuStatLinkQueried.Text = "0";
                 SuStatUpdated.Text = "0";
                 SuStatFailed.Text = "0";
+                SuStatFilesDiscovered.Text = "0";
+                SuStatFilesProbed.Text = "0";
                 SuErrorBorder.Visibility = Visibility.Collapsed;
                 BtnSuCancel.IsEnabled = true;
+
+                // Start elapsed timer
+                StartSuElapsedTimer();
 
                 // Poll progress
                 await PollSizeUpdateProgress(token);
@@ -1292,12 +1544,19 @@ namespace Notion_Files_Management.Views
                     SuStatLinkQueried.Text = p.LinkQueried.ToString();
                     SuStatUpdated.Text = p.SizeUpdated.ToString();
                     SuStatFailed.Text = p.Failed.ToString();
+                    SuStatFilesDiscovered.Text = p.FilesDiscovered.ToString();
+                    SuStatFilesProbed.Text = p.FilesProbed.ToString();
 
                     string statusText = p.Status switch
                     {
-                        "scanning" => $"扫描页面文件链接中…（{p.LinkQueried}/{p.Total}）",
-                        "updating" => $"更新中 {p.Percent:0.0}%（已更新 {p.SizeUpdated}，失败 {p.Failed}）",
-                        "done" => $"完成！已更新 {p.SizeUpdated}，失败 {p.Failed}。",
+                        "scanning" when p.FilesDiscovered > 0 =>
+                            $"扫描中…（页面 {p.LinkQueried}/{p.Total}，文件 {p.FilesProbed}/{p.FilesDiscovered} 已探测）",
+                        "scanning" =>
+                            $"扫描页面文件链接中…（{p.LinkQueried}/{p.Total}）",
+                        "updating" =>
+                            $"更新中 {p.Percent:0.0}%（已更新 {p.SizeUpdated}，文件 {p.FilesProbed}/{p.FilesDiscovered}）",
+                        "done" =>
+                            $"完成！已更新 {p.SizeUpdated}，失败 {p.Failed}（共探测 {p.FilesProbed} 个文件）。",
                         "cancelled" => "已取消。",
                         "error" => "出错。",
                         _ => p.Status,
@@ -1315,6 +1574,7 @@ namespace Notion_Files_Management.Views
                     if (p.Status is "done" or "cancelled" or "error")
                     {
                         BtnSuCancel.IsEnabled = false;
+                        StopSuElapsedTimer();
                         if (p.Status == "done")
                         {
                             SuProgressBar.Value = 100;
@@ -1324,6 +1584,7 @@ namespace Notion_Files_Management.Views
                 }
                 catch (OperationCanceledException)
                 {
+                    StopSuElapsedTimer();
                     break;
                 }
                 catch (Exception ex)
@@ -1340,6 +1601,7 @@ namespace Notion_Files_Management.Views
             try
             {
                 BtnSuCancel.IsEnabled = false;
+                StopSuElapsedTimer();
                 await _svc.CancelPageSizeUpdateAsync(CancellationToken.None);
                 SuProgressStatus.Text = "已取消。";
                 Logger.Info("User cancelled page size update");

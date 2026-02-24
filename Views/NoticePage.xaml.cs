@@ -2,9 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Navigation;
 using Notion_Files_Management.Models;
 using Notion_Files_Management.Services;
@@ -27,12 +30,56 @@ namespace Notion_Files_Management.Views
             InitializeComponent();
             Loaded += OnPageLoaded;
 
+            // ── 链接点击处理（三层保障） ──
+
+            // 主修复：PreviewMouseLeftButtonDown 隧道事件 —— 在 MdXaml 内部吞掉点击之前拦截，
+            // 检测点击目标是否为 Hyperlink，是则直接打开 URL。
+            // handledEventsToo: true 确保即使事件被标记为已处理也能触发。
+            AddHandler(UIElement.PreviewMouseLeftButtonDownEvent,
+                new MouseButtonEventHandler(OnPreviewMouseLeftButtonDown), true);
+
+            // 兜底：捕获 RequestNavigateEvent（部分场景下 MdXaml 可能触发此事件）
             AddHandler(Hyperlink.RequestNavigateEvent,
                 new RequestNavigateEventHandler(OnHyperlinkRequestNavigate));
         }
 
-        // ═══════════════════ Markdown 链接点击处理（RequestNavigate） ═══════════════════
+        // ═══════════════════ 链接点击处理 ═══════════════════
 
+        /// <summary>
+        /// 主修复：PreviewMouseLeftButtonDown — 沿逻辑树向上查找 Hyperlink，
+        /// 在 MdXaml 内部处理之前拦截链接点击。
+        /// 兼容两种模式：NavigateUri（标准）和 CommandParameter（MdXaml HyperlinkCommand 模式）。
+        /// </summary>
+        private void OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.OriginalSource is not DependencyObject source) return;
+
+            var hyperlink = FindAncestorHyperlink(source);
+            if (hyperlink == null) return;
+
+            // 优先使用 NavigateUri（标准模式）
+            string? url = hyperlink.NavigateUri?.AbsoluteUri;
+
+            // 如果 NavigateUri 为空，尝试 CommandParameter（MdXaml HyperlinkCommand 模式）
+            if (string.IsNullOrEmpty(url) && hyperlink.CommandParameter is string cmdParam)
+            {
+                url = cmdParam;
+            }
+            // 再尝试 CommandParameter 的 Uri 类型
+            if (string.IsNullOrEmpty(url) && hyperlink.CommandParameter is Uri cmdUri)
+            {
+                url = cmdUri.AbsoluteUri;
+            }
+
+            if (string.IsNullOrEmpty(url)) return;
+
+            TryOpenUrl(url);
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// 兜底：RequestNavigateEvent handler
+        /// </summary>
         private void OnHyperlinkRequestNavigate(object sender, RequestNavigateEventArgs e)
         {
             try
@@ -44,10 +91,79 @@ namespace Notion_Files_Management.Views
             }
             catch (Exception ex)
             {
-                Logger.Warn($"[NoticePage] Failed to open link: {ex.Message}");
+                Logger.Warn($"[NoticePage] RequestNavigate failed: {ex.Message}");
             }
 
             e.Handled = true;
+        }
+
+        /// <summary>
+        /// 从点击目标沿 FrameworkContentElement.Parent 链向上查找 Hyperlink。
+        /// Hyperlink 是 Inline（文本模型），不在 VisualTree 中，需走逻辑树。
+        /// </summary>
+        private static Hyperlink? FindAncestorHyperlink(DependencyObject obj)
+        {
+            var current = obj;
+            while (current != null)
+            {
+                if (current is Hyperlink hl)
+                    return hl;
+
+                current = current switch
+                {
+                    FrameworkContentElement fce => fce.Parent,
+                    FrameworkElement fe => fe.Parent ?? VisualTreeHelper.GetParent(fe),
+                    _ => null
+                };
+            }
+            return null;
+        }
+
+        // ═══════════════════ MdXaml HyperlinkCommand 反射注入 ═══════════════════
+
+        /// <summary>
+        /// 遍历视觉树，找到所有 MdXaml MarkdownScrollViewer 实例，
+        /// 通过反射设置其 HyperlinkCommand 属性（如果存在）。
+        /// 此为辅助手段，主修复为 PreviewMouseLeftButtonDown。
+        /// </summary>
+        private void TrySetHyperlinkCommandOnRenderedViewers()
+        {
+            try
+            {
+                var viewers = FindVisualChildren<FrameworkElement>(NoticeList)
+                    .Where(fe => fe.GetType().Name == "MarkdownScrollViewer");
+
+                foreach (var viewer in viewers)
+                {
+                    var prop = viewer.GetType().GetProperty("HyperlinkCommand",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (prop != null && prop.CanWrite)
+                    {
+                        prop.SetValue(viewer, OpenBrowserCommand.Instance);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"[NoticePage] TrySetHyperlinkCommand reflection failed (non-critical): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 递归查找视觉树中所有指定类型的子元素
+        /// </summary>
+        private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null) yield break;
+
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T t) yield return t;
+                foreach (var grandChild in FindVisualChildren<T>(child))
+                    yield return grandChild;
+            }
         }
 
         // ═══════════════════ 页面生命周期 ═══════════════════
@@ -93,6 +209,11 @@ namespace Notion_Files_Management.Views
                 await NoticeService.PreloadAllContentAsync(sorted);
                 NoticeService.MarkAllAsRead(sorted);
 
+                // 内容加载完成后，尝试通过反射为 MarkdownScrollViewer 设置 HyperlinkCommand
+                // 延迟一帧确保 DataTemplate 已渲染
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
+                    new Action(TrySetHyperlinkCommandOnRenderedViewers));
+
                 Logger.Info($"[NoticePage] Loaded {sorted.Count} notices");
             }
             catch (Exception ex)
@@ -112,8 +233,16 @@ namespace Notion_Files_Management.Views
         {
             try
             {
+                // 安全校验：仅允许 http/https 协议
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                    || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                {
+                    Logger.Warn($"[NoticePage] Blocked non-HTTP URL: {url}");
+                    return;
+                }
+
                 Logger.Info($"[NoticePage] Opening URL: {url}");
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
             }
             catch (Exception ex)
             {

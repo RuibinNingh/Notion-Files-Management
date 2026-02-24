@@ -75,6 +75,201 @@ class Main:
                 "probe_id": None,
                 "total": 0,
             }
+    # -------------------------
+    # Streaming Download List (v1.5.1-Status.6)
+    # -------------------------
+    def start_download_list_streaming(self, page_id: str, probe_workers: int = 8):
+        """
+        流式获取文件列表：启动后台线程递归扫描页面，
+        每发现一批文件立即追加到 self.download_list 并即时开始探测大小。
+        前端可随时读取增量和实时大小。
+        v1.5.2: 扫描与探测并行，边发现边探测。
+        """
+        import threading
+        import queue as _queue
+
+        self.download_list = []
+        self._scan_lock = threading.Lock()
+        self._scan_status = {
+            "status": "scanning",
+            "discovered": 0,
+            "done": False,
+            "error": None,
+            "probe_id": None,
+            "total_urls": 0,
+            "files_probed": 0,
+            "probing_done": False,  # _probe_consumer 全部完成后设为 True
+        }
+        self._probe_id = None
+        self._stream_probe_queue = _queue.Queue()
+        self._scan_cancelled = False  # 取消标志，_worker/_probe_consumer 轮询此标志
+
+        def _probe_consumer():
+            """消费者线程：从队列取出 URL，立即探测大小并回写 download_list"""
+            from concurrent.futures import ThreadPoolExecutor
+
+            pool = ThreadPoolExecutor(max_workers=probe_workers)
+            futures = []
+
+            def _probe_one(item_ref, url):
+                # 已取消则跳过
+                if self._scan_cancelled:
+                    return
+                # 复用 self.downloader._probe_one（urllib 双策略：HEAD Content-Length → Range GET Content-Range）
+                # 避免使用 requests 库——Notion S3 签名 URL 在 requests HEAD 响应中不返回 Content-Length，
+                # Range GET 在部分情况下也无法获取 Content-Range，导致所有文件大小探测结果为 0。
+                size_mb = None
+                try:
+                    size_mb = self.downloader._probe_one(url, timeout=10)
+                except Exception as e:
+                    self.logger.warning(f"[PROBE] _probe_one exception: {e!r}, url_tail={url[-60:]!r}")
+
+                item_ref["size_mb"] = size_mb if size_mb is not None else 0.0
+                with self._scan_lock:
+                    self._scan_status["files_probed"] = self._scan_status.get("files_probed", 0) + 1
+
+            while True:
+                # 取消时立即退出，不再提交新探测任务
+                if self._scan_cancelled:
+                    break
+                try:
+                    msg = self._stream_probe_queue.get(timeout=0.5)
+                except _queue.Empty:
+                    # Check if scan is done and queue is empty
+                    with self._scan_lock:
+                        if self._scan_status["done"] and self._stream_probe_queue.empty():
+                            break
+                    continue
+
+                if msg is None:  # poison pill
+                    break
+                item_ref, url = msg
+                futures.append(pool.submit(_probe_one, item_ref, url))
+
+            # 取消时 cancel 所有还未开始的 future，正在执行的等它自然结束（urllib timeout 兜底）
+            if self._scan_cancelled:
+                for f in futures:
+                    f.cancel()
+                pool.shutdown(wait=False)
+            else:
+                # Wait for all probes to finish
+                for f in futures:
+                    try:
+                        f.result(timeout=30)
+                    except Exception:
+                        pass
+                pool.shutdown(wait=False)
+
+            # Mark probing done
+            with self._scan_lock:
+                self._scan_status["probing_done"] = True
+
+        def _worker():
+            try:
+                self._scan_blocks_streaming(page_id)
+
+                # 获取页面级文件（icon/cover/files 属性）
+                try:
+                    page_obj = self.notion.get_page_object(page_id)
+                    if page_obj:
+                        pf = self.notion.extract_page_level_files(page_obj)
+                        if pf:
+                            with self._scan_lock:
+                                self.download_list.extend(pf)
+                                self._scan_status["discovered"] = len(self.download_list)
+                            # Queue page-level files for probing
+                            for item in pf:
+                                url = item.get("url", "")
+                                if url:
+                                    self._stream_probe_queue.put((item, url))
+                except Exception as e:
+                    self.logger.warning(f"Page-level files extraction failed (non-fatal): {e}")
+
+                self.logger.info(f"Streaming scan completed: {len(self.download_list)} files")
+
+                # 扫描完成后，发送毒丸通知 _probe_consumer 扫描已结束。
+                # _probe_consumer 会等待队列中所有已提交的探测任务完成，然后自行设置 probing_done=True。
+                # 不再重复启动传统 start_probe_sizes，避免对全部 URL 重复探测一遍。
+                self._stream_probe_queue.put(None)
+
+                total_urls = sum(1 for f in self.download_list if f.get("url"))
+                with self._scan_lock:
+                    self._scan_status["total_urls"] = total_urls
+                    self._scan_status["status"] = "probing" if total_urls else "done"
+                    self._scan_status["done"] = True  # 扫描完成，_probe_consumer 探测仍在后台继续
+
+            except Exception as e:
+                self.logger.error(f"Streaming scan failed: {e}")
+                with self._scan_lock:
+                    self._scan_status.update({
+                        "status": "error",
+                        "error": str(e),
+                        "done": True,
+                    })
+                self._stream_probe_queue.put(None)
+
+        # Start probe consumer first, then scanner
+        threading.Thread(target=_probe_consumer, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True).start()
+        return {"status": "scanning", "msg": "开始流式扫描页面文件"}
+
+    def _scan_blocks_streaming(self, page_id: str):
+        """
+        递归扫描某页面的所有 blocks。
+        每一层获取到 blocks 后，立即提取文件链接追加到 download_list，
+        并将每个文件推入探测队列以便即时探测大小，
+        然后继续递归有子块的 block。
+        """
+        # 不使用 fetch_all=True（那会一次性递归完才返回）
+        blocks = self.notion.query_page(page_id, fetch_all=False)
+
+        # 立即提取当前层级的文件（不递归、不探大小）
+        files = self.notion.get_download_url_no_recurse(blocks)
+        if files:
+            with self._scan_lock:
+                self.download_list.extend(files)
+                self._scan_status["discovered"] = len(self.download_list)
+            # Queue each file for immediate size probing
+            for item in files:
+                url = item.get("url", "")
+                if url:
+                    self._stream_probe_queue.put((item, url))
+
+        # 递归有子块的 block
+        for block in blocks:
+            if self._scan_cancelled:  # 取消时停止递归
+                return
+            if block.get("has_children"):
+                self._scan_blocks_streaming(block["id"])
+
+    def get_download_list_scan_status(self):
+        """返回当前流式扫描的状态（线程安全）"""
+        lock = getattr(self, "_scan_lock", None)
+        status = getattr(self, "_scan_status", None)
+        if lock is None or status is None:
+            return {
+                "status": "not_started",
+                "discovered": 0,
+                "done": False,
+                "error": None,
+                "probe_id": None,
+                "total_urls": 0,
+                "files_probed": 0,
+            }
+        with lock:
+            result = dict(status)
+        return result
+
+    def cancel_download_list_streaming(self):
+        """取消正在进行的流式扫描和探测（线程安全）"""
+        self._scan_cancelled = True
+        # 往队列塞毒丸，让 _probe_consumer 尽快从 get() 阻塞中退出
+        try:
+            self._stream_probe_queue.put_nowait(None)
+        except Exception:
+            pass
+        self.logger.info("[SCAN] cancel_download_list_streaming called")
+
     def download_list_processing(self, probe_id: str | None = None):
         """
         返回：
@@ -102,6 +297,7 @@ class Main:
         size_map = self.downloader.get_probe_results(pid, partial=True)
         self._probe_size_map = size_map
 
+        wrote_count = 0
         if size_map:
             for item in self.download_list:
                 url = item.get("url")
@@ -110,6 +306,8 @@ class Main:
                 probed = size_map.get(url)
                 if probed is not None:
                     item["size_mb"] = probed
+                    wrote_count += 1
+        self.logger.info(f"download_list_processing: probe_id={pid}, wrote {wrote_count}/{len(self.download_list)} sizes")
 
         return {
             "status": progress.get("status", "probing"),
@@ -118,6 +316,19 @@ class Main:
             "total": int(progress.get("total", 0)),
             "error": progress.get("errors"),
         }
+
+    def cancel_download_list_probe(self):
+        """
+        取消当前下载列表的大小探测任务。
+        前端点击"取消"时调用，确保 Python 侧的探测线程也能尽快停止。
+        """
+        pid = self._probe_id
+        if pid:
+            cancelled = self.downloader.cancel_probe(pid)
+            self.logger.info(f"cancel_download_list_probe: probe_id={pid}, cancelled={cancelled}")
+            self._probe_id = None
+        else:
+            self.logger.info("cancel_download_list_probe: no active probe")
 
     def _make_url_refresh_callback(self, block_id: str):
         """
@@ -207,6 +418,82 @@ class Main:
         if fail > 0:
             return f"Success {ok}, Failed {fail}"
         return "Success"
+
+    def upload_folder(self, page_id: str, folder_path: str):
+        """
+        上传整个文件夹到 Notion 页面。
+        - 根目录下的文件直接上传到 page_id
+        - 子文件夹在 page_id 下创建同名子页面，递归上传
+        返回: { "status": "success", "files": int, "pages_created": int, "failed": int }
+        """
+        import os
+
+        if not os.path.isdir(folder_path):
+            return {"status": "error", "msg": f"文件夹不存在: {folder_path}"}
+
+        total_files = 0
+        total_pages = 0
+        total_failed = 0
+
+        def _upload_dir(dir_path: str, target_page_id: str):
+            nonlocal total_files, total_pages, total_failed
+
+            entries = sorted(os.listdir(dir_path))
+            files_in_dir = []
+            subdirs = []
+
+            for entry in entries:
+                full_path = os.path.join(dir_path, entry)
+                if os.path.isfile(full_path):
+                    files_in_dir.append(full_path)
+                elif os.path.isdir(full_path):
+                    subdirs.append((entry, full_path))
+
+            # 上传当前目录的文件
+            for fp in files_in_dir:
+                try:
+                    ret = self.Uploader.upload_file(fp, target_page_id)
+                    if isinstance(ret, dict) and ret.get("msg") in {"任务已入队", "任务已提交"}:
+                        total_files += 1
+                    else:
+                        total_failed += 1
+                        self.logger.warning(f"[upload_folder] 文件入队失败: {fp}, ret={ret}")
+                except Exception as e:
+                    total_failed += 1
+                    self.logger.error(f"[upload_folder] 文件上传异常: {fp}, err={e}")
+
+            # 处理子文件夹：创建子页面后递归
+            for subdir_name, subdir_path in subdirs:
+                try:
+                    child_page = self.notion.create_child_page(target_page_id, subdir_name)
+                    child_page_id = child_page.get("id", "")
+                    if not child_page_id:
+                        self.logger.error(f"[upload_folder] 创建子页面失败，无 id: {subdir_name}")
+                        total_failed += 1
+                        continue
+                    total_pages += 1
+                    self.logger.info(f"[upload_folder] 创建子页面: '{subdir_name}' -> {child_page_id}")
+                    _upload_dir(subdir_path, child_page_id)
+                except Exception as e:
+                    total_failed += 1
+                    self.logger.error(f"[upload_folder] 创建子页面异常: {subdir_name}, err={e}")
+
+        _upload_dir(folder_path, page_id)
+
+        msg = f"已入队 {total_files} 个文件"
+        if total_pages > 0:
+            msg += f"，创建了 {total_pages} 个子页面"
+        if total_failed > 0:
+            msg += f"，{total_failed} 个失败"
+
+        self.logger.info(f"[upload_folder] 完成: files={total_files}, pages={total_pages}, failed={total_failed}")
+        return {
+            "status": "success" if total_failed == 0 else "partial",
+            "msg": msg,
+            "files": total_files,
+            "pages_created": total_pages,
+            "failed": total_failed,
+        }
 
     def get_upload_statuses(self):
         """

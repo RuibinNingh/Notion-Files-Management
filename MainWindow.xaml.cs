@@ -105,34 +105,60 @@ namespace Notion_Files_Management
 				if (transparency < 0.0) transparency = 0.0;
 				if (transparency > 1.0) transparency = 1.0;
 
-				// 如果没有配置 src，尝试从远端获取默认
-				if (string.IsNullOrWhiteSpace(src))
+				// ── 启动时检查服务端默认背景是否更改 ──
+				// 无论本地是否已有配置，都尝试获取服务端配置并检查默认是否变化
+				AutoPushBgConfig? serverConfig = null;
+				try
 				{
-					Utils.Logger.Info("[MainWindow] AutoPush: No src configured, fetching default from server...");
-					try
-					{
-						string json = "";
-						try { json = await _bgHttpClient.GetStringAsync("https://nfm.ruibin-ningh.top/background/config.json"); }
-						catch { json = await _bgHttpClient.GetStringAsync("http://nfm.ruibin-ningh.top/background/config.json"); }
+					serverConfig = await FetchAutoPushConfigAsync();
+				}
+				catch (Exception fetchEx)
+				{
+					Utils.Logger.Warn($"[MainWindow] AutoPush: Failed to fetch server config for default check: {fetchEx.Message}");
+				}
 
-						var config = System.Text.Json.JsonSerializer.Deserialize<AutoPushBgConfig>(json);
-						if (config?.@default != null)
+				if (serverConfig?.@default != null)
+				{
+					if (string.IsNullOrWhiteSpace(src))
+					{
+						// 本地没有配置，使用服务端默认
+						src = serverConfig.@default.src;
+						name = serverConfig.@default.name;
+						ConfigManager.Current.AutoPushBackgroundSrc = src;
+						ConfigManager.Current.AutoPushBackgroundName = name;
+						ConfigManager.Save();
+						Utils.Logger.Info($"[MainWindow] AutoPush: No local config, using server default: {name} ({src})");
+					}
+					else
+					{
+						// 本地已有配置，检查服务端默认是否变化
+						string serverDefaultName = serverConfig.@default.name ?? "";
+						string serverDefaultSrc = serverConfig.@default.src ?? "";
+
+						// 从磁盘缓存读取上次已知的服务端默认（用于比较）
+						string lastKnownDefault = await ReadLastKnownServerDefaultAsync();
+
+						if (!string.IsNullOrEmpty(serverDefaultName) && serverDefaultName != lastKnownDefault)
 						{
-							src = config.@default.src;
-							name = config.@default.name;
-							// 保存到配置以便下次使用
+							// 服务端默认已更改，静默切换到新默认
+							Utils.Logger.Info($"[MainWindow] AutoPush: Server default changed from '{lastKnownDefault}' to '{serverDefaultName}', silently switching...");
+							src = serverDefaultSrc;
+							name = serverDefaultName;
 							ConfigManager.Current.AutoPushBackgroundSrc = src;
 							ConfigManager.Current.AutoPushBackgroundName = name;
 							ConfigManager.Save();
 						}
 					}
-					catch (Exception fetchEx)
-					{
-						Utils.Logger.Warn($"[MainWindow] AutoPush: Failed to fetch config: {fetchEx.Message}");
-						// 回退到 Mica
-						Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; });
-						return;
-					}
+
+					// 保存当前服务端默认名称，供下次启动比较
+					await SaveLastKnownServerDefaultAsync(serverConfig.@default.name ?? "");
+				}
+				else if (string.IsNullOrWhiteSpace(src))
+				{
+					// 服务端获取失败且本地无配置，回退 Mica
+					Utils.Logger.Warn("[MainWindow] AutoPush: No server config and no local config, falling back to Mica");
+					Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; });
+					return;
 				}
 
 				if (string.IsNullOrWhiteSpace(src))
@@ -192,6 +218,98 @@ namespace Notion_Files_Management
 			{
 				Utils.Logger.Error("[MainWindow] ApplyAutoPushBackgroundAsync failed", ex);
 				try { Dispatcher.Invoke(() => { WindowBackdropType = WindowBackdropType.Mica; }); } catch { }
+			}
+		}
+
+		/// <summary>
+		/// 获取服务端自动推送背景配置（优先从磁盘缓存读取，后台静默刷新）
+		/// </summary>
+		private async System.Threading.Tasks.Task<AutoPushBgConfig?> FetchAutoPushConfigAsync()
+		{
+			AutoPushBgConfig? config = null;
+
+			// 优先读磁盘缓存
+			string configCachePath = Path.Combine(
+				Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+				"NotionFilesManagement", "background_cache", "config_cache.json");
+
+			if (File.Exists(configCachePath))
+			{
+				try
+				{
+					string cachedJson = await System.Threading.Tasks.Task.Run(() => File.ReadAllText(configCachePath));
+					config = System.Text.Json.JsonSerializer.Deserialize<AutoPushBgConfig>(cachedJson);
+					Utils.Logger.Info("[MainWindow] AutoPush: Config loaded from disk cache");
+				}
+				catch (Exception ex)
+				{
+					Utils.Logger.Warn($"[MainWindow] AutoPush: Disk cache read failed: {ex.Message}");
+				}
+			}
+
+			// 后台从网络刷新（不阻塞主流程，但会更新缓存供下次使用）
+			try
+			{
+				string json = "";
+				try { json = await _bgHttpClient.GetStringAsync("https://nfm.ruibin-ningh.top/background/config.json"); }
+				catch { json = await _bgHttpClient.GetStringAsync("http://nfm.ruibin-ningh.top/background/config.json"); }
+
+				var networkConfig = System.Text.Json.JsonSerializer.Deserialize<AutoPushBgConfig>(json);
+				if (networkConfig != null)
+				{
+					config = networkConfig;
+					// 更新磁盘缓存
+					try
+					{
+						string dir = Path.GetDirectoryName(configCachePath)!;
+						if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+						await File.WriteAllTextAsync(configCachePath, json);
+					}
+					catch { }
+					Utils.Logger.Info($"[MainWindow] AutoPush: Config refreshed from network: default={networkConfig.@default?.name}");
+				}
+			}
+			catch (Exception ex)
+			{
+				Utils.Logger.Warn($"[MainWindow] AutoPush: Network config fetch failed (using cache): {ex.Message}");
+			}
+
+			return config;
+		}
+
+		/// <summary>
+		/// 读取上次已知的服务端默认背景名称（用于检测默认是否变更）
+		/// </summary>
+		private static async System.Threading.Tasks.Task<string> ReadLastKnownServerDefaultAsync()
+		{
+			try
+			{
+				string path = Path.Combine(
+					Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+					"NotionFilesManagement", "background_cache", "last_known_default.txt");
+				if (File.Exists(path))
+					return (await File.ReadAllTextAsync(path)).Trim();
+			}
+			catch { }
+			return "";
+		}
+
+		/// <summary>
+		/// 保存当前服务端默认背景名称到本地（供下次启动比较）
+		/// </summary>
+		private static async System.Threading.Tasks.Task SaveLastKnownServerDefaultAsync(string defaultName)
+		{
+			try
+			{
+				string dir = Path.Combine(
+					Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+					"NotionFilesManagement", "background_cache");
+				if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+				await File.WriteAllTextAsync(Path.Combine(dir, "last_known_default.txt"), defaultName);
+			}
+			catch (Exception ex)
+			{
+				Utils.Logger.Warn($"[MainWindow] AutoPush: Failed to save last known default: {ex.Message}");
 			}
 		}
 

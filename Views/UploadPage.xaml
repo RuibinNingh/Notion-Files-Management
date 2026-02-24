@@ -13,35 +13,49 @@
 	<Grid>
 		<!-- 主页面 -->
 		<Grid Margin="30">
-			<StackPanel>
-				<StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,20">
-					<ui:SymbolIcon Symbol="ArrowUpload24" FontSize="32" Margin="0,0,15,0"/>
-					<ui:TextBlock Text="文件上传 Upload"
+			<Grid.RowDefinitions>
+				<RowDefinition Height="Auto"/>
+				<RowDefinition Height="*"/>
+			</Grid.RowDefinitions>
+
+			<StackPanel Grid.Row="0" HorizontalAlignment="Left" Orientation="Horizontal" Margin="0,0,0,20">
+				<ui:SymbolIcon Symbol="ArrowUpload24" FontSize="32" Margin="0,0,15,0"/>
+				<ui:TextBlock Text="文件上传 Upload"
                                   FontTypography="Title"
                                   VerticalAlignment="Center"
                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
-				</StackPanel>
+			</StackPanel>
 
-				<ui:Card Padding="20">
-					<StackPanel>
-						<ui:Button x:Name="BtnOpenUploadDialog"
-								   Style="{StaticResource BluePrimaryUiButton}"
-								   Content="上传新文件"
-								   Icon="{ui:SymbolIcon Symbol=Add24}"
-								   Click="BtnOpenUploadDialog_Click" />
+			<ui:Card Grid.Row="1" Padding="20"
+					 VerticalAlignment="Stretch" VerticalContentAlignment="Stretch">
+				<Grid>
+					<Grid.RowDefinitions>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="Auto"/>
+						<RowDefinition Height="*"/>
+					</Grid.RowDefinitions>
 
-						<ui:TextBlock Text="活动上传任务"
+					<ui:Button x:Name="BtnOpenUploadDialog"
+							   Grid.Row="0"
+							   Style="{StaticResource BluePrimaryUiButton}"
+							   Content="上传新文件"
+							   Icon="{ui:SymbolIcon Symbol=Add24}"
+							   Click="BtnOpenUploadDialog_Click" />
+
+					<ui:TextBlock Grid.Row="1"
+                                      Text="活动上传任务"
                                       Appearance="Tertiary"
                                       Margin="0,20,0,8"/>
 
-						<Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+					<Border Grid.Row="2"
+							VerticalAlignment="Stretch"
+                                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="8">
 
-							<ListView x:Name="UploadTaskListView"
+						<ListView x:Name="UploadTaskListView"
                                       ItemsSource="{Binding DisplayUploads}"
                                       MinHeight="200"
-                                      MaxHeight="520"
                                       Background="Transparent"
                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                       HorizontalContentAlignment="Stretch"
@@ -187,9 +201,8 @@
 							</ListView>
 
 						</Border>
-					</StackPanel>
-				</ui:Card>
-			</StackPanel>
+				</Grid>
+			</ui:Card>
 		</Grid>
 
 		<!-- ========== 模态遮罩（保持不变） ========== -->
@@ -208,7 +221,7 @@
 							<ColumnDefinition Width="Auto"/>
 						</Grid.ColumnDefinitions>
 
-						<ui:TextBlock Text="选择文件"
+						<ui:TextBlock Text="选择文件 / 文件夹"
                                       Appearance="Tertiary"
                                       VerticalAlignment="Center"/>
 
@@ -223,6 +236,10 @@
                                        Style="{StaticResource BluePrimaryUiButton}"
                                        Margin="0,0,8,0"
                                        Click="SelectUploadFiles_Click"/>
+
+							<ui:Button Content="选择文件夹"
+                                       Margin="0,0,8,0"
+                                       Click="SelectUploadFolder_Click"/>
 
 							<ui:Button Content="清空"
                                        Click="ClearUploadFiles_Click"/>

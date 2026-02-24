@@ -148,6 +148,16 @@ namespace Notion_Files_Management.Views
         /// </summary>
         private DispatcherTimer? _autoUpdatePollTimer;
 
+        /// <summary>
+        /// 类级别保持用户选择的自动推送预设名称，防止 ConfigManager.Load() 覆盖
+        /// </summary>
+        private string? _selectedPresetName;
+
+        /// <summary>
+        /// 类级别保持用户选择的自动推送预设 src，防止 ConfigManager.Load() 覆盖
+        /// </summary>
+        private string? _selectedPresetSrc;
+
         public SettingsPage()
         {
             InitializeComponent();
@@ -1358,6 +1368,10 @@ del ""%~f0""
                     AutoPushCurrentName.Text = string.IsNullOrEmpty(apName) ? "（服务端默认）" : apName;
                 }
 
+                // 初始化类级别预设选择字段
+                _selectedPresetName = ConfigManager.Current?.AutoPushBackgroundName;
+                _selectedPresetSrc = ConfigManager.Current?.AutoPushBackgroundSrc;
+
                 // 根据选择的材质显示/隐藏对应面板
                 UpdateBackgroundPanelVisibility(material);
 
@@ -1427,7 +1441,11 @@ del ""%~f0""
                     if (t > 1.0) t = 1.0;
                     ConfigManager.Current.AutoPushTransparency = t;
                 }
-                // AutoPushBackgroundName / Src 在选择预设时已写入 ConfigManager.Current
+                // 显式回写类级别保持的预设选择（防止 ConfigManager.Load() 覆盖丢失）
+                if (_selectedPresetName != null)
+                    ConfigManager.Current.AutoPushBackgroundName = _selectedPresetName;
+                if (_selectedPresetSrc != null)
+                    ConfigManager.Current.AutoPushBackgroundSrc = _selectedPresetSrc;
             }
             catch (Exception ex)
             {
@@ -1580,12 +1598,14 @@ del ""%~f0""
                             {
                                 if (BtnSwitchPreset != null) BtnSwitchPreset.IsEnabled = true;
 
-                                string currentName = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+                                string currentName = _selectedPresetName ?? ConfigManager.Current?.AutoPushBackgroundName ?? "";
                                 if (string.IsNullOrEmpty(currentName) && cachedConfig.@default != null)
                                 {
                                     currentName = cachedConfig.@default.name;
                                     ConfigManager.Current.AutoPushBackgroundName = cachedConfig.@default.name;
                                     ConfigManager.Current.AutoPushBackgroundSrc = cachedConfig.@default.src;
+                                    _selectedPresetName = cachedConfig.@default.name;
+                                    _selectedPresetSrc = cachedConfig.@default.src;
                                 }
                                 if (AutoPushCurrentName != null)
                                 {
@@ -1696,12 +1716,14 @@ del ""%~f0""
                     if (BtnSwitchPreset != null) BtnSwitchPreset.IsEnabled = true;
 
                     // 如果当前没有选中名称，使用默认
-                    string currentName = ConfigManager.Current?.AutoPushBackgroundName ?? "";
+                    string currentName = _selectedPresetName ?? ConfigManager.Current?.AutoPushBackgroundName ?? "";
                     if (string.IsNullOrEmpty(currentName) && config.@default != null)
                     {
                         currentName = config.@default.name;
                         ConfigManager.Current.AutoPushBackgroundName = config.@default.name;
                         ConfigManager.Current.AutoPushBackgroundSrc = config.@default.src;
+                        _selectedPresetName = config.@default.name;
+                        _selectedPresetSrc = config.@default.src;
                     }
                     if (AutoPushCurrentName != null)
                     {
@@ -2000,9 +2022,13 @@ del ""%~f0""
             {
                 if (sender is Border card && card.Tag is BgPresetItem preset)
                 {
-                    // 更新配置
+                    // 更新配置（内存）
                     ConfigManager.Current.AutoPushBackgroundName = preset.name;
                     ConfigManager.Current.AutoPushBackgroundSrc = preset.src;
+
+                    // 同步到类级别字段，防止 ConfigManager.Load() 覆盖
+                    _selectedPresetName = preset.name;
+                    _selectedPresetSrc = preset.src;
 
                     if (AutoPushCurrentName != null)
                         AutoPushCurrentName.Text = preset.name;

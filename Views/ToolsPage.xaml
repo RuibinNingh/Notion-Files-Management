@@ -329,6 +329,13 @@
                                  Margin="0,6,0,0"
                                  Foreground="#FFEF5350"/>
 
+                    <!-- 探测线程数 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0" VerticalAlignment="Center">
+                        <ui:TextBlock Text="探测线程数：" VerticalAlignment="Center"/>
+                        <ui:TextBox x:Name="ProbeWorkersInput" Text="8" Width="60" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        <ui:TextBlock Text="（建议 4–16）" Appearance="Tertiary" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+
                     <ui:Button Content="取消" HorizontalAlignment="Right" Margin="0,20,0,0" Click="CloseModal_Click"/>
                 </StackPanel>
             </ui:Card>
@@ -344,12 +351,13 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel>
-                            <ui:TextBlock Text="正在探测文件大小" FontTypography="Subtitle" Margin="0,0,0,6"/>
+                            <ui:TextBlock x:Name="ProbeTitle" Text="正在扫描页面文件" FontTypography="Subtitle" Margin="0,0,0,6"/>
                             <ui:TextBlock x:Name="ProbeStatusText" Text="准备开始…" Appearance="Tertiary"/>
+                            <ui:TextBlock x:Name="ProbeElapsedText" Text="" Appearance="Tertiary" FontSize="12" Margin="0,2,0,0"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-                            <ui:Button Content="返回" Margin="0,0,8,0" Click="BackToStep1_Click"/>
+                            <ui:Button x:Name="BtnCancelQuery" Content="取消" Appearance="Danger" Margin="0,0,8,0" Click="CancelQuery_Click"/>
                             <ui:Button Content="关闭" Click="CloseModal_Click"/>
                         </StackPanel>
                     </Grid>
@@ -364,14 +372,21 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Padding="10"
-                            Margin="0,0,0,12">
+                            Margin="0,0,0,4">
                         <StackPanel Orientation="Horizontal">
                             <ui:TextBlock Text="文件数：" FontWeight="SemiBold"/>
                             <ui:TextBlock x:Name="StatFileCount" Text="0" Margin="6,0,18,0"/>
-                            <ui:TextBlock Text="总大小(GB)：" FontWeight="SemiBold"/>
+                            <ui:TextBlock Text="总大小：" FontWeight="SemiBold"/>
                             <ui:TextBlock x:Name="StatTotalGb" Text="0" Margin="6,0,0,0"/>
                         </StackPanel>
                     </Border>
+                    <ui:TextBlock x:Name="StatProbingHint"
+                                  Text="⏳ 文件大小探测中，当前总大小仅包含已探明的文件"
+                                  Appearance="Tertiary"
+                                  FontSize="12"
+                                  Foreground="#FFE0A030"
+                                  Margin="4,0,0,8"
+                                  Visibility="Collapsed"/>
 
                     <!-- 列表（用 ListView，避免 DataGrid 看不见问题） -->
                     <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
@@ -404,7 +419,7 @@
 
                                         <StackPanel Grid.Column="1" HorizontalAlignment="Right">
                                             <ui:TextBlock Text="{Binding SizeGbText}" HorizontalAlignment="Right"/>
-                                            <ui:TextBlock Text="GB"
+                                            <ui:TextBlock Text="{Binding SizeUnitText}"
                                                           Appearance="Tertiary"
                                                           FontSize="11"
                                                           HorizontalAlignment="Right"/>
@@ -863,6 +878,7 @@
                         <StackPanel>
                             <ui:TextBlock Text="页面大小更新进度" FontTypography="Subtitle" Margin="0,0,0,4"/>
                             <ui:TextBlock x:Name="SuProgressStatus" Text="准备中…" Appearance="Tertiary"/>
+                            <ui:TextBlock x:Name="SuElapsedText" Text="" Appearance="Tertiary" FontSize="12" Margin="0,2,0,0"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
@@ -878,34 +894,59 @@
                     <!-- 统计信息 -->
                     <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                             BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <!-- 页面级统计 -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
 
-                            <StackPanel>
-                                <ui:TextBlock Text="总计" Appearance="Tertiary" FontSize="12"/>
-                                <ui:TextBlock x:Name="SuStatTotal" Text="0" FontWeight="SemiBold" FontSize="18"/>
-                            </StackPanel>
+                                <StackPanel>
+                                    <ui:TextBlock Text="总计页面" Appearance="Tertiary" FontSize="12"/>
+                                    <ui:TextBlock x:Name="SuStatTotal" Text="0" FontWeight="SemiBold" FontSize="18"/>
+                                </StackPanel>
 
-                            <StackPanel Grid.Column="1">
-                                <ui:TextBlock Text="链接已查询" Appearance="Tertiary" FontSize="12"/>
-                                <ui:TextBlock x:Name="SuStatLinkQueried" Text="0" FontWeight="SemiBold" FontSize="18"/>
-                            </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <ui:TextBlock Text="链接已查询" Appearance="Tertiary" FontSize="12"/>
+                                    <ui:TextBlock x:Name="SuStatLinkQueried" Text="0" FontWeight="SemiBold" FontSize="18"/>
+                                </StackPanel>
 
-                            <StackPanel Grid.Column="2">
-                                <ui:TextBlock Text="已更新" Appearance="Tertiary" FontSize="12"/>
-                                <ui:TextBlock x:Name="SuStatUpdated" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FF4CAF50"/>
-                            </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <ui:TextBlock Text="已更新" Appearance="Tertiary" FontSize="12"/>
+                                    <ui:TextBlock x:Name="SuStatUpdated" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FF4CAF50"/>
+                                </StackPanel>
 
-                            <StackPanel Grid.Column="3">
-                                <ui:TextBlock Text="失败" Appearance="Tertiary" FontSize="12"/>
-                                <ui:TextBlock x:Name="SuStatFailed" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FFEF5350"/>
-                            </StackPanel>
-                        </Grid>
+                                <StackPanel Grid.Column="3">
+                                    <ui:TextBlock Text="失败" Appearance="Tertiary" FontSize="12"/>
+                                    <ui:TextBlock x:Name="SuStatFailed" Text="0" FontWeight="SemiBold" FontSize="18" Foreground="#FFEF5350"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- 文件级统计（流式） -->
+                            <Border BorderThickness="0,1,0,0"
+                                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                    Margin="0,8,0,0" Padding="0,8,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel>
+                                        <ui:TextBlock Text="文件发现" Appearance="Tertiary" FontSize="12"/>
+                                        <ui:TextBlock x:Name="SuStatFilesDiscovered" Text="0" FontWeight="SemiBold" FontSize="16"/>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1">
+                                        <ui:TextBlock Text="文件已探测" Appearance="Tertiary" FontSize="12"/>
+                                        <ui:TextBlock x:Name="SuStatFilesProbed" Text="0" FontWeight="SemiBold" FontSize="16"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
                     </Border>
 
                     <!-- 错误列表 -->
