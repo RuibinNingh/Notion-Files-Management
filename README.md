@@ -51,32 +51,9 @@ Notion 的 Web 界面不支持批量下载文件，下载链接也会在一小�
 
 ## 快速开始
 
-### 第一步 — 创建 Notion Integration
+请见我的博客:
 
-1. 打开 [notion.so/my-integrations](https://www.notion.so/my-integrations)，点击 **New integration**
-2. 填写名称，选择关联的工作区，保存
-3. 复制页面上的 **Internal Integration Secret**（以 `secret_` 开头）
-
-### 第二步 — 授权目标页面
-
-在你要操作的 Notion 页面右上角，点击 **···** → **Connections** → 选择刚才创建的 Integration。
-
-> 子页面会自动继承父页面的授权，通常只需在顶层页面操作一次。
-
-### 第三步 — 配置应用
-
-打开应用，进入 **设置**，粘贴 Token，点击 **保存配置**。
-
-### 第四步 — 找到页面 ID
-
-从浏览器地址栏复制页面链接，直接粘贴到应用的输入框即可，应用会自动解析。
-
-```
-https://www.notion.so/myworkspace/My-Page-2fc644ead11a80109665e5fbaba0fd58
-                                             ↑ 末尾这段 32 位字符就是页面 ID
-```
-
----
+[Notion-Files-Management - 星尘客栈](https://www.ruibin-ningh.top/Notion-Files-Management)
 
 ## 下载
 
