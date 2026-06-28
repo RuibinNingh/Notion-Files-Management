@@ -1,7 +1,23 @@
 bin/
 obj/
+.vs/
+.DS_Store
 PythonEnv/
 Scripts/__pycache__/
 Scripts/.env
 downloads/
-AI/
+
+# web refactor (v2)
+backend/data/
+backend/**/__pycache__/
+backend/.venv/
+backend/.pytest_cache/
+.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-logs/
+frontend/*.tsbuildinfo
+**/*.pyc
+.pytest_cache/
+.playwright-mcp/
+tasks-*.png

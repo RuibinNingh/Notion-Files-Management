@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notion Files Management</title>
+    <script>
+      // 防止主题闪烁：在应用挂载前根据本地存储/系统偏好决定深浅色
+      (function () {
+        try {
+          var saved = localStorage.getItem('nfm-theme');
+          var dark = saved ? saved === 'dark'
+            : !window.matchMedia || !window.matchMedia('(prefers-color-scheme: light)').matches;
+          if (dark) document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

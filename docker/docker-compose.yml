@@ -1,0 +1,21 @@
+services:
+  nfm:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: notion-files-management:latest
+    container_name: nfm
+    ports:
+      - "8765:8765"
+    volumes:
+      - nfm-data:/data
+    environment:
+      # 可选：固定访问密码；不设则首次启动随机生成并打印到容器日志
+      NFM_PASSWORD: ${NFM_PASSWORD:-}
+      # 可选：预设 Notion Integration Token
+      NFM_NOTION_TOKEN: ${NFM_NOTION_TOKEN:-}
+      NFM_NOTION_BASE_URL: ${NFM_NOTION_BASE_URL:-https://api.notion.com/v1}
+    restart: unless-stopped
+
+volumes:
+  nfm-data:

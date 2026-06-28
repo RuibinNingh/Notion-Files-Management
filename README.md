@@ -6,78 +6,151 @@
 
 <br />
 
-# Notion Files Management
+# Notion Files Management (Web)
 
-**把 Notion 里的文件，真正变成你的文件。**
+**把 Notion 里的文件，真正变成你的文件。** —— Web 版重构。
 
-批量下载 · 批量上传 · 页面工具箱 · 自动更新
+批量下载 · 批量上传 · 页面工具箱 · 自动更新，全部跑在无头服务器上，浏览器访问即用。
 
-<br />
-
-[![Windows](https://img.shields.io/badge/Windows_10%2F11-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/RuibinNingh/Notion-Files-Management/releases)
+[![Beta](https://img.shields.io/badge/渠道-Beta-f59e0b?style=flat-square)](#)
 [![Release](https://img.shields.io/github/v/release/RuibinNingh/Notion-Files-Management?style=flat-square&color=22c55e&label=最新版本)](https://github.com/RuibinNingh/Notion-Files-Management/releases)
 [![License](https://img.shields.io/badge/License-MIT-f59e0b?style=flat-square)](LICENSE)
 
-<br />
+> ⚠️ **当前为 Beta 预发布版本。** 原桌面版（WPF/C#）已停止维护，Web 版重构进行中，桌面版暂未上线。
 
 </div>
 
----
-
-## 为什么需要它？
-
-Notion 的 Web 界面不支持批量下载文件，下载链接也会在一小时后过期。这个工具解决了这些问题：
-
-- 一次性取回页面里所有图片、视频、音频、PDF
-- 把本地素材批量推送到 Notion，自动匹配正确的块类型
-- 统计页面体积、迁移数据库、批量处理标题——常见繁琐操作全部自动化
+> v2.0 是从原 WPF/C# 桌面版彻底重构而来：移除 C# 前端与 pythonnet 互操作，保留并复用原有 Python 业务逻辑，以 **FastAPI + Vue 3** 重建为可部署在无头服务器上的 Web 应用。
 
 ---
 
-## 功能一览
+## 架构
 
-| 功能 | 说明 |
-|------|------|
-| **📥 批量下载** | 获取页面全部文件，探测大小，勾选下载；支持 file / image / pdf / audio / video 及页面封面、图标 |
-| **📤 批量上传** | 拖入本地文件即可上传，自动识别类型挂载为对应 Notion 块（图片→`image`，视频→`video`，以此类推） |
-| **🔗 链接自动刷新** | 下载途中遇到过期链接，后台静默刷新后继续，无需任何手动操作 |
-| **📊 页面大小查询** | 逐文件探测并汇总页面总占用，实时显示进度 |
-| **🔄 页面大小自动更新** | 批量扫描数据库，将每个页面的文件总大小写入指定数字属性 |
-| **↔️ 数据源迁移** | 按属性映射，把一个数据库的属性值批量同步到另一个 |
-| **✂️ 批量去除后缀** | 一键去除数据库所有页面标题的指定后缀 |
-| **🎨 外观自定义** | 主题色、云母 / 亚克力 / 自定义壁纸背景，支持图片和视频 |
+```
+notion-files-management/
+├── backend/                 # FastAPI 后端
+│   ├── app/
+│   │   ├── main.py          # 应用入口：SessionMiddleware / 路由聚合 / 缓存清理线程 / 前端静态托管
+│   │   ├── config.py        # 配置：环境变量 + config.json（对应原 AppConfig.cs）
+│   │   ├── auth.py(deps)    # 单一共享密码 + 签名 Session Cookie
+│   │   ├── taskregistry.py  # 任务注册表 + SSE 推送（替代原 DispatcherTimer 轮询）
+│   │   ├── notion_facade.py # Notion 业务 facade（替代原 main.py 的 Main 类，按任务隔离实例）
+│   │   ├── staging.py       # 下载暂存 / zip 打包 / 缓存清理 / 日志列表
+│   │   ├── app_version.py
+│   │   └── routers/         # auth settings version notices scan download upload tools tasks system
+│   ├── scripts/             # 复用原 Python 业务逻辑（notion/download/upload/migrate/...）+ scan.py
+│   └── requirements.txt
+├── frontend/                # Vue 3 + Vite + TS + Element Plus
+│   └── src/{views,layouts,stores,composables,api,utils}/
+├── docker/                  # Dockerfile + docker-compose.yml
+└── deploy/                  # PyInstaller spec + systemd unit + run.py
+```
+
+**实时进度**：长任务（扫描/下载/上传/迁移）通过 **SSE** 推送，前端 `EventSource` 订阅。
+**鉴权**：单一共享密码（签名 Session Cookie），保护 Notion Token 与文件操作。
+**部署**：Docker 单容器 或 PyInstaller 单文件 或 systemd + venv。
+
+## 端口约定
+
+以后统一使用这两个端口：
+
+| 场景 | 前端 | 后端 / API | 说明 |
+|------|------|------------|------|
+| 本地开发 | `5173` | `8765` | Vite 开发服务器把 `/api` 代理到 `127.0.0.1:8765` |
+| 单容器 / systemd / PyInstaller | — | `8765` | 后端直接托管 `frontend/dist` 静态文件 |
+
+> 旧端口口径已废弃。
 
 ---
 
 ## 快速开始
 
-请见我的博客:
+### Docker（推荐）
 
-[Notion-Files-Management - 星尘客栈](https://www.ruibin-ningh.top/Notion-Files-Management)
+```bash
+# 构建并启动（首次会构建前端 + 安装后端依赖）
+docker compose -f docker/docker-compose.yml up -d --build
 
-## 下载
+# 查看随机生成的初始密码
+docker logs nfm | grep "初始登录密码"
+```
 
-前往 [Releases](https://github.com/RuibinNingh/Notion-Files-Management/releases) 下载最新版本。
+浏览器访问 `http://<服务器>:8765`，用日志里的密码登录，或在 `.env` 里设 `NFM_PASSWORD=你的密码` 固定密码。
 
-解压后直接运行 `Notion-Files-Management.exe`，无需安装 .NET 或 Python。
+### 本地开发
 
-**系统要求**：Windows 10 / 11，64 位
+```bash
+# 后端
+python -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
+.venv/bin/uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8765   # http://127.0.0.1:8765
+
+# 前端（另开终端）
+cd frontend && npm install && npm run dev                    # http://127.0.0.1:5173（代理 /api → :8765）
+```
+
+首次启动若未设 `NFM_PASSWORD`，控制台会打印随机密码。
 
 ---
 
-## 常见问题
+## 配置
 
-**提示「没有权限」**
-> 确认 Integration 已添加到目标页面（见「第二步」）。子页面需要从父页面继承，或单独添加。
+通过环境变量（部署）或设置页（运行时）配置，持久化到 `${NFM_DATA_DIR}/config.json`：
 
-**文件下载到一半失败了**
-> Notion 的下载链接有效期约一小时。应用会在后台自动刷新过期链接并重试，通常无需干预。如持续失败，请检查网络连接。
+| 环境变量 | 默认 | 说明 |
+|---------|------|------|
+| `NFM_DATA_DIR` | `~/.notion-files-management` | 配置 / 暂存 / 日志 / 缓存根目录（Docker 内为 `/data`）|
+| `NFM_PASSWORD` | （随机生成）| 访问密码，未设则首次启动随机生成并打印 |
+| `NFM_NOTION_TOKEN` | （设置页填）| Notion Integration Token |
+| `NFM_NOTION_BASE_URL` | `https://api.notion.com/v1` | Notion API 地址 |
+| `NFM_MAX_DOWNLOAD_WORKERS` | `3` | 下载并发 |
+| `NFM_MAX_UPLOAD_WORKERS` | `3` | 上传并发 |
+| `NFM_FRONTEND_DIST` | `../frontend/dist` | 前端构建产物目录（PyInstaller / 自定义部署用）|
 
-**上传速度很慢**
-> Notion API 有速率限制（约 3 次/秒）。应用已内置限流策略，批量上传大量文件时速度受此约束，属正常现象。
+Notion Token 也可登录后在 **设置** 页填写保存。
 
-**如何查看运行日志**
-> 打开 **工具箱** → **查看日志文件**，可直接在文件资源管理器中打开日志目录（位于 `%LocalAppData%\NotionFilesManagement\logs\`）。
+---
+
+## 功能
+
+| 页面 | 功能 |
+|------|------|
+| **主页** | 版本信息、官网/GitHub/赞助、版本更新检查 |
+| **公告** | 卡片流式 + Markdown 渲染（markdown-it），已读管理 |
+| **上传** | 多文件 / 文件夹上传（保留目录结构，子文件夹→子页面），SSE 进度 |
+| **下载** | 流式扫描页面文件 + 实时大小探测 → 勾选 → 暂存下载 → 单文件 / ZIP 打包下载，链接过期自动刷新 |
+| **工具箱** | 页面大小查询 / 页面大小自动更新 / 数据源迁移 / 批量去除后缀 |
+| **设置** | Token / 并发 / 主题色 / 密码 / 版本检查 / 清缓存 / 重启 |
+
+---
+
+## 独立部署（无 Docker）
+
+```bash
+# 1. 构建前端
+cd frontend && npm ci && npm run build && cd ..
+
+# 2. 方式 A：venv + systemd
+python -m venv /opt/nfm/venv
+/opt/nfm/venv/bin/pip install -r backend/requirements.txt
+sudo cp -r backend /opt/nfm/backend
+sudo cp -r frontend/dist /opt/nfm/frontend/dist
+sudo install -d /var/lib/nfm
+sudo cp deploy/systemd/nfm.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now nfm
+# 反向代理（nginx）建议：把 / 转发到 127.0.0.1:8765 并配置 TLS
+
+# 2. 方式 B：PyInstaller 单文件
+.venv/bin/pip install pyinstaller
+.venv/bin/pyinstaller deploy/nfm.spec --noconfirm
+sudo install -d /var/lib/nfm && NFM_DATA_DIR=/var/lib/nfm ./dist/nfm
+```
+
+---
+
+## 系统要求
+
+- 服务端：Linux x64（Docker / Python 3.11+ / Node 20+ 用于构建前端）
+- 客户端：任意现代浏览器
 
 ---
 

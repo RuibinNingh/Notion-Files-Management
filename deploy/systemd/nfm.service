@@ -1,0 +1,26 @@
+[Unit]
+Description=Notion Files Management (web)
+After=network.target
+
+[Service]
+Type=simple
+User=nfm
+Group=nfm
+WorkingDirectory=/opt/nfm/backend
+Environment=NFM_DATA_DIR=/var/lib/nfm
+Environment=NFM_HOST=127.0.0.1
+Environment=NFM_PORT=8765
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/nfm/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=3
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nfm
+
+[Install]
+WantedBy=multi-user.target
