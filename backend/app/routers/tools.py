@@ -1,7 +1,7 @@
 """工具箱路由：页面大小更新/查询、数据源迁移、批量去后缀、属性查询。"""
 import anyio
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..notion_facade import facade
 from ..deps import require_auth
@@ -10,7 +10,9 @@ router = APIRouter(prefix="/api/tools", tags=["tools"], dependencies=[Depends(re
 
 
 class DsIn(BaseModel):
-    data_source_id: str
+    model_config = ConfigDict(extra="forbid")
+
+    data_source_id: str = Field(min_length=1, max_length=128)
 
 
 @router.post("/properties")
@@ -20,8 +22,10 @@ async def properties(body: DsIn):
 
 # ---------- 页面大小自动更新 ----------
 class PageSizeScanIn(BaseModel):
-    data_source_id: str
-    size_property_name: str
+    model_config = ConfigDict(extra="forbid")
+
+    data_source_id: str = Field(min_length=1, max_length=128)
+    size_property_name: str = Field(min_length=1, max_length=256)
 
 
 @router.post("/page-size/scan")
@@ -32,11 +36,13 @@ async def page_size_scan(body: PageSizeScanIn):
 
 
 class PageSizeStartIn(BaseModel):
-    data_source_id: str
-    size_property_name: str
-    page_ids: list[str]
-    link_workers: int = 3
-    size_workers: int = 5
+    model_config = ConfigDict(extra="forbid")
+
+    data_source_id: str = Field(min_length=1, max_length=128)
+    size_property_name: str = Field(min_length=1, max_length=256)
+    page_ids: list[str] = Field(min_length=1, max_length=5000)
+    link_workers: int = Field(default=3, ge=1, le=8)
+    size_workers: int = Field(default=5, ge=1, le=16)
 
 
 @router.post("/page-size/start")
@@ -50,8 +56,10 @@ async def page_size_start(body: PageSizeStartIn):
 
 # ---------- 数据源迁移 ----------
 class MigratePropsIn(BaseModel):
-    source_id: str
-    target_id: str
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(min_length=1, max_length=128)
+    target_id: str = Field(min_length=1, max_length=128)
 
 
 @router.post("/migrate/props")
@@ -62,10 +70,12 @@ async def migrate_props(body: MigratePropsIn):
 
 
 class MigrateStartIn(BaseModel):
-    source_id: str
-    target_id: str
-    mapping: dict
-    max_workers: int = 3
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(min_length=1, max_length=128)
+    target_id: str = Field(min_length=1, max_length=128)
+    mapping: dict[str, str] = Field(min_length=1, max_length=500)
+    max_workers: int = Field(default=3, ge=1, le=4)
 
 
 @router.post("/migrate/start")
@@ -76,9 +86,11 @@ async def migrate_start(body: MigrateStartIn):
 
 # ---------- 批量去后缀 ----------
 class SuffixStartIn(BaseModel):
-    data_source_id: str
-    suffix: str
-    max_workers: int = 3
+    model_config = ConfigDict(extra="forbid")
+
+    data_source_id: str = Field(min_length=1, max_length=128)
+    suffix: str = Field(min_length=1, max_length=256)
+    max_workers: int = Field(default=3, ge=1, le=4)
 
 
 @router.post("/suffix/start")

@@ -2,6 +2,7 @@ import requests
 import time
 from datetime import datetime, timezone
 from logger import PythonLogger
+from url_security import safe_requests_head
 
 class Notion:
     def __init__(self, token, version="2025-09-03", url="https://api.notion.com/v1"):
@@ -805,7 +806,7 @@ class Notion:
         """探测远程文件大小，返回 MB"""
         try:
             # 使用 stream=True 或 head 请求来避免下载文件体
-            response = requests.head(url, allow_redirects=True, timeout=5)
+            response = safe_requests_head(url, timeout=5)
             size_bytes = response.headers.get('content-length')
             if size_bytes:
                 return round(int(size_bytes) / (1024 * 1024), 2)

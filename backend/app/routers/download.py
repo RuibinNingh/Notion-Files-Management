@@ -3,25 +3,47 @@ import os
 import anyio
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..notion_facade import facade
 from ..taskregistry import registry
 from ..staging import new_task_dir, zip_dir
 from ..deps import require_auth
+from url_security import UnsafeUrlError, assert_safe_remote_url
 
 router = APIRouter(prefix="/api/download", tags=["download"], dependencies=[Depends(require_auth)])
 
 
+class DownloadItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    url: str = Field(min_length=1, max_length=8192)
+    real_name: str | None = Field(default=None, max_length=512)
+    name: str | None = Field(default=None, max_length=512)
+    size_mb: float | None = Field(default=0.0, ge=0)
+    block_id: str | None = Field(default=None, max_length=128)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        try:
+            assert_safe_remote_url(v)
+        except UnsafeUrlError as e:
+            raise ValueError(str(e)) from e
+        return v
+
+
 class StartIn(BaseModel):
-    items: list[dict]
-    page_id: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[DownloadItem] = Field(min_length=1, max_length=1000)
+    page_id: str | None = Field(default=None, max_length=128)
 
 
 @router.post("/start")
 async def start(body: StartIn):
     save_dir = new_task_dir("download")
-    h = facade.start_download(body.items, save_dir)
+    h = facade.start_download([it.model_dump() for it in body.items], save_dir)
     h.meta["dir"] = save_dir
     return {"task_id": h.task_id}
 

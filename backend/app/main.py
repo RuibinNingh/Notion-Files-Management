@@ -55,12 +55,21 @@ from .staging import cleanup_old_staging  # noqa: E402
 from .taskregistry import registry  # noqa: E402
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+
 app = FastAPI(title="Notion Files Management", version="2.0.0")
 app.add_middleware(
     SessionMiddleware,
     secret_key=config["secret_key"],
+    session_cookie="nfm_session",
     same_site="lax",
-    https_only=False,
+    https_only=_env_bool("NFM_SESSION_HTTPS_ONLY", False),
+    max_age=24 * 60 * 60,
 )
 
 app.include_router(auth.router)

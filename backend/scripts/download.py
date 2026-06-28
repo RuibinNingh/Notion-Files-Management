@@ -6,6 +6,7 @@ import time
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from logger import PythonLogger
+from url_security import UnsafeUrlError, assert_safe_remote_url, safe_urlopen, safe_urlretrieve
 
 
 # HTTP 状态码：表示链接过期或无权访问（需要刷新 URL）
@@ -281,7 +282,7 @@ class Download:
     def _probe_head_content_length(self, url: str, timeout: float) -> int | None:
         req = urllib.request.Request(url, method="HEAD")
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with safe_urlopen(req, timeout=timeout) as resp:
                 cl = resp.headers.get("Content-Length")
                 if cl:
                     try:
@@ -295,7 +296,7 @@ class Download:
     def _probe_range_total_size(self, url: str, timeout: float) -> int | None:
         req = urllib.request.Request(url, method="GET", headers={"Range": "bytes=0-0"})
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with safe_urlopen(req, timeout=timeout) as resp:
                 cr = resp.headers.get("Content-Range")
                 # "bytes 0-0/123456789"
                 if cr and "/" in cr:
@@ -319,6 +320,31 @@ class Download:
             返回新 URL 字符串，或 None 表示无法刷新。
         max_url_refresh: 最大 URL 刷新次数（默认 2 次）
         """
+        try:
+            assert_safe_remote_url(url)
+        except UnsafeUrlError as e:
+            with self.lock:
+                self.status_map[url] = {
+                    "progress": 0,
+                    "downloaded_mb": 0.0,
+                    "total_mb": size,
+                    "status": "error",
+                    "save_name": save_name,
+                    "speed_mb_s": 0.0,
+                    "usedTime": 0,
+                    "ETA": 0,
+                    "error": f"unsafe_url: {e}",
+                    "submitted_at": time.time(),
+                    "started_at": time.time(),
+                    "first_progress_at": None,
+                    "completed_at": time.time(),
+                    "mode": "single",
+                    "range_supported": None,
+                    "range_chunks": 0,
+                    "range_reason": "unsafe_url",
+                }
+            return {"msg": "Unsafe URL rejected", "url": url, "error": str(e)}
+
         with self.lock:
             if url in self.status_map and self.status_map[url]["status"] in ["waiting", "downloading", "completed"]:
                 return {"msg": "Task already exists", "status": self.status_map[url]["status"]}
@@ -506,7 +532,7 @@ class Download:
                         f"reason={range_reason}"
                     )
 
-            urllib.request.urlretrieve(current_url, save_name, reporthook=report)
+            safe_urlretrieve(current_url, save_name, reporthook=report)
 
             end_mono = time.monotonic()
             with self.lock:
@@ -693,7 +719,7 @@ class Download:
                 headers={"Range": f"bytes={start}-{end}"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with safe_urlopen(req, timeout=30) as resp:
                     status = getattr(resp, "status", resp.getcode())
                     if status != 206:
                         raise RuntimeError(f"range_status_{status}")

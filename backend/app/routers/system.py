@@ -3,6 +3,7 @@ import sys
 import threading
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..staging import (
     list_logs, clear_all_cache, cleanup_old_staging,
@@ -14,6 +15,12 @@ from ..config import config
 from ..deps import require_auth
 
 router = APIRouter(prefix="/api", tags=["system"], dependencies=[Depends(require_auth)])
+
+
+class LogsZipIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    names: list[str] = Field(min_length=1, max_length=100)
 
 
 @router.get("/logs")
@@ -43,14 +50,11 @@ async def log_download(name: str):
 
 
 @router.post("/logs/download")
-async def logs_zip(body: dict):
+async def logs_zip(body: LogsZipIn):
     """多选日志打包成 zip 下载。body: {"names": ["a.logs", "b.logs"]}"""
-    names = body.get("names") if isinstance(body, dict) else None
-    if not isinstance(names, list) or not names:
-        raise HTTPException(status_code=400, detail="未选择日志文件")
     # 去重，保序
     seen = set()
-    names = [n for n in names if n and not (n in seen or seen.add(n))]
+    names = [n for n in body.names if n and not (n in seen or seen.add(n))]
     zp = zip_logs(names)
     return FileResponse(zp, filename="nfm-logs.zip", media_type="application/zip")
 

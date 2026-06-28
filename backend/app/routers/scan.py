@@ -1,6 +1,6 @@
 """流式扫描路由：下载页与工具箱「查询单个页面」共用。"""
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..notion_facade import facade
 from ..deps import require_auth
@@ -9,8 +9,10 @@ router = APIRouter(prefix="/api/scan", tags=["scan"], dependencies=[Depends(requ
 
 
 class ScanIn(BaseModel):
-    page_id: str
-    probe_workers: int = 8
+    model_config = ConfigDict(extra="forbid")
+
+    page_id: str = Field(min_length=1, max_length=128)
+    probe_workers: int = Field(default=8, ge=1, le=16)
 
 
 @router.post("")

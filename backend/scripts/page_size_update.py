@@ -36,6 +36,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from logger import PythonLogger
 from notion import Notion
+from url_security import safe_requests_get, safe_requests_head
 
 
 class PageSizeUpdateTask:
@@ -546,7 +547,7 @@ class PageSizeUpdateTask:
     def _probe_head_content_length(url: str, timeout: float = 10) -> int | None:
         """HEAD 请求获取 Content-Length，返回字节数或 None。"""
         try:
-            response = requests.head(url, allow_redirects=True, timeout=timeout)
+            response = safe_requests_head(url, timeout=timeout)
             # 检查 URL 过期 (401/403/410)
             if response.status_code in (401, 403, 410):
                 return None
@@ -564,10 +565,9 @@ class PageSizeUpdateTask:
     def _probe_range_total_size(url: str, timeout: float = 10) -> int | None:
         """Range GET (bytes=0-0) 解析 Content-Range 获取总大小，返回字节数或 None。"""
         try:
-            response = requests.get(
+            response = safe_requests_get(
                 url,
                 headers={"Range": "bytes=0-0"},
-                allow_redirects=True,
                 timeout=timeout,
                 stream=True,
             )
