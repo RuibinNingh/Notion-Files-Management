@@ -389,3 +389,14 @@ logging.basicConfig(...)            # C# 风格的
 **原因**：这是文档站开发服务器链路的问题，不是 NFM FastAPI 后端，也不是静态文档构建产物。`npm run docs:build` 生成的静态站点不需要暴露 Vite dev server。
 
 **解决**：`npm run docs:dev` 只用于本机或可信内网预览，不要直接暴露到公网。发布文档时使用 `npm run docs:build` 的静态产物（`docs/.vitepress/dist/`），由 GitHub Pages、Nginx、Caddy 等静态托管。
+
+---
+
+## 29. PyInstaller spec 内路径不要写相对仓库根的 `deploy/...`
+
+**现象**：GitHub Actions 执行 `pyinstaller deploy/nfm.spec --noconfirm --clean` 时失败：`script '...\deploy\deploy\windows_entry.py' not found`。
+
+**原因**：PyInstaller 会按 spec 文件所在目录解析 spec 内的相对脚本路径。`deploy/nfm.spec` 里如果写 `["deploy/windows_entry.py"]`，CI 中会被拼成 `deploy/deploy/windows_entry.py`。
+
+**解决**：在 `deploy/nfm.spec` 内用 `PROJECT_ROOT = Path(__file__).resolve().parent.parent` 计算项目根目录，再把 `Analysis` 的脚本、`pathex` 和 `datas` 都改成基于 `PROJECT_ROOT` 的绝对路径。不要把 `deploy/windows_entry.py`、`backend`、`frontend/dist` 这类路径裸写进 spec。
+

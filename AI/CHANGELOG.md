@@ -9,6 +9,7 @@
 - 新增 `.github/workflows/windows-exe.yml`：支持手动触发选择 `Beta` / `Status` 渠道，在 `windows-latest` 上构建前端、安装后端依赖和 PyInstaller，打包真正可运行的 Windows exe。
 - 推送 `v*` tag 时自动打包并上传 workflow artifact；tag 运行还会把 exe 上传到对应 GitHub Release asset。Linux 本机不再尝试交叉编译 Windows exe。
 - 更新 `AI/COMMANDS.md`、`AI/OVERVIEW.md`、`AI/ARCHITECTURE.md`，记录 Windows exe 自动化打包流程、触发方式和 Linux 不能直接产出 Windows exe 的限制。
+- 修复 `deploy/nfm.spec` 在 CI 中把 `deploy/windows_entry.py` 误解析为 `deploy/deploy/windows_entry.py` 的路径问题：spec 内统一用 `Path(__file__).resolve().parent.parent` 计算项目根目录。
 
 ## v2.0.0-Beta-6(2026-06-29)
 

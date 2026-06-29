@@ -7,10 +7,16 @@
 """
 import os
 import sys
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-sys.path.insert(0, "backend")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_DIR = PROJECT_ROOT / "backend"
+SCRIPTS_DIR = BACKEND_DIR / "scripts"
+FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+
+sys.path.insert(0, str(BACKEND_DIR))
 from app.app_version import version_for_channel  # noqa: E402
 
 block_cipher = None
@@ -26,7 +32,7 @@ for pkg in ("fastapi", "uvicorn", "starlette", "pydantic", "pydantic_core",
     binaries += b
 
 # 前端构建产物作为数据文件
-datas += [("frontend/dist", "frontend/dist")]
+datas += [(str(FRONTEND_DIST), "frontend/dist")]
 
 hiddenimports = []
 hiddenimports += collect_submodules("app")
@@ -34,8 +40,8 @@ hiddenimports += ["notion", "download", "upload", "migrate", "batch_rename",
                   "page_size_update", "logger", "scan"]
 
 a = Analysis(
-    ["deploy/windows_entry.py"],
-    pathex=["backend", "backend/scripts"],
+    [str(PROJECT_ROOT / "deploy" / "windows_entry.py")],
+    pathex=[str(BACKEND_DIR), str(SCRIPTS_DIR)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
