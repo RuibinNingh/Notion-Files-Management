@@ -99,7 +99,7 @@ import { useConfigStore } from '@/stores/config'
 import { useTasksStore } from '@/stores/tasks'
 
 const versionInfo = ref<any>(null)
-const localVersion = computed(() => versionInfo.value?.local || '2.0.0-Status')
+const localVersion = computed(() => versionInfo.value?.local || '2.0.0-Beta')
 const router = useRouter()
 const config = useConfigStore()
 const tasks = useTasksStore()

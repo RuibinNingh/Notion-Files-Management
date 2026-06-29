@@ -1,0 +1,91 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel'
+        required: true
+        default: 'Beta'
+        type: choice
+        options:
+          - Beta
+          - Status
+      upload_release:
+        description: 'Upload exe to GitHub Release when running on a tag'
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    env:
+      NFM_CHANNEL: ${{ github.event.inputs.channel || 'Beta' }}
+      NFM_BUILD_TIME: ${{ github.run_id }}-${{ github.run_attempt }}
+      NFM_RELEASE_TIME: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build Windows exe
+        run: pyinstaller deploy/nfm.spec --noconfirm --clean
+
+      - name: Locate artifact
+        id: artifact
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path dist -Filter 'NOTION_FILES_MANAGEMENT_v*.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'No Windows exe found in dist/' }
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          Write-Host "Built $($exe.FullName) ($($exe.Length) bytes)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.path }}
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || github.event.inputs.upload_release == 'true')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.artifact.outputs.path }}
+          generate_release_notes: true

@@ -10,11 +10,13 @@ Windows 产物命名规则：
 NOTION_FILES_MANAGEMENT_v<版本>-<渠道>.exe
 ```
 
+其中 `<版本>` 为 `version_for_channel()` 输出的 `2.0.0-Beta` / `2.0.0-Status`（不带文档修订号 N），`<渠道>` 为 `Beta` 或 `Status`。文档站使用 `v2.0.0-Beta-N` 协议记录迭代，N 不进入 exe 文件名。
+
 示例：
 
 ```text
-NOTION_FILES_MANAGEMENT_v2.2.1-Beta.exe
-NOTION_FILES_MANAGEMENT_v2.2.1-Status.exe
+NOTION_FILES_MANAGEMENT_v2.0.0-Beta.exe
+NOTION_FILES_MANAGEMENT_v2.0.0-Status.exe
 ```
 
 文件名使用下划线，不包含空格，方便脚本、快捷方式和自动化工具调用。

@@ -2,7 +2,15 @@
 
 > 记录重构过程中已发生的重要变更。新增条目请加到最上面。
 
-## v2.2.2-Status(2026-06-29)
+## v2.0.0-Beta-7(2026-06-29)
+
+### 发布自动化
+
+- 新增 `.github/workflows/windows-exe.yml`：支持手动触发选择 `Beta` / `Status` 渠道，在 `windows-latest` 上构建前端、安装后端依赖和 PyInstaller，打包真正可运行的 Windows exe。
+- 推送 `v*` tag 时自动打包并上传 workflow artifact；tag 运行还会把 exe 上传到对应 GitHub Release asset。Linux 本机不再尝试交叉编译 Windows exe。
+- 更新 `AI/COMMANDS.md`、`AI/OVERVIEW.md`、`AI/ARCHITECTURE.md`，记录 Windows exe 自动化打包流程、触发方式和 Linux 不能直接产出 Windows exe 的限制。
+
+## v2.0.0-Beta-6(2026-06-29)
 
 ### 文档站
 
@@ -11,7 +19,7 @@
 - 文档站默认使用统一后端端口 `18765`，导航覆盖用户指南、部署、开放 API、版本记录。
 - 新增 `.github/workflows/docs.yml`，推送 `main` 后通过 GitHub Actions 构建并发布 VitePress 到 GitHub Pages；自定义域名为 `nfm-docs.ruibin-ningh.top`，构建时设置 `DOCS_BASE=/`，并通过 `docs/public/CNAME` 写入 Pages 域名。
 
-## v2.2.1-Status(2026-06-29)
+## v2.0.0-Beta-5(2026-06-29)
 
 ### Windows 迁移包
 
@@ -37,7 +45,7 @@
 
 - 更新 `AI/ARCHITECTURE.md`、`AI/COMMANDS.md`、`AI/GOTCHAS.md`(第 24-27 条)、`AI/SECURITY_AUDIT.md`、`CLAUDE.md`：明确「长期 API Key 永远只走 Bearer；URL query 只允许短期 SSE token」。
 
-## v2.2.0-Status(2026-06-29)
+## v2.0.0-Beta-4(2026-06-29)
 
 ### 新增
 
@@ -53,7 +61,7 @@
 - `backend/app/config.py` 新增 `api_keys`/`api_cors_allowed_origins` 默认值；`public_dict` 剔除 `api_keys`(避免 hash 经 `/api/settings` 泄露)。
 - `scan/download/upload/tools/tasks/settings` 路由由 `require_auth` 改为 `require_scope(...)`；`system` 路由改为按端点声明 scope。
 
-## v2.1.0-Status(2026-06-28)
+## v2.0.0-Beta-3(2026-06-28)
 
 ### 修复
 
@@ -85,13 +93,13 @@
 - 新建上传缓存目录改为 `upload-<id>`,下载产物目录改为 `download-<id>`,生成 zip 改为 `generated-*.zip`,便于缓存页面分类。
 - 下载单文件接口优先使用 `save_name`,避免同名文件去重后按 `real_name` 找不到实际保存文件。
 
-## v2.0.2-Status(2026-06-28)
+## v2.0.0-Beta-2(2026-06-28)
 
 ### 修复
 
-- **Download 页探测期间无法选中文件**：扫描进行中每 800ms 刷新 `scanItems`，整组对象被替换后 `<el-table>`（无 `row-key`）按对象引用追踪选中行，引用一变就派发 `selection-change=[]` 把 `selected.value` 清空，用户体感"选不上"。给 `frontend/src/views/Download.vue:57` 的 `<el-table>` 加 `row-key="url"`（item 的 `url` 在 `backend/scripts/notion.py:163-212` 唯一）。后续在 `v2.1.0` 补齐 selection column 的 `reserve-selection`。
+- **Download 页探测期间无法选中文件**：扫描进行中每 800ms 刷新 `scanItems`，整组对象被替换后 `<el-table>`（无 `row-key`）按对象引用追踪选中行，引用一变就派发 `selection-change=[]` 把 `selected.value` 清空，用户体感"选不上"。给 `frontend/src/views/Download.vue:57` 的 `<el-table>` 加 `row-key="url"`（item 的 `url` 在 `backend/scripts/notion.py:163-212` 唯一）。后续在 `v2.0.0-Beta-3` 补齐 selection column 的 `reserve-selection`。
 
-## v2.0.1-Status(2026-06-28)
+## v2.0.0-Beta-1(2026-06-28)
 
 ### 新增
 
@@ -99,7 +107,7 @@
 - 全部文件下载成功后自动弹出 `ElMessageBox.confirm` 提示「是否再下载一次」；确认后清空当前表单（Page ID、扫描结果、选中项、任务状态），回到初始空白状态。
 - `frontend/src/layouts/MainLayout.vue` + `frontend/src/views/Download.vue` + `frontend/src/composables/useTask.ts` —— Download 页通过 `<keep-alive>` 缓存组件实例，切到其它页面再回来保留扫描结果、选中文件、下载进度；切走时自动关闭 SSE/轮询，切回时通过 `useTask.reconnect()` 无闪烁恢复订阅。
 
-## v2.0.0-Status（重构首发）
+## v2.0.0-Beta-0(2026-06-28)（重构首发）
 
 **时间**：2026-06-28
 **Tag 归档**：`v1.5.2-legacy-wpf` 指向重构前的最后一个 C# 提交（`c46c08d`）。
@@ -125,7 +133,7 @@
 - `app/taskregistry.py` —— **任务注册表 + SSE 推送**（核心）
 - `app/staging.py` —— 暂存目录 / zip 打包 / TTL 清理 / 日志列表
 - `app/notion_facade.py` —— **Notion 业务 facade**（替代原 C# 的 `Main` 类，按任务隔离）
-- `app/app_version.py` —— `BASE_VERSION = "2.0.0"`，按当前渠道派生 `2.0.0-Status` / `2.0.0-Beta`
+- `app/app_version.py` —— `BASE_VERSION = "2.0.0"`，按当前渠道派生 `2.0.0-Beta`；文档修订号 `N` 仅用于 CHANGELOG/docs 的章节区分，代码 `APP_VERSION` 不带 `N`
 - `app/routers/auth.py` —— 登录/登出/检查
 - `app/routers/settings.py` —— 配置读写
 - `app/routers/version.py` —— 代理远程 `version.json`（公开）
@@ -211,7 +219,7 @@
 ### 设计
 
 - **语义**：`Status` = 正式版，`Beta` = 预发布。`channel` 字段在 `config.json` 中，启动时通过 `NFM_CHANNEL` 环境变量覆盖。
-- **默认值**：`Status`。
+- **默认值**：`Beta`。
 - **API 隔离**：`Status` 调 `nfm.ruibin-ningh.top/*`，`Beta` 调 `beta.nfm.ruibin-ningh.top/*`。**不同渠道的版本更新/公告走不同 endpoint**，避免 Beta 用户被 Status 强升，也避免 Status 用户收到 Beta 内容。
 - **Web 不可改**：Settings 页不暴露 channel 字段（防止误改），仅展示当前渠道。
 

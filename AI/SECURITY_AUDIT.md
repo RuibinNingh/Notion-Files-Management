@@ -84,9 +84,9 @@
 5. **限流 / SSE token 进程内**：API Key 限流（`apikeys._rate_buckets`）与 SSE token（`ssetokens._tokens`）都是进程内状态，多进程部署下各自计数、重启失效。单进程单租户可接受。
 6. **`apikeys` scope 是 root-like**：带 `apikeys` scope 的 key 可创建/删除其它 key（含全权限 key）。UI 与文档已明确警告；签发时默认不勾选该高危 scope。
 
-## API Key 开放能力加固（2026-06-29，v2.2.1）
+## API Key 开放能力加固（2026-06-29，v2.0.0-Beta-5）
 
-在 v2.2.0 引入 API Key 开放能力后，本次针对凭据暴露面做了加固：
+在 v2.0.0-Beta-4 引入 API Key 开放能力后，本次针对凭据暴露面做了加固：
 
 - **长期 API Key 只走 Bearer 头**：移除所有 `?api_key=` query 用法。明文不再可能出现在 URL/访问日志/Referer 里。`deps` 不再从 query 读 token。
 - **SSE 短期 token**：`EventSource` 不能自定义头，改为 `POST /api/tasks/{tid}/events-token` 换 10 分钟有效的 `nfmsse_` token（绑定单个 task_id、进程内），用 `?events_token=` 订阅。`?api_key=` 在 SSE 也返回 401。

@@ -418,6 +418,26 @@ Windows 迁移用户需要双击即用的本地体验，所以 PyInstaller spec 
 
 这个入口只在打包 exe 时触发，不影响 Docker 容器。
 
+Windows exe 自动打包走 `.github/workflows/windows-exe.yml`：
+
+```text
+push tag v* / workflow_dispatch
+        |
+        v
+windows-latest
+  npm ci && npm run build          # 生成 frontend/dist
+  pip install -r backend/requirements.txt + pyinstaller
+  pyinstaller deploy/nfm.spec      # 使用 deploy/windows_entry.py
+        |
+        v
+dist/NOTION_FILES_MANAGEMENT_v2.0.0-Beta.exe
+        |
+        +--> workflow artifact
+        +--> tag 触发时上传 GitHub Release asset
+```
+
+原因：PyInstaller 不支持在 Linux 上直接交叉编译真正可运行的 Windows `.exe`，所以 Windows 迁移包必须在 Windows runner 或本机 Windows 上打。
+
 ---
 
 ## 跨任务状态（已知限制）

@@ -189,12 +189,30 @@ print(n.get_database_properties('your-ds-id'))
 
 ### PyInstaller 单文件 / Windows exe
 
-```bash
-# 先构建前端（前端产物会被 PyInstaller 打进 nfm 二进制）
-cd frontend && npm run build && cd ..
+Windows exe 必须在 Windows 环境打包。Linux 本机不能交叉编译出可运行的 Windows `.exe`。
 
-.venv/bin/pip install pyinstaller
-.venv/bin/pyinstaller deploy/nfm.spec --noconfirm
+#### GitHub Actions 自动打包（推荐）
+
+`.github/workflows/windows-exe.yml` 会在 `windows-latest` 上构建真正的 Windows exe：
+
+- 手动触发：GitHub → Actions → **Build Windows exe** → Run workflow，选择 `Beta` / `Status` 渠道。
+- tag 触发：推送 `v*` tag 时自动打包，并把 exe 上传到对应 GitHub Release。
+- 产物名：`NOTION_FILES_MANAGEMENT_v2.0.0-Beta.exe` / `NOTION_FILES_MANAGEMENT_v2.0.0-Status.exe`。
+- 每次运行都会上传 workflow artifact；tag 运行还会作为 Release asset 上传。
+
+#### 本机 Windows 手动打包
+
+```powershell
+# 先构建前端（前端产物会被 PyInstaller 打进 nfm 二进制）
+cd frontend
+npm ci
+npm run build
+cd ..
+
+python -m pip install -r backend/requirements.txt
+python -m pip install pyinstaller
+$env:NFM_CHANNEL="Beta"
+pyinstaller deploy/nfm.spec --noconfirm --clean
 # 产物：dist/NOTION_FILES_MANAGEMENT_v<版本>-<渠道>.exe
 #
 # Windows exe 使用 deploy/windows_entry.py：
@@ -205,9 +223,9 @@ cd frontend && npm run build && cd ..
 # - 默认监听：127.0.0.1:18765
 # - 如需覆盖端口，可设置 NFM_PORT
 # - 启动后自动打开浏览器
-
-# Linux 服务器仍推荐 Docker 或 systemd + venv；此 spec 面向 Windows 迁移包。
 ```
+
+Linux 服务器仍推荐 Docker 或 systemd + venv；`deploy/nfm.spec` 面向 Windows 迁移包。
 
 ### systemd 部署
 

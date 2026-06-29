@@ -67,7 +67,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return v.strip().lower() in ("1", "true", "yes", "on")
 
 
-app = FastAPI(title="Notion Files Management", version="2.0.0")
+app = FastAPI(title="Notion Files Management", version=version_for_channel(config.channel))
 app.add_middleware(
     SessionMiddleware,
     secret_key=config["secret_key"],

@@ -143,7 +143,7 @@ const checking = ref(false)
 const versionInfo = ref<any>(null)
 const channel = ref<string>('Status')
 const logsVisible = ref(false)
-const localVersion = computed(() => versionInfo.value?.local || `2.0.0-${channel.value || 'Status'}`)
+const localVersion = computed(() => versionInfo.value?.local || `2.0.0-${channel.value || 'Beta'}`)
 
 const form = reactive({
   notion_token: '',

@@ -45,7 +45,7 @@
 ├── deploy/               # PyInstaller spec + Windows entry + systemd unit + run.py
 ├── docs/                 # VitePress 用户文档 / API 文档 / 部署文档 / 历史版本说明
 │   └── .vitepress/       # 文档站配置、主题覆盖
-├── .github/workflows/    # GitHub Actions（docs.yml 发布 VitePress 到 Pages）
+├── .github/workflows/    # GitHub Actions（docs.yml 发布文档；windows-exe.yml 打包 Windows exe）
 ├── AI/                   # 交接文档（你正在看）
 ├── package.json          # VitePress 文档站脚本（不承载前端应用）
 ├── icon.ico / icon.png   # 仓库展示用图标（应用不再用）

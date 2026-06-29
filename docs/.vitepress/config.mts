@@ -16,7 +16,7 @@ export default defineConfig({
       { text: '用户指南', link: '/user/getting-started' },
       { text: '部署', link: '/deployment/docker' },
       { text: '开放 API', link: '/api/overview' },
-      { text: '版本记录', link: '/version/v1.5.2-Status-github-release' },
+      { text: '版本记录', link: '/version/v2.0.0-Beta-6-github-release' },
     ],
     sidebar: [
       {
@@ -49,6 +49,13 @@ export default defineConfig({
         text: '版本记录',
         collapsed: true,
         items: [
+          { text: 'v2.0.0 Beta 6 (2026-06-29)', link: '/version/v2.0.0-Beta-6-github-release' },
+          { text: 'v2.0.0 Beta 5 (2026-06-29)', link: '/version/v2.0.0-Beta-5-github-release' },
+          { text: 'v2.0.0 Beta 4 (2026-06-29)', link: '/version/v2.0.0-Beta-4-github-release' },
+          { text: 'v2.0.0 Beta 3 (2026-06-28)', link: '/version/v2.0.0-Beta-3-github-release' },
+          { text: 'v2.0.0 Beta 2 (2026-06-28)', link: '/version/v2.0.0-Beta-2-github-release' },
+          { text: 'v2.0.0 Beta 1 (2026-06-28)', link: '/version/v2.0.0-Beta-1-github-release' },
+          { text: 'v2.0.0 Beta 0 重构首发 (2026-06-28)', link: '/version/v2.0.0-Beta-0-github-release' },
           { text: 'v1.5.2 Status', link: '/version/v1.5.2-Status-github-release' },
           { text: 'v1.5.0 Status', link: '/version/v1.5.0-Status-github-release' },
           { text: 'v1.5.0 Beta', link: '/version/v1.5.0-Beta-github-release' },
