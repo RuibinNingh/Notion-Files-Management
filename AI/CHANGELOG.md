@@ -10,6 +10,8 @@
 - 推送 `v*` tag 时自动打包并上传 workflow artifact；tag 运行还会把 exe 上传到对应 GitHub Release asset。Linux 本机不再尝试交叉编译 Windows exe。
 - 更新 `AI/COMMANDS.md`、`AI/OVERVIEW.md`、`AI/ARCHITECTURE.md`，记录 Windows exe 自动化打包流程、触发方式和 Linux 不能直接产出 Windows exe 的限制。
 - 修复 `deploy/nfm.spec` 在 CI 中把 `deploy/windows_entry.py` 误解析为 `deploy/deploy/windows_entry.py` 的路径问题：spec 内统一用 `SPECPATH` 计算项目根目录（PyInstaller spec 执行时没有 `__file__`）。
+- 修复 Windows exe 打开 Web 页面后 favicon/logo 丢失：后端 SPA fallback 现在会优先返回 `frontend/dist` 根目录下的真实静态文件（如 `/logo.png`），再回退到 `index.html`。
+- 修复 Windows exe 文件自身图标为默认图标：`deploy/nfm.spec` 的 `EXE(...)` 显式指定根目录 `icon.ico`；这和 Vite/Web favicon 是两层独立问题。
 
 ## v2.0.0-Beta-6(2026-06-29)
 

@@ -115,8 +115,21 @@ if "pytest" not in sys.modules:
 
 # 前端构建产物目录（dev 时为仓库 frontend/dist；docker 中由 NFM_FRONTEND_DIST 指定）
 DIST = Path(os.environ.get("NFM_FRONTEND_DIST", SCRIPTS_DIR.parent.parent / "frontend" / "dist"))
+DIST_ROOT = DIST.resolve()
 if (DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+
+
+def _dist_file(path: str) -> Path | None:
+    """返回 frontend/dist 下的真实静态文件，避免 SPA fallback 吞掉 /logo.png。"""
+    try:
+        target = (DIST_ROOT / path).resolve()
+        target.relative_to(DIST_ROOT)
+    except Exception:
+        return None
+    if target.is_file():
+        return target
+    return None
 
 
 @app.get("/")
@@ -131,6 +144,9 @@ async def root():
 async def spa_fallback(path: str, request: Request):
     if path.startswith("api"):
         return JSONResponse({"detail": "Not Found"}, status_code=404)
+    static_file = _dist_file(path)
+    if static_file:
+        return FileResponse(static_file)
     idx = DIST / "index.html"
     if idx.exists():
         return FileResponse(idx)

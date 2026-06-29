@@ -400,3 +400,23 @@ logging.basicConfig(...)            # C# 风格的
 
 **解决**：在 `deploy/nfm.spec` 内用 PyInstaller 注入的 `SPECPATH` 计算项目根目录：`PROJECT_ROOT = Path(SPECPATH).resolve().parent`（spec 执行时没有 `__file__`），再把 `Analysis` 的脚本、`pathex` 和 `datas` 都改成基于 `PROJECT_ROOT` 的绝对路径。不要把 `deploy/windows_entry.py`、`backend`、`frontend/dist` 这类路径裸写进 spec，也不要用 `__file__`。
 
+---
+
+## 30. PyInstaller/Web 运行时 favicon/logo 不能只挂 `/assets`
+
+**现象**：Windows exe 启动后浏览器能打开 Web 页面，但 favicon 或页面 logo 丢失；访问 `/logo.png` 可能拿到的是 `index.html`。
+
+**原因**：Vite 的 `public/` 文件会输出到 `frontend/dist/` 根目录，例如 `frontend/dist/logo.png`。后端原来只 `mount("/assets", ...)`，其它路径直接走 SPA fallback，导致 `/logo.png` 被 fallback 成 `index.html`。
+
+**解决**：`backend/app/main.py` 在 SPA fallback 前先检查 `frontend/dist` 根目录下是否存在真实文件，存在则 `FileResponse` 返回；不存在才回退 `index.html`。注意仍要拒绝 `/api/*` 走 fallback。
+
+---
+
+## 31. exe 文件图标和 Web favicon 是两层独立配置
+
+**现象**：Windows exe 文件在资源管理器里显示默认图标；或 exe 启动后的 Web 页面 favicon/logo 丢失。
+
+**原因**：这是两套机制：exe 文件图标由 PyInstaller `EXE(..., icon=...)` 写入 Windows 可执行文件资源，和 Vite 无关；Web favicon/logo 则来自 `frontend/dist/logo.png` 等静态资源，由 FastAPI 返回给浏览器。
+
+**解决**：`deploy/nfm.spec` 里显式设置 `icon=str(ICON_FILE)`，`ICON_FILE = PROJECT_ROOT / "icon.ico"`；Web 图标则由 `backend/app/main.py` 的 `_dist_file()` 在 SPA fallback 前优先返回 `frontend/dist` 根目录真实文件。
+

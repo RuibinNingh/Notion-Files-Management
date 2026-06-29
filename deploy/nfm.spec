@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(SPECPATH).resolve().parent
 BACKEND_DIR = PROJECT_ROOT / "backend"
 SCRIPTS_DIR = BACKEND_DIR / "scripts"
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+ICON_FILE = PROJECT_ROOT / "icon.ico"
 
 sys.path.insert(0, str(BACKEND_DIR))
 from app.app_version import version_for_channel  # noqa: E402
@@ -70,4 +71,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(ICON_FILE),
 )
