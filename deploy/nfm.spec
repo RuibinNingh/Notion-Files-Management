@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(SPECPATH).resolve().parent
 BACKEND_DIR = PROJECT_ROOT / "backend"
 SCRIPTS_DIR = BACKEND_DIR / "scripts"
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"

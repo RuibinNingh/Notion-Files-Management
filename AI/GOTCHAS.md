@@ -398,5 +398,5 @@ logging.basicConfig(...)            # C# 风格的
 
 **原因**：PyInstaller 会按 spec 文件所在目录解析 spec 内的相对脚本路径。`deploy/nfm.spec` 里如果写 `["deploy/windows_entry.py"]`，CI 中会被拼成 `deploy/deploy/windows_entry.py`。
 
-**解决**：在 `deploy/nfm.spec` 内用 `PROJECT_ROOT = Path(__file__).resolve().parent.parent` 计算项目根目录，再把 `Analysis` 的脚本、`pathex` 和 `datas` 都改成基于 `PROJECT_ROOT` 的绝对路径。不要把 `deploy/windows_entry.py`、`backend`、`frontend/dist` 这类路径裸写进 spec。
+**解决**：在 `deploy/nfm.spec` 内用 PyInstaller 注入的 `SPECPATH` 计算项目根目录：`PROJECT_ROOT = Path(SPECPATH).resolve().parent`（spec 执行时没有 `__file__`），再把 `Analysis` 的脚本、`pathex` 和 `datas` 都改成基于 `PROJECT_ROOT` 的绝对路径。不要把 `deploy/windows_entry.py`、`backend`、`frontend/dist` 这类路径裸写进 spec，也不要用 `__file__`。
 
