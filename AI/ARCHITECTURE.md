@@ -7,7 +7,7 @@
 ```
 ┌──────────┐  HTTP/SSE  ┌──────────┐  Python  ┌──────────┐  HTTPS  ┌─────────┐
 │ Browser  │ ──────────▶│ FastAPI  │ ────────▶│ Notion   │ ──────▶│ Notion  │
-│ (Vue 3)  │ ◀────────── │ (8765)   │          │ Facade   │         │ API     │
+│ (Vue 3)  │ ◀────────── │ (18765)  │          │ Facade   │         │ API     │
 └──────────┘  EventSource└──────────┘          └──────────┘         └─────────┘
      │                  │                       │
      │ cookies          │ 派发到后台线程池       │
@@ -269,6 +269,14 @@ async def start(body: StartIn):  # async 路由
 
 **不要**改成 `from .logger` 相对导入，那会破坏平移的"零改动"承诺。
 
+### 为什么 API Key 只存 hash，且 session 优先于 Bearer？
+
+- **只存 hash**：`config.json` 的 `api_keys[]` 只存 `sha256(明文)`，明文不可逆；比较用 `secrets.compare_digest` 做常量时间比较。创建时返回一次，前端弹窗强提示保存。丢失只能删除重建——这是有意的安全取舍，不要为「方便查看」把明文落盘。
+- **session 优先**：`resolve_auth` 先判 `request.session['auth']`。浏览器管理员永远全权限、不受 scope 约束；API Key 只管第三方。测试 Bearer 鉴权时必须用未登录的 client（`GOTCHAS.md` 第 22 条）。
+- **长期 key 只走 Bearer**：任何接口都不接受 `?api_key=`（避免明文进日志/Referer）。SSE 用短期 `nfmsse_` token 兜底（`GOTCHAS.md` 第 24 条）。
+- **scope 粗粒度且严格**：按功能分组，未知 scope 直接 400（不静默过滤）。session 免校验，key 必须显式持有。高危 scope(`settings/system/logs/cache/apikeys`)默认不勾选。
+- **限流进程内**：滑动窗口在 `apikeys._rate_buckets` 内存里，多进程部署下各自计数（已知限制，单进程/单租户够用）。SSE token 同样进程内，重启失效。
+
 ---
 
 ## 前端状态管理
@@ -303,34 +311,80 @@ tasks.track(taskId)
 
 ---
 
-## 鉴权流
+## 鉴权流（双通道）
 
 ```
-用户打开 http://localhost:5173/download
+请求进来
    │
-   │ 路由守卫 (router.ts beforeEach):
-   │   if (to.meta.public) return true   ← /login
-   │   if (!auth.isLoggedIn) await auth.check()  ← /api/auth/check
-   │   if (!auth.isLoggedIn) return { name: 'login' }  ← 重定向
+   │ deps.resolve_auth(request, credentials)
+   ▼
+┌─────────────────────────────────────────────────┐
+│ 1. session cookie: request.session['auth'] ?    │
+│    是 → 管理员，全权限，跳过 scope 校验          │
+└─────────────────────────────────────────────────┘
+   │ 否
+   ▼
+┌─────────────────────────────────────────────────┐
+│ 2. Authorization: Bearer nfm_...                │
+│    （长期 API Key 永远只走 Bearer，不接受 query）│
+│    apikeys.verify_key() 校验 hash/启停/过期      │
+│    失败/禁用/过期/伪造 → 401                      │
+│    check_rate_limit() 超限 → 429                  │
+│    record_usage() 节流写 last_used(60s 一次)     │
+└─────────────────────────────────────────────────┘
    │
    ▼
-登录页：POST /api/auth/login {password}
-   │
-   │ 后端：与 config['password'] 做 secrets.compare_digest 比较
-   │ 通过：req.session['auth'] = True
-   │ SessionMiddleware 用 itsdangerous 签名 cookie
+require_scope("scan") 等：needed & granted 为空 → 403
    │
    ▼
-后续请求：浏览器自动带 cookie → deps.require_auth 检查 session['auth']
+路由业务逻辑
 ```
+
+**两条通道**：
+
+- **浏览器**：`POST /api/auth/login` 比对 `config['password']`，通过则 `req.session['auth']=True`，`SessionMiddleware`(itsdangerous) 签名 cookie。浏览器管理员始终全权限，**不受 scope 约束**。
+- **第三方**：`Authorization: Bearer nfm_<明文>`。明文不落盘，`config.json` 的 `api_keys[]` 只存 `sha256(明文)`，比较用 `secrets.compare_digest`。**长期 API Key 永远只走 Bearer 头**，任何接口都不接受 `?api_key=` query 参数。
+
+**SSE 的特殊处理**：浏览器 `EventSource` 不能自定义请求头，又不能把长期 key 放 URL。折中方案——短期 `nfmsse_` token：
+
+```
+第三方/浏览器  POST /api/tasks/{tid}/events-token   (需 session 或 Bearer+tasks scope)
+              └─▶ {"token":"nfmsse_...","expires_in":600}   (绑定 tid，10 分钟，进程内)
+              GET /api/tasks/{tid}/events?events_token=nfmsse_...
+```
+
+`GET /{tid}/events` 的鉴权走 `deps.require_events_access`（session / Bearer+tasks scope / events_token 三选一），**不**挂路由级 `require_scope`——否则 query token 会被 401 拦掉。`?events_token=` 是唯一允许出现在 URL 的凭据，且短期、单任务绑定。
+
+**scope → 路由对照**：
+
+| scope | 路由 | 风险 |
+|-------|------|------|
+| `scan` | `/api/scan/*` | 业务 |
+| `download` | `/api/download/*` | 业务 |
+| `upload` | `/api/upload/*` | 业务 |
+| `tools` | `/api/tools/*` | 业务 |
+| `tasks` | `/api/tasks/*`（含 SSE） | 业务 |
+| `settings` | `/api/settings` | 高危 |
+| `logs` | `/api/logs*` | 高危 |
+| `cache` | `/api/cache/*` | 高危 |
+| `system` | `/api/system/restart` | 高危 |
+| `apikeys` | `/api/apikeys/*` | 高危 |
+
+`notices`/`version` 不绑 scope：`version` 公开，`notices` 用 `require_auth`（任意已登录身份即可读）。
+
+**API Key 生命周期**：创建/更新拒绝空 scope、未知 scope（直接 400，不静默过滤）、非法过期时间；过期时间统一存 UTC ISO。`PATCH /api/apikeys/{id}` 用 `body.model_fields_set` 区分「字段未传」与「显式 null」，所以 `{"expires_at": null}` 能清空过期时间（`update_key` 用 `_UNSET` 哨兵）。`NFM_BOOTSTRAP_API_KEY` 预置 key 严格要求 `nfm_` 前缀 + 负载 ≥ 32 字符，弱值忽略并 warning，不自动补前缀（见 `GOTCHAS.md` 第 26 条）。
+
+**CORS（动态）**：默认不开放跨域。`app/cors.py` 的 `DynamicCORSMiddleware` 常驻，**每次请求**实时读 `config["api_cors_allowed_origins"]`，改设置无需重启。仅放行 `http(s)://` origin，拒绝 `*`、`null`、带 path/query 的值（`is_valid_origin` 校验）；OPTIONS preflight 只对白名单 origin 返回 CORS 头。本中间件始终 `allow_credentials=true`，所以 `*` 永不放行。白名单在「API 密钥」页管理（经 `PUT /api/settings` 的 `api_cors_allowed_origins` 字段）。
 
 **SessionMiddleware 关键配置**（`main.py`）：
 ```python
 app.add_middleware(
     SessionMiddleware,
     secret_key=config["secret_key"],   # 从 config.json 加载，无则首次启动随机生成
+    session_cookie="nfm_session",
     same_site="lax",                   # 允许跨页跳转带 cookie
-    https_only=False,                  # 本地开发用 http，生产建议改 True + 反代
+    https_only=_env_bool("NFM_SESSION_HTTPS_ONLY", False),
+    max_age=24 * 60 * 60,
 )
 ```
 
@@ -347,6 +401,22 @@ app.add_middleware(
 | C# WPF UI 渲染（El-Icon/XAML） | Vue 3 + Element Plus |
 | 单机单用户 | 单服务多用户（共享同一 Notion Token，共享密码） |
 | 桌面 exe，绑 Windows | Docker / PyInstaller / venv+systemd |
+
+### Windows exe 入口为何独立？
+
+Docker / systemd 走服务端入口：`uvicorn app.main:app` 或 `deploy/run.py`，只负责启动 API 服务。
+
+Windows 迁移用户需要双击即用的本地体验，所以 PyInstaller spec 指向 `deploy/windows_entry.py`：
+
+- exe 产物名为 `NOTION_FILES_MANAGEMENT_v<版本>-<渠道>.exe`
+- 默认数据目录为 `%LOCALAPPDATA%\Notion-Files-Management`
+- 日志目录为 `%LOCALAPPDATA%\Notion-Files-Management\logs`
+- 配置文件为 `%LOCALAPPDATA%\Notion-Files-Management\config.json`
+- 缓存目录为 `%LOCALAPPDATA%\Notion-Files-Management\staging`
+- 默认监听 `127.0.0.1:18765`，与 Docker/systemd/dev 统一；如需覆盖端口可设置 `NFM_PORT`
+- 启动后自动打开默认浏览器
+
+这个入口只在打包 exe 时触发，不影响 Docker 容器。
 
 ---
 

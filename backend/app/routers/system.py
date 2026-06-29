@@ -12,9 +12,10 @@ from ..staging import (
 )
 from ..taskregistry import registry
 from ..config import config
-from ..deps import require_auth
+from ..deps import require_scope
 
-router = APIRouter(prefix="/api", tags=["system"], dependencies=[Depends(require_auth)])
+# system 路由按功能拆 scope：logs / cache / system（均高危，需显式授权）
+router = APIRouter(prefix="/api", tags=["system"])
 
 
 class LogsZipIn(BaseModel):
@@ -23,13 +24,13 @@ class LogsZipIn(BaseModel):
     names: list[str] = Field(min_length=1, max_length=100)
 
 
-@router.get("/logs")
+@router.get("/logs", dependencies=[Depends(require_scope("logs"))])
 async def logs():
     """日志文件列表（不含内容）。"""
     return {"logs": list_logs()}
 
 
-@router.get("/logs/{name}")
+@router.get("/logs/{name}", dependencies=[Depends(require_scope("logs"))])
 async def log_content(name: str, max_lines: int = Query(2000, ge=1, le=20000)):
     """读取单个日志文件内容（大文件只返回尾部，避免撑爆内存）。"""
     try:
@@ -39,7 +40,7 @@ async def log_content(name: str, max_lines: int = Query(2000, ge=1, le=20000)):
     return {"name": name, "content": content, "truncated": truncated, "size": size}
 
 
-@router.get("/logs/{name}/download")
+@router.get("/logs/{name}/download", dependencies=[Depends(require_scope("logs"))])
 async def log_download(name: str):
     """下载单个日志文件（原始文件，不截断）。"""
     try:
@@ -49,7 +50,7 @@ async def log_download(name: str):
     return FileResponse(str(p), filename=name, media_type="text/plain")
 
 
-@router.post("/logs/download")
+@router.post("/logs/download", dependencies=[Depends(require_scope("logs"))])
 async def logs_zip(body: LogsZipIn):
     """多选日志打包成 zip 下载。body: {"names": ["a.logs", "b.logs"]}"""
     # 去重，保序
@@ -59,13 +60,13 @@ async def logs_zip(body: LogsZipIn):
     return FileResponse(zp, filename="nfm-logs.zip", media_type="application/zip")
 
 
-@router.post("/cache/clear")
+@router.post("/cache/clear", dependencies=[Depends(require_scope("cache"))])
 async def cache_clear():
     n = clear_all_cache(registry.active_cache_refs())
     return {"deleted": n}
 
 
-@router.get("/cache/items")
+@router.get("/cache/items", dependencies=[Depends(require_scope("cache"))])
 async def cache_items():
     return {
         "items": list_cache_items(registry.active_cache_refs()),
@@ -75,7 +76,7 @@ async def cache_items():
     }
 
 
-@router.get("/cache/items/{cache_id}/download")
+@router.get("/cache/items/{cache_id}/download", dependencies=[Depends(require_scope("cache"))])
 async def cache_download(cache_id: str):
     try:
         p = cache_item_path(cache_id)
@@ -87,7 +88,7 @@ async def cache_download(cache_id: str):
     return FileResponse(str(p), filename=p.name)
 
 
-@router.delete("/cache/items/{cache_id}")
+@router.delete("/cache/items/{cache_id}", dependencies=[Depends(require_scope("cache"))])
 async def cache_delete(cache_id: str):
     try:
         ok = delete_cache_item(cache_id, registry.active_cache_refs())
@@ -98,13 +99,13 @@ async def cache_delete(cache_id: str):
     return {"ok": True}
 
 
-@router.post("/cache/cleanup")
+@router.post("/cache/cleanup", dependencies=[Depends(require_scope("cache"))])
 async def cache_cleanup():
     n = cleanup_old_staging(config["cache_ttl_seconds"], registry.active_cache_refs())
     return {"deleted": n}
 
 
-@router.post("/system/restart")
+@router.post("/system/restart", dependencies=[Depends(require_scope("system"))])
 async def restart():
     """重启进程：依赖外部进程管理器（docker/systemd）拉起新实例。"""
     def _do():

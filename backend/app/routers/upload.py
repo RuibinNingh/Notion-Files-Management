@@ -8,9 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..notion_facade import facade
 from ..staging import new_task_dir, write_cache_meta
 from ..config import STAGING_DIR
-from ..deps import require_auth
+from ..deps import require_scope
 
-router = APIRouter(prefix="/api/upload", tags=["upload"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/api/upload", tags=["upload"], dependencies=[Depends(require_scope("upload"))])
 
 
 def _sanitize(rel: str) -> str:

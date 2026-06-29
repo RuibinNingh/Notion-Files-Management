@@ -112,6 +112,23 @@ from logger import PythonLogger       # ✅ 绝对导入
 - 项目根 `.venv/`(已 gitignore)。**不要**在 `backend/` 下建 `cd backend && python -m venv .venv`(`AI/GOTCHAS.md` 第 13 条)
 - 新增 Python 依赖:编辑 `backend/requirements.txt` → `.venv/bin/pip install -r backend/requirements.txt`
 
+### 2.8 第三方开放 API / API Key 鉴权
+
+双通道:`session cookie`(浏览器管理员,全权限)+ `Authorization: Bearer nfm_...`(第三方,受 scope 约束)。`deps.resolve_auth` **先判 session**,session 命中即管理员,不再走 key 校验。
+
+- **API Key 只存 hash**:`config.json` 的 `api_keys[]` 只存 `sha256(明文)`,**永不**存明文。明文只在 `POST /api/apikeys` 创建时返回一次。`public_dict` 已剔除 `api_keys`,**不要**让 hash 经 `/api/settings` 泄露。
+- **scope 声明**:路由用 `Depends(require_scope("scan"))` 而非 `require_auth`。业务 scope:`scan/download/upload/tools/tasks`;高危 scope:`settings/system/logs/cache/apikeys`(需显式授权,新建默认不勾)。`system` 路由按端点拆 `logs/cache/system`。
+- **错误码**:未认证 401、缺 scope 403、限流超限 429、禁用/过期/伪造 key 一律 401。SSE 终态事件仍统一 `done`(见 2.2)。
+- **长期 Key 只走 Bearer**:**任何接口都不接受 `?api_key=`**(避免明文进日志/Referer)。`deps` 不从 query 读 token。第三方 SSE 用短期 `nfmsse_` token:先 `POST /api/tasks/{tid}/events-token`(需 session 或 `tasks` scope)换 10 分钟 token,再 `?events_token=` 订阅。`GET /{tid}/events` 走 `require_events_access`(session/Bearer+tasks/events_token 三选一),**不**挂路由级 `require_scope`。
+- **hash 比较**:`verify_key` 用 `secrets.compare_digest`,**不要**改回 `==`。
+- **严格 scope**:未知 scope 创建/更新直接 400(`_normalize_scopes` 抛 ValueError),**不**静默过滤。
+- **清空过期时间**:`PATCH` 用 `body.model_fields_set` + `update_key` 的 `_UNSET` 哨兵,`{"expires_at": null}` 清空。**不要**改回 `model_dump(exclude_none=True)`(会吞掉 null)。过期时间统一存 UTC ISO。
+- **弱 bootstrap 拒绝**:`NFM_BOOTSTRAP_API_KEY` 必须 `nfm_` 前缀 + 负载 ≥ 32 字符,弱值忽略并 warning,**不**自动补前缀。
+- **CORS 动态白名单**:`app/cors.py` `DynamicCORSMiddleware` 常驻,每请求读 `config["api_cors_allowed_origins"]`,改设置无需重启。`is_valid_origin` 仅放行 `http(s)` origin,拒 `*`/`null`/带 path;始终 `allow_credentials=true` 故 `*` 永不放行。`SettingsIn` 有 `api_cors_allowed_origins` 字段。**不要**用 starlette 的静态 `CORSMiddleware`(改设置要重启)。
+- **预置 key**:env `NFM_BOOTSTRAP_API_KEY` 以 hash 落盘全权限 key,重复启动不重建。
+
+详见 `AI/ARCHITECTURE.md`「鉴权流(双通道)」+ `AI/GOTCHAS.md` 第 22-27 条 + `AI/SECURITY_AUDIT.md`「API Key 开放能力加固」。
+
 ---
 
 ## 3. 工程规范(前端)
@@ -180,9 +197,10 @@ es.addEventListener('done', (e) => {
 | 服务 | 默认端口 | 当前 | 说明 |
 |------|---------|------|------|
 | 前端 Vite dev | 5173 | 5173 | `frontend/vite.config.ts` proxy 目标 |
-| 后端 Uvicorn | 8000 | **8765** | 本机 8000 被 `homepage` 占,**临时**用 8765 |
+| 后端 Uvicorn | 18765 | **18765** | Docker / systemd / Windows exe / 本地开发统一使用 |
+| VitePress docs | 5174 | 按 VitePress 自动选择 | 根目录 `npm run docs:dev` |
 
-`frontend/vite.config.ts` 当前 proxy target = `http://127.0.0.1:8765`。改回 8000 时**两个文件同步改**。详见 `AI/GOTCHAS.md` 第 1、14 条。
+`frontend/vite.config.ts` 当前 proxy target = `http://127.0.0.1:18765`。后端端口变更时 Docker / systemd / Windows entry / Vite proxy 必须同步。详见 `AI/GOTCHAS.md` 第 2、14 条。
 
 ### 登录凭据(开发)
 - 密码默认 `admin123`(`AI/README.md` 有写)
@@ -220,6 +238,14 @@ es.addEventListener('done', (e) => {
 8. ❌ 在 router 里直接用 `real_name` 拼路径(走 `save_name`,`AI/GOTCHAS.md` 第 8 条)
 9. ❌ 跳过 AI/ 直接读代码动刀
 10. ❌ 改完不更新 AI/
+11. ❌ 把 API Key 明文落盘(`api_keys[]` 只存 sha256 hash,明文只创建时返回一次)
+12. ❌ 让 `api_keys` hash 经 `/api/settings` 的 `public_dict` 泄露(已剔除,别加回去)
+13. ❌ 给任何接口加回 `?api_key=` query 支持(长期 Key 只走 Bearer;SSE 用短期 `?events_token=`)
+14. ❌ 用已登录的同一个 client 测 Bearer 鉴权(session 优先会绕过 scope,见 `GOTCHAS.md` 第 22 条)
+15. ❌ CORS 用 `"*"` 搭配 `allow_credentials=True`(必须显式白名单 origin;动态中间件已禁 `*`)
+16. ❌ 把业务路由的 `require_scope(...)` 改回 `require_auth`(会失去 scope 隔离)
+17. ❌ 把 `GET /{tid}/events` 挂回路由级 `require_scope`(会让 `?events_token=` 被 401 拦掉,见 `GOTCHAS.md` 第 24 条)
+18. ❌ 用 `==` 比较 key hash(用 `secrets.compare_digest`);用 `model_dump(exclude_none=True)` 处理 PATCH(用 `model_fields_set` + `_UNSET`)
 
 ---
 

@@ -6,7 +6,7 @@ services:
     image: notion-files-management:latest
     container_name: nfm
     ports:
-      - "8765:8765"
+      - "18765:18765"
     volumes:
       - nfm-data:/data
     environment:

@@ -9,9 +9,9 @@ Group=nfm
 WorkingDirectory=/opt/nfm/backend
 Environment=NFM_DATA_DIR=/var/lib/nfm
 Environment=NFM_HOST=127.0.0.1
-Environment=NFM_PORT=8765
+Environment=NFM_PORT=18765
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/nfm/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8765
+ExecStart=/opt/nfm/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 18765
 Restart=on-failure
 RestartSec=3
 

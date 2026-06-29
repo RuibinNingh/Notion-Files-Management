@@ -30,6 +30,9 @@ _DEFAULTS = {
     "theme_accent_color": "#1E90FF",
     "background": "",
     "channel": DEFAULT_CHANNEL,
+    # 第三方开放 API:API Key 列表(只存 hash,不存明文)+ CORS 白名单
+    "api_keys": [],
+    "api_cors_allowed_origins": [],
 }
 
 
@@ -69,6 +72,13 @@ class Config:
             self._d["channel"] = ch
         elif self._d.get("channel") not in VALID_CHANNELS:
             self._d["channel"] = DEFAULT_CHANNEL
+        # CORS 白名单：逗号分隔的 origin 列表，空则不开放跨域
+        cors = os.environ.get("NFM_API_CORS_ALLOWED_ORIGINS", "").strip()
+        if cors:
+            self._d["api_cors_allowed_origins"] = [o.strip() for o in cors.split(",") if o.strip()]
+        # api_keys 必须是 list
+        if not isinstance(self._d.get("api_keys"), list):
+            self._d["api_keys"] = []
 
     def save(self):
         CONFIG_PATH.write_text(json.dumps(self._d, indent=2, ensure_ascii=False), "utf-8")
@@ -103,10 +113,12 @@ class Config:
 
     @property
     def public_dict(self):
-        """对外可见配置（剔除 secret_key / password）。"""
+        """对外可见配置（剔除 secret_key / password / api_keys 明细）。"""
         d = self.as_dict()
         d.pop("secret_key", None)
         d.pop("password", None)
+        # api_keys 含 hash，不通过 settings 接口暴露；用 /api/apikeys 管理
+        d.pop("api_keys", None)
         return d
 
     @property

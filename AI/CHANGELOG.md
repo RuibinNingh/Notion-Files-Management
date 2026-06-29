@@ -2,6 +2,57 @@
 
 > 记录重构过程中已发生的重要变更。新增条目请加到最上面。
 
+## v2.2.2-Status(2026-06-29)
+
+### 文档站
+
+- 新增根目录 VitePress 文档站工程：`package.json` 提供 `docs:dev` / `docs:build` / `docs:preview`，配置位于 `docs/.vitepress/config.mts`。
+- `docs/` 从历史版本说明扩展为用户文档、部署文档、第三方开放 API 文档和版本记录的统一入口；`AI/` 继续作为 Agent/开发交接文档，不面向普通用户。
+- 文档站默认使用统一后端端口 `18765`，导航覆盖用户指南、部署、开放 API、版本记录。
+- 新增 `.github/workflows/docs.yml`，推送 `main` 后通过 GitHub Actions 构建并发布 VitePress 到 GitHub Pages；自定义域名为 `nfm-docs.ruibin-ningh.top`，构建时设置 `DOCS_BASE=/`，并通过 `docs/public/CNAME` 写入 Pages 域名。
+
+## v2.2.1-Status(2026-06-29)
+
+### Windows 迁移包
+
+- 新增 `deploy/windows_entry.py` 作为 PyInstaller/Windows exe 专用入口：默认使用 `%LOCALAPPDATA%\Notion-Files-Management` 数据目录，启动窗口打印 config/logs/staging 路径，监听统一后端端口 `127.0.0.1:18765`（可用 `NFM_PORT` 覆盖），并在启动后打开默认浏览器。
+- `deploy/nfm.spec` 改为使用 Windows 专用入口，产物名为 `NOTION_FILES_MANAGEMENT_v<版本>-<渠道>.exe`。Docker/systemd/源码运行仍使用原服务端入口，不受影响。
+
+### 安全加固（API Key 开放能力）
+
+- **移除 `?api_key=` query 用法**：长期 API Key 永远只走 `Authorization: Bearer`，任何接口都不再接受 URL query 参数（避免明文进访问日志/Referer）。`deps._resolve_token` 删除，`resolve_auth`/`require_events_access` 不再读 query。
+- **短期 SSE token**：新增 `app/ssetokens.py` 与 `POST /api/tasks/{tid}/events-token`（需 session 或 `tasks` scope），返回 `nfmsse_` token，10 分钟有效、绑定单个 task_id、进程内存储。`GET /{tid}/events` 改用 `deps.require_events_access`（session / Bearer+tasks / events_token 三选一），不再挂路由级 `require_scope`。`?events_token=` 是唯一允许出现在 URL 的凭据。
+- **hash 常量时间比较**：`apikeys.verify_key` 改用 `secrets.compare_digest`。
+- **弱 bootstrap key 拒绝**：`NFM_BOOTSTRAP_API_KEY` 必须是 `nfm_` 前缀 + 负载 ≥ 32 字符；不合格忽略并 warning，不自动补前缀。
+- **严格 scope 校验**：`_normalize_scopes` 遇到未知 scope 直接抛 ValueError（路由转 400），不再静默过滤。
+- **PATCH 清空过期时间**：`PATCH /api/apikeys/{id}` 改用 `body.model_fields_set` + `update_key` 的 `_UNSET` 哨兵，`{"expires_at": null}` 可清空过期时间。过期时间统一存 UTC ISO。
+- **动态 CORS**：新增 `app/cors.py` `DynamicCORSMiddleware`，常驻、每次请求实时读 `config["api_cors_allowed_origins"]`，改设置无需重启。仅放行 `http(s)` origin，拒绝 `*`/`null`/带 path 的值；preflight 只对白名单 origin 返回 CORS 头。`SettingsIn` 增加 `api_cors_allowed_origins` 字段及校验。
+
+### 前端
+
+- `ApiKeys.vue`：过期时间按本地时间选择、提交转 UTC ISO（`toISOString`）、展示本地；创建明文弹窗关闭后立即清空 `plaintext`；`--text-muted` 修正为项目已有的 `--app-muted`；新增「跨域允许源」面板（读 `/api/settings`、增删、`PUT` 保存）。
+- SSE 示例改为先换 `events_token`，不展示长期 key 放 URL 的用法。
+
+### 文档
+
+- 更新 `AI/ARCHITECTURE.md`、`AI/COMMANDS.md`、`AI/GOTCHAS.md`(第 24-27 条)、`AI/SECURITY_AUDIT.md`、`CLAUDE.md`：明确「长期 API Key 永远只走 Bearer；URL query 只允许短期 SSE token」。
+
+## v2.2.0-Status(2026-06-29)
+
+### 新增
+
+- **第三方开放 API + API Key 鉴权**：业务接口除原有 session cookie 外，新增 `Authorization: Bearer nfm_...` 双通道鉴权。API Key 支持命名、权限范围(scope)、可选过期、启停、删除、轻量限流(每分钟请求数)、最后使用记录；明文只创建时返回一次，落盘只存 sha256 hash。新增 `backend/app/apikeys.py` 与 `backend/app/routers/apikeys.py`(`GET/POST /api/apikeys`、`PATCH/DELETE /api/apikeys/{id}`)。新增前端 `frontend/src/views/ApiKeys.vue` 与 `/api-keys` 路由、侧栏入口。
+- **scope 权限模型**：业务能力 `scan/download/upload/tools/tasks`，高危能力 `settings/system/logs/cache/apikeys`(需显式授权)。每个路由用 `deps.require_scope(...)` 声明所需 scope；session 登录的浏览器始终是全权限管理员，不受 scope 约束。`system` 路由按端点拆 `logs/cache/system` 三个 scope。
+- **SSE/EventSource 兜底**：EventSource 不能自定义请求头，第三方用 `?api_key=<plaintext>` 查询参数访问 `/api/tasks/{tid}/events`。
+- **CORS 白名单**：新增配置 `api_cors_allowed_origins`(env `NFM_API_CORS_ALLOWED_ORIGINS`，逗号分隔)，默认空(不开放跨域)。非空时启用 `CORSMiddleware`，仅允许白名单 origin，不允许 `*` 搭配凭据。
+- **预置 key**：env `NFM_BOOTSTRAP_API_KEY` 可在首启时以 hash 落盘一条全权限 key，便于部署/CI 注入；重复启动不重复创建。
+
+### 调整
+
+- `backend/app/deps.py` 由「单一 session 校验」重写为双通道：session 优先，否则校验 Bearer/query key；未认证 401、缺 scope 403、限流超限 429、禁用/过期/伪造 key 一律 401。
+- `backend/app/config.py` 新增 `api_keys`/`api_cors_allowed_origins` 默认值；`public_dict` 剔除 `api_keys`(避免 hash 经 `/api/settings` 泄露)。
+- `scan/download/upload/tools/tasks/settings` 路由由 `require_auth` 改为 `require_scope(...)`；`system` 路由改为按端点声明 scope。
+
 ## v2.1.0-Status(2026-06-28)
 
 ### 修复
@@ -140,13 +191,13 @@
 - ✅ pytest 冒烟 4/4 通过
 - ✅ 前端 `vue-tsc` 零错误
 - ✅ 前端 `vite build` 成功
-- ✅ 集成：vite (5173) → uvicorn (8765) 全链路
+- ✅ 集成：vite (5173) → uvicorn (18765) 全链路
 - ✅ 鉴权：未登录 401 / 错密码 401 / 正密码 200 / cookie 携带
 - ✅ 公开端点（`/api/version`）无需鉴权
 
 ### 已知限制
 
-- 后端 `:8000` 端口被本机 `homepage` 占用，临时用 `:8765`，`vite.config.ts` 改指向 8765。
+- 后端默认端口已统一为 `:18765`；`vite.config.ts`、Docker/systemd/Windows 入口需保持一致。
 - 全局 Notion 速率限制器（`ratelimit.py`）未实现。
 - 后端没有 `pageId` normalize 工具（依赖前端 `utils/pageId.ts`）。
 - 断点续传未实现。
@@ -187,7 +238,7 @@ NFM_CHANNEL=Beta uvicorn app.main:app --app-dir backend
 ### 验证
 
 ```
-$ curl -s http://127.0.0.1:8765/api/version/channel
+$ curl -s http://127.0.0.1:18765/api/version/channel
 {"channel":"Status","valid":["Status","Beta"]}
 
 $ NFM_CHANNEL=Beta ... curl -s .../api/version/channel
@@ -197,4 +248,4 @@ $ curl -s -b cookie .../api/settings
 {...,"channel":"Status"}
 
 ✓ 前端 vue-tsc 零错误
-✓ vite (5173) → uvicorn (8765) 全链路，channel 字段经 vite proxy 透传
+✓ vite (5173) → uvicorn (18765) 全链路，channel 字段经 vite proxy 透传

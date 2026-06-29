@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..config import config
-from ..deps import require_auth
+from ..deps import require_scope
+from ..cors import is_valid_origin
 from url_security import UnsafeUrlError, assert_safe_remote_url
 
-router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_scope("settings"))])
 
 
 class SettingsIn(BaseModel):
@@ -25,6 +26,8 @@ class SettingsIn(BaseModel):
     theme_accent_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     background: str | None = Field(default=None, max_length=4096)
     password: str | None = Field(default=None, min_length=1, max_length=1024)
+    # 第三方开放 API 的 CORS 白名单：仅 http(s) origin，禁 * / null / 带 path
+    api_cors_allowed_origins: list[str] | None = Field(default=None, max_length=50)
     # 注意：channel 仅由环境变量 NFM_CHANNEL 决定，不通过 Web 修改
 
     @field_validator("notion_base_url")
@@ -37,6 +40,21 @@ class SettingsIn(BaseModel):
         except UnsafeUrlError as e:
             raise ValueError(str(e)) from e
         return v.rstrip("/")
+
+    @field_validator("api_cors_allowed_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        cleaned: list[str] = []
+        for o in v:
+            o = (o or "").strip()
+            if not o:
+                continue
+            if not is_valid_origin(o):
+                raise ValueError(f"非法 CORS origin（仅允许 http(s) origin，禁 * / null / 带 path）: {o}")
+            cleaned.append(o)
+        return cleaned
 
 
 @router.get("")

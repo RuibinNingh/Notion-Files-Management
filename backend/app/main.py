@@ -49,10 +49,15 @@ from starlette.middleware.sessions import SessionMiddleware  # noqa: E402
 
 from .routers import (  # noqa: E402
     auth, settings as settings_router, version, notices,
-    scan, download, upload, tools, tasks, system,
+    scan, download, upload, tools, tasks, system, apikeys,
 )
 from .staging import cleanup_old_staging  # noqa: E402
 from .taskregistry import registry  # noqa: E402
+from .apikeys import bootstrap_preset_key  # noqa: E402
+from .cors import DynamicCORSMiddleware  # noqa: E402
+
+# 预置 API Key（来自 NFM_BOOTSTRAP_API_KEY），以 hash 落盘
+bootstrap_preset_key()
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -82,6 +87,13 @@ app.include_router(upload.router)
 app.include_router(tools.router)
 app.include_router(tasks.router)
 app.include_router(system.router)
+app.include_router(apikeys.router)
+
+# 第三方开放 API 的 CORS：动态白名单中间件，常驻。
+# 每次请求实时读 config["api_cors_allowed_origins"]，改设置无需重启。
+# 白名单为空 = 不开放跨域；禁止 "*" / null / 带 path 的 origin（见 app/cors.py）。
+# 加在 SessionMiddleware 之后（最后 add = 最外层），以便先处理 preflight。
+app.add_middleware(DynamicCORSMiddleware)
 
 
 def _cache_cleanup_loop():

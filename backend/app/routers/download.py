@@ -8,10 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ..notion_facade import facade
 from ..taskregistry import registry
 from ..staging import new_task_dir, zip_dir
-from ..deps import require_auth
+from ..deps import require_scope
 from url_security import UnsafeUrlError, assert_safe_remote_url
 
-router = APIRouter(prefix="/api/download", tags=["download"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/api/download", tags=["download"], dependencies=[Depends(require_scope("download"))])
 
 
 class DownloadItem(BaseModel):

@@ -72,8 +72,8 @@
 | 文件操作安全 | `zip_dir()` 使用相对路径写 zip，未发现 zip slip；新增测试验证归档名 |
 | 输入验证 | 已补主要路由边界；复杂业务 payload 仍按 Notion API 透传 |
 | 密码安全 | 已改 `secrets.compare_digest()` |
-| CORS | 未配置 `CORSMiddleware`，未发现过宽 CORS |
-| 敏感信息泄露 | `secret_key/password` 不在 settings 返回；`notion_token` 对已登录用户可见，符合单租户设置页需求 |
+| CORS | 动态白名单中间件（`app/cors.py`），默认不开放跨域；仅放行 http(s) origin，禁 `*`/`null`/带路径；preflight 仅白名单 origin 返回头 |
+| 敏感信息泄露 | `secret_key/password/api_keys` 不在 settings 返回；`notion_token` 对已登录用户可见，符合单租户设置页需求 |
 
 ## 残余风险
 
@@ -81,6 +81,22 @@
 2. **DNS rebinding 竞态**：当前在请求前解析并检查 IP，已覆盖常见 SSRF，但未把连接固定到已验证 IP。高安全部署可进一步改为自定义 HTTP client 固定解析结果。
 3. **`notion_token` 可见性**：已登录用户仍可读取完整 token。若未来支持多用户，需要改成按 session/token 隔离，并在设置接口做脱敏返回。
 4. **CSRF**：Session cookie 认证的 POST 接口当前没有 CSRF token。`SameSite=Lax` 可缓解常见跨站 POST，但严格公网部署建议增加 CSRF token 或 Origin 校验。
+5. **限流 / SSE token 进程内**：API Key 限流（`apikeys._rate_buckets`）与 SSE token（`ssetokens._tokens`）都是进程内状态，多进程部署下各自计数、重启失效。单进程单租户可接受。
+6. **`apikeys` scope 是 root-like**：带 `apikeys` scope 的 key 可创建/删除其它 key（含全权限 key）。UI 与文档已明确警告；签发时默认不勾选该高危 scope。
+
+## API Key 开放能力加固（2026-06-29，v2.2.1）
+
+在 v2.2.0 引入 API Key 开放能力后，本次针对凭据暴露面做了加固：
+
+- **长期 API Key 只走 Bearer 头**：移除所有 `?api_key=` query 用法。明文不再可能出现在 URL/访问日志/Referer 里。`deps` 不再从 query 读 token。
+- **SSE 短期 token**：`EventSource` 不能自定义头，改为 `POST /api/tasks/{tid}/events-token` 换 10 分钟有效的 `nfmsse_` token（绑定单个 task_id、进程内），用 `?events_token=` 订阅。`?api_key=` 在 SSE 也返回 401。
+- **hash 常量时间比较**：`verify_key` 用 `secrets.compare_digest`，避免计时侧信道。
+- **弱预置 key 拒绝**：`NFM_BOOTSTRAP_API_KEY` 必须 `nfm_` 前缀 + 负载 ≥ 32 字符，否则忽略并 warning，不自动补前缀。
+- **严格 scope**：未知 scope 创建/更新直接 400，不静默过滤。
+- **过期时间可清空**：`PATCH` 用 `model_fields_set` + `_UNSET` 哨兵，`{"expires_at": null}` 清空；统一存 UTC ISO。
+- **动态 CORS**：`DynamicCORSMiddleware` 每请求读 config，白名单改完即生效；`is_valid_origin` 拒绝 `*`/`null`/带 path 的 origin；始终 `allow_credentials=true` 故 `*` 永不放行。
+
+测试见 `backend/tests/test_apikeys_auth.py`（26 条），覆盖 query 拒绝、events_token 全流程、未知 scope 400、清空过期、弱 bootstrap 拒绝、CORS 白名单/`*`/`null`/path 拒绝、preflight。
 
 ## 测试覆盖
 

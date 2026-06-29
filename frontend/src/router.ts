@@ -14,6 +14,7 @@ const routes = [
       { path: 'upload', name: 'upload', component: () => import('@/views/Upload.vue') },
       { path: 'download', name: 'download', component: () => import('@/views/Download.vue') },
       { path: 'tools', name: 'tools', component: () => import('@/views/Tools.vue') },
+      { path: 'api-keys', name: 'apikeys', component: () => import('@/views/ApiKeys.vue') },
       { path: 'settings', name: 'settings', component: () => import('@/views/Settings.vue') },
     ],
   },

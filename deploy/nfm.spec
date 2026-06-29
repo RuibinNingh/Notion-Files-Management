@@ -3,11 +3,19 @@
 用法（在仓库根目录）：
   cd frontend && npm run build && cd ..
   pyinstaller deploy/nfm.spec --noconfirm
-产物：dist/nfm （单文件，需 --hiddenimports 见下）
+产物：dist/NOTION_FILES_MANAGEMENT_v<版本>-<渠道>.exe（Windows）
 """
+import os
+import sys
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
+sys.path.insert(0, "backend")
+from app.app_version import version_for_channel  # noqa: E402
+
 block_cipher = None
+build_version = version_for_channel(os.environ.get("NFM_CHANNEL"))
+exe_name = f"NOTION_FILES_MANAGEMENT_v{build_version}"
 
 datas = []
 binaries = []
@@ -26,7 +34,7 @@ hiddenimports += ["notion", "download", "upload", "migrate", "batch_rename",
                   "page_size_update", "logger", "scan"]
 
 a = Analysis(
-    ["deploy/run.py"],
+    ["deploy/windows_entry.py"],
     pathex=["backend", "backend/scripts"],
     binaries=binaries,
     datas=datas,
@@ -45,7 +53,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="nfm",
+    name=exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

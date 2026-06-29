@@ -13,10 +13,14 @@ backend/**/__pycache__/
 backend/.venv/
 backend/.pytest_cache/
 .venv/
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/dist-logs/
 frontend/*.tsbuildinfo
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vitepress/.temp/
 **/*.pyc
 .pytest_cache/
 .playwright-mcp/

@@ -44,6 +44,9 @@
         <el-menu-item index="/tools">
           <el-icon><Tools /></el-icon><template #title>工具箱</template>
         </el-menu-item>
+        <el-menu-item index="/api-keys">
+          <el-icon><Key /></el-icon><template #title>API 密钥</template>
+        </el-menu-item>
         <el-menu-item index="/settings">
           <el-icon><Setting /></el-icon><template #title>设置</template>
         </el-menu-item>
@@ -76,7 +79,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { HomeFilled, Bell, Upload, Download, Tools, Setting, Fold, Expand, SwitchButton, Sunny, Moon, List, FolderOpened } from '@element-plus/icons-vue'
+import { HomeFilled, Bell, Upload, Download, Tools, Setting, Fold, Expand, SwitchButton, Sunny, Moon, List, FolderOpened, Key } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useConfigStore } from '@/stores/config'
 import { useThemeStore } from '@/stores/theme'
@@ -99,6 +102,7 @@ const titleMap: Record<string, string> = {
   '/upload': '文件上传',
   '/download': '文件下载',
   '/tools': '工具箱',
+  '/api-keys': 'API 密钥',
   '/settings': '设置',
 }
 const currentTitle = computed(() => titleMap[route.path] || 'Notion Files Management')

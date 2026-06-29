@@ -14,15 +14,15 @@
 
 ---
 
-## 2. 端口 8000 被本机其他项目占着
+## 2. 后端端口统一为 18765
 
-**现象**：启动后端时 `Address already in use`。
+**现象**：旧文档/旧脚本里可能还残留 8000 或 8765，导致前端代理、Docker 映射、systemd 和 Windows exe 不一致。
 
-**原因**：本机 `homepage` 项目（`/home/ruibinningh/projects/ruibinningh-homepage`）跑在 8000。
+**原因**：早期本地开发避开 8000 时临时用过 8765；现在 8765 也可能被其他程序占用。
 
-**解决（临时）**：后端用 8765，并把 `frontend/vite.config.ts` 的 proxy 改成 `127.0.0.1:8765`。
+**解决**：统一使用 `18765`，并保持 `frontend/vite.config.ts`、Docker、systemd、PyInstaller/Windows 入口一致。只有确实需要迁移端口时，才全局同步修改。
 
-**彻底解决**（需要时）：改用反代（nginx）给每个服务分配独立子域。
+**生产建议**：公网仍建议用 nginx/Caddy 做 TLS 反代，把外部 443 转发到 `127.0.0.1:18765`。
 
 ---
 
@@ -36,12 +36,12 @@
 ```bash
 kill <uvicorn-pid>
 # 重启
-NFM_DATA_DIR=/tmp/nfm-run .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8765
+NFM_DATA_DIR=/tmp/nfm-run .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 18765
 ```
 
 **或者临时**调试用 `--reload`（但它会重启 worker，包括正在跑的 task）：
 ```bash
-.venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8765 --reload
+.venv/bin/python -m uvicorn app.main:app --app-dir backend --port 18765 --reload
 ```
 
 ---
@@ -212,13 +212,13 @@ python -m venv .venv
 
 ---
 
-## 14. 临时端口 8765 在 vite.config 改过
+## 14. Vite proxy 必须跟统一后端端口一致
 
-**当前**：`frontend/vite.config.ts` 的 proxy target 是 `http://127.0.0.1:8765`。
+**当前**：`frontend/vite.config.ts` 的 proxy target 是 `http://127.0.0.1:18765`。
 
-**如果要回 8000**：
+**如果统一端口以后再次变更**：
 ```bash
-sed -i "s|target: 'http://127.0.0.1:8765'|target: 'http://127.0.0.1:8000'|" frontend/vite.config.ts
+sed -i "s|target: 'http://127.0.0.1:18765'|target: 'http://127.0.0.1:<new-port>'|" frontend/vite.config.ts
 ```
 
 然后重启 vite（不会自动热重载 config）。
@@ -313,3 +313,79 @@ logging.basicConfig(...)            # C# 风格的
 - 分片临时文件会增加磁盘占用,大文件合并阶段峰值可能接近 2 倍。
 - 如果日志里出现 `[DownloadRange] failed expired=True`,说明分片请求遇到 401/403/410,会走 URL 刷新重试整个文件。
 - 不要把分片开关默认打开;先用真实 Notion 文件日志确认 CDN 行为。
+
+---
+
+## 22. API Key 鉴权:session 优先,明文只显一次
+
+**现象**：用浏览器(已登录)同时带 `Authorization: Bearer` 调接口，无论 key 给了什么 scope 都能访问，scope 校验「不生效」。
+
+**原因**：`deps.resolve_auth` **先**判 `request.session['auth']`，session 登录即管理员，全权限放行，根本不会走到 key 的 scope 校验。测试时若用同一个 `TestClient` 既登录又带 Bearer，就会踩到这点(见 `backend/tests/test_apikeys_auth.py` 的 `fresh` fixture)。
+
+**解决**：测 Bearer 鉴权必须用**未登录**的全新 client。生产上这是设计意图——浏览器管理员永远全权限，key 只管第三方。
+
+---
+
+## 23. API Key 明文只创建时返回一次
+
+**现象**：用户丢了 key 明文，想再「查看」拿不回来。
+
+**原因**：`config.json` 里只存 `sha256(plaintext)` 的 hash(`apikeys.hash_key`)，不可逆。列表接口(`GET /api/apikeys`)只返回 `prefix`(`nfm_` + 8 位)，永不返回明文或 hash。
+
+**解决**：创建时(`POST /api/apikeys`)返回一次 `plaintext`，前端弹窗强提示「立即复制保存」。丢失只能删除重建。**不要**为了「方便」把明文落盘。
+
+---
+
+## 24. SSE 不接受 ?api_key=，改用短期 events_token
+
+**现象**：第三方用 `EventSource` 订阅 `/api/tasks/{tid}/events`，没法塞 `Authorization: Bearer`；想用 `?api_key=` 走 query 参数，被 401 拒绝。
+
+**原因**：长期 API Key **永远只走 Bearer 头**，不接受任何 query 参数（避免明文进访问日志/Referer 被泄漏）。`deps.resolve_auth` / `require_events_access` 都不读 `?api_key=`。浏览器 `EventSource` 又不能自定义请求头。
+
+**解决**：先换短期 token，再用 query 订阅：
+1. `POST /api/tasks/{tid}/events-token`（需 session 或带 `tasks` scope 的 Bearer key）→ 返回 `nfmsse_...`，10 分钟有效，**绑定单个 task_id**。
+2. `new EventSource('/api/tasks/{tid}/events?events_token=nfmsse_xxx')`。
+
+`?events_token=` 是唯一允许出现在 URL 里的凭据，且短期、单任务绑定。token 进程内存储，重启失效（可接受）。`GET /{tid}/events` 的鉴权走 `deps.require_events_access`（session / Bearer+tasks / events_token 三选一），**没有**挂在路由级 `require_scope` 上——否则 query token 会被 401 拦掉。
+
+**不要**把 `?api_key=` 加回来。第三方 SSE 之外的所有接口都只认 Bearer。
+
+---
+
+## 25. PATCH 清空过期时间必须显式传 null
+
+**现象**：`PATCH /api/apikeys/{id}` 想把过期时间清空成「永不过期」，传 `{"expires_at": null}` 没生效，过期时间没变。
+
+**原因**：早期版本用 `body.model_dump(exclude_none=True)`，`null` 被当成「未传」一起剔除，区分不出「不修改」和「清空」。
+
+**解决**：改用 `body.model_fields_set` 判断字段是否**显式出现**在请求体里；`update_key` 用 `_UNSET` 哨兵区分「未传」与「显式 None」。只有 `expires_at` 真的出现在 body 里（哪怕值是 null）才写盘，`None` → 清空。**不要**改回 `exclude_none`。
+
+---
+
+## 26. bootstrap 预置 key 拒绝弱值
+
+**现象**：`NFM_BOOTSTRAP_API_KEY=short` 启动后没有预置 key，日志里一条 warning。
+
+**原因**：预置 key 现在严格要求 `nfm_` 前缀 + 前缀后有效负载 ≥ 32 字符。不合格直接忽略并记 warning，**不**自动补前缀（避免把任意弱值包装成全权限 key）。
+
+**解决**：部署时给一个强明文，如 `NFM_BOOTSTRAP_API_KEY=nfm_<≥32字符随机串>`。重复启动按前缀/hash 去重，不重建。
+
+---
+
+## 27. CORS 白名单是动态的，改设置无需重启
+
+**现象**：在「API 密钥」页改了跨域白名单，第三方浏览器跨域调用立刻生效，不用重启后端。
+
+**原因**：`app/cors.py` 的 `DynamicCORSMiddleware` **每次请求**实时读 `config["api_cors_allowed_origins"]`，不是启动时一次性读取。非法 origin（`*`、`null`、带 path/query）在 `is_valid_origin` 里被静默丢弃，永远不放行。
+
+**注意**：本中间件始终 `allow_credentials=true`，所以 `*` 永远不可能放行（浏览器规范禁止 `*` + credentials）。要开放就显式列具体 origin。
+
+---
+
+## 28. VitePress docs:dev 不要暴露公网
+
+**现象**：根目录 `npm audit` 报 VitePress 依赖链上的 Vite/esbuild dev server 漏洞，当前最新 `vitepress@1.6.4` 暂无上游修复。
+
+**原因**：这是文档站开发服务器链路的问题，不是 NFM FastAPI 后端，也不是静态文档构建产物。`npm run docs:build` 生成的静态站点不需要暴露 Vite dev server。
+
+**解决**：`npm run docs:dev` 只用于本机或可信内网预览，不要直接暴露到公网。发布文档时使用 `npm run docs:build` 的静态产物（`docs/.vitepress/dist/`），由 GitHub Pages、Nginx、Caddy 等静态托管。

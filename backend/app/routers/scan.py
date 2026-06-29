@@ -3,9 +3,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..notion_facade import facade
-from ..deps import require_auth
+from ..deps import require_scope
 
-router = APIRouter(prefix="/api/scan", tags=["scan"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/api/scan", tags=["scan"], dependencies=[Depends(require_scope("scan"))])
 
 
 class ScanIn(BaseModel):

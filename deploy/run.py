@@ -26,7 +26,7 @@ def main():
     _resolve_paths()
     import uvicorn
     host = os.environ.get("NFM_HOST", "127.0.0.1")
-    port = int(os.environ.get("NFM_PORT", "8765"))
+    port = int(os.environ.get("NFM_PORT", "18765"))
     uvicorn.run("app.main:app", host=host, port=port, log_level="info")
 
 

@@ -13,10 +13,10 @@
 | 服务 | 地址 | 进程 / 端口 |
 |------|------|------------|
 | 前端 dev server (Vite + Vue 3) | http://localhost:5173 | vite, 端口 5173 |
-| 后端 API (FastAPI) | http://127.0.0.1:8765 | uvicorn, 端口 8765 |
+| 后端 API (FastAPI) | http://127.0.0.1:18765 | uvicorn, 端口 18765 |
 | 登录密码 | `admin123` | — |
 
-⚠️ **注意**：本机 8000 端口被另一个项目（`homepage`）占着，所以后端用了 8765 端口，`frontend/vite.config.ts` 的 proxy 已改成 `127.0.0.1:8765`。换机器或 8000 空闲时，记得把 vite.config 改回 8000。
+⚠️ **注意**：后端默认端口已统一为 `18765`，`frontend/vite.config.ts` 的 proxy 也指向 `127.0.0.1:18765`。不要再按 8000/8765 的旧口径改配置。
 
 ## 文档结构
 
@@ -36,7 +36,8 @@ AI/
 |-----------|-----------|
 | 了解项目能做什么、怎么组织的 | `OVERVIEW.md` |
 | 修改功能（比如加一个新工具） | `ARCHITECTURE.md` → 找到对应模块 |
-| 启动/调试/打包 | `COMMANDS.md` |
+| 第三方开放 API / API Key 鉴权 | `ARCHITECTURE.md`「鉴权流(双通道)」+ `COMMANDS.md`「第三方开放 API 调用示例」 |
+| 启动/调试/打包 / Windows exe | `COMMANDS.md` |
 | 解决一个奇怪问题 | `GOCHAS.md` |
 | 看历史改了什么 | `CHANGELOG.md` |
 

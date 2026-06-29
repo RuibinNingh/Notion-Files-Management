@@ -25,9 +25,9 @@ COPY --from=frontend /fe/dist /app/frontend/dist
 
 ENV NFM_DATA_DIR=/data
 ENV NFM_HOST=0.0.0.0
-ENV NFM_PORT=8765
+ENV NFM_PORT=18765
 VOLUME ["/data"]
-EXPOSE 8765
+EXPOSE 18765
 
 WORKDIR /app/backend
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "18765"]
