@@ -29,6 +29,7 @@
 | 改启动/构建/打包命令 | `AI/COMMANDS.md` |
 | 踩新坑、临时方案、workaround | `AI/GOTCHAS.md`(格式:现象→原因→解决) |
 | 任何对外可见的行为变化 | `AI/CHANGELOG.md`(新条目加最上面,带日期) |
+| 版本发布 / GitHub Release | `AI/CHANGELOG.md` + `docs/version/*.md` + `docs/.vitepress/config.mts` 版本导航 |
 | 架构决策变更 | `AI/ARCHITECTURE.md`「关键设计决策」段落 |
 
 **判断标准**:如果一个新人读 AI/ 仍然能跟上当前代码,说明更新到位了。
@@ -43,6 +44,22 @@ Claude 接到任务后,先 `Read AI/README.md` + `AI/OVERVIEW.md` + `AI/GOTCHAS.
 - CHANGELOG 新条目**加在最上面**,带日期(格式 `## vX.Y.Z-xxx(YYYY-MM-DD)`)
 - GOTCHAS 每条用「**现象 → 原因 → 解决**」三段
 - ARCHITECTURE 用 ASCII 数据流图 + 真实代码片段(file_path:line_number)
+
+### 1.4 版本发布流程(必须同步公开 docs)
+
+发布新版本、起草 GitHub Release、更新版本说明时,不能只改 `AI/CHANGELOG.md`。`AI/` 是内部交接文档,`docs/` 是公开用户文档,两边都要同步。
+
+**必做清单**:
+
+1. `AI/CHANGELOG.md`:新条目加最上面,记录工程侧变更和验证结果。
+2. `docs/version/v<version>-github-release.md`:新增或更新公开发行版说明,面向用户写清楚功能变化、升级说明、部署方式、验证结果和已知限制。
+   - 公开文档只使用正式对外版本号,例如 `v2.0.0-Beta`。
+   - `Beta-0` / `Beta-1` / `Beta-n` 这类编号是内部迭代名,**只能写在 `AI/CHANGELOG.md` 等内部交接文档里**,不要出现在 `docs/`、GitHub Release 标题或公开导航中。
+3. `docs/.vitepress/config.mts`:把「版本记录」导航和 sidebar 最新版本入口指向新发行版文档。
+4. 如发布内容影响用户使用、部署或开放 API,同步更新 `docs/user/`、`docs/deployment/`、`docs/api/` 下对应页面。
+5. 跑 `npm run docs:build`,确认 VitePress frontmatter、链接和导航没有破。
+
+**判断标准**:用户只看公开文档站也能知道这个版本改了什么、怎么安装/升级、有哪些限制;Agent 只看 `AI/` 也能继续维护代码。
 
 ---
 
@@ -218,6 +235,7 @@ es.addEventListener('done', (e) => {
 | 纯后端 | `.venv/bin/pytest backend/tests -q` + `py_compile $(find backend/app backend/scripts -name '*.py')` |
 | 跨端 | 上面两条 + 手动起服务走查 `AI/COMMANDS.md` 第 5 节 |
 | 改架构/路由 | 加 `backend/tests/` 用例 + 更新 `AI/ARCHITECTURE.md` |
+| 改公开文档 / 版本发布文档 | `npm run docs:build` |
 
 **不要**改完不验证就交付。
 
