@@ -57,7 +57,11 @@ Claude 接到任务后,先 `Read AI/README.md` + `AI/OVERVIEW.md` + `AI/GOTCHAS.
    - `Beta-0` / `Beta-1` / `Beta-n` 这类编号是内部迭代名,**只能写在 `AI/CHANGELOG.md` 等内部交接文档里**,不要出现在 `docs/`、GitHub Release 标题或公开导航中。
 3. `docs/.vitepress/config.mts`:把「版本记录」导航和 sidebar 最新版本入口指向新发行版文档。
 4. 如发布内容影响用户使用、部署或开放 API,同步更新 `docs/user/`、`docs/deployment/`、`docs/api/` 下对应页面。
-5. 跑 `npm run docs:build`,确认 VitePress frontmatter、链接和导航没有破。
+5. 同步上一级发布站 `../Notion-Files-Management-Web`:
+   - 更新 `version.json` 和 `download/download.json`。
+   - Windows exe 下载链接统一使用 GitHub Release,按规则生成:`https://github.com/RuibinNingh/Notion-Files-Management/releases/download/v<base_version>/NOTION_FILES_MANAGEMENT_v<base_version>-<channel>.exe`,例如 `v2.0.0-Beta` 对应 `.../releases/download/v2.0.0/NOTION_FILES_MANAGEMENT_v2.0.0-Beta.exe`。
+   - 发布站不再维护本站 exe 镜像;不要把 `nfm.ruibin-ningh.top/download/*.exe` 写回自动更新线路或下载页;不要提交 `download/Notion-Files-Management.exe` 这类本地镜像文件。
+6. 跑 `npm run docs:build`,确认 VitePress frontmatter、链接和导航没有破。
 
 **判断标准**:用户只看公开文档站也能知道这个版本改了什么、怎么安装/升级、有哪些限制;Agent 只看 `AI/` 也能继续维护代码。
 
