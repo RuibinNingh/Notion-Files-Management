@@ -2,6 +2,15 @@
 
 > 记录重构过程中已发生的重要变更。新增条目请加到最上面。
 
+## v2.0.0-Beta-8(2026-06-30)
+
+### 发布站规则
+
+- 明确 v2 Web 客户端当前只有版本检查(`/api/version` 展示远端 `version.json`),没有自动下载安装更新流程。
+- 发布站 `../Notion-Files-Management-Web` 不再维护本站 exe 镜像,`version.json` / `download/download.json` 的 Windows exe 下载链接统一指向 GitHub Release 资产。
+- 公开文案把「自动更新」修正为「版本检查」,避免把旧 WPF 自动更新能力误写成 v2 Web 已实现能力。
+- `CLAUDE.md` 记录发布站规则:`download.auto` 仅作为版本元数据/未来更新能力预留,不要再写回 `nfm.ruibin-ningh.top/download/*.exe`。
+
 ## v2.0.0-Beta-7(2026-06-29)
 
 ### 发布自动化

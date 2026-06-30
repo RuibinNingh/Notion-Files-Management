@@ -60,7 +60,8 @@ Claude 接到任务后,先 `Read AI/README.md` + `AI/OVERVIEW.md` + `AI/GOTCHAS.
 5. 同步上一级发布站 `../Notion-Files-Management-Web`:
    - 更新 `version.json` 和 `download/download.json`。
    - Windows exe 下载链接统一使用 GitHub Release,按规则生成:`https://github.com/RuibinNingh/Notion-Files-Management/releases/download/v<base_version>/NOTION_FILES_MANAGEMENT_v<base_version>-<channel>.exe`,例如 `v2.0.0-Beta` 对应 `.../releases/download/v2.0.0/NOTION_FILES_MANAGEMENT_v2.0.0-Beta.exe`。
-   - 发布站不再维护本站 exe 镜像;不要把 `nfm.ruibin-ningh.top/download/*.exe` 写回自动更新线路或下载页;不要提交 `download/Notion-Files-Management.exe` 这类本地镜像文件。
+   - 当前 v2 Web 客户端只有版本检查,没有自动下载安装更新;`version.json` 的 `download.auto` 只是版本元数据/未来更新能力预留。
+   - 发布站不再维护本站 exe 镜像;不要把 `nfm.ruibin-ningh.top/download/*.exe` 写回 `version.json` 或下载页;不要提交 `download/Notion-Files-Management.exe` 这类本地镜像文件。
 6. 跑 `npm run docs:build`,确认 VitePress frontmatter、链接和导航没有破。
 
 **判断标准**:用户只看公开文档站也能知道这个版本改了什么、怎么安装/升级、有哪些限制;Agent 只看 `AI/` 也能继续维护代码。

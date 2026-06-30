@@ -10,7 +10,7 @@
 
 **把 Notion 里的文件，真正变成你的文件。** —— Web 版重构。
 
-批量下载 · 批量上传 · 页面工具箱 · 自动更新，全部跑在无头服务器上，浏览器访问即用。
+批量下载 · 批量上传 · 页面工具箱 · 版本检查，全部跑在无头服务器上，浏览器访问即用。
 
 [![Beta](https://img.shields.io/badge/渠道-Beta-f59e0b?style=flat-square)](#)
 [![Release](https://img.shields.io/github/v/release/RuibinNingh/Notion-Files-Management?style=flat-square&color=22c55e&label=最新版本)](https://github.com/RuibinNingh/Notion-Files-Management/releases)
